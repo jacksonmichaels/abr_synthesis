@@ -31,10 +31,10 @@ and to extend later with the other modalities/models sketched in
 
 | Purpose | File |
 |---|---|
-| DNA CNN architecture + training loop | `dna-tasks/SD-CNN/model_training/run_SDCNN_ccp_crossval.py`, `.../parameters/tb_cnn_codebase.py` |
-| DNA one-hot encoding, gene concat, drug→loci map | `protein-tasks/esm_models/data_utils.py` (`BASE_TO_COLUMN`, `DRUG_TO_LOCI`, `get_one_hot`, `create_X`) |
-| Protein one-hot CNN (simplest fusion target for alignment sanity checks) | `protein-tasks/one_hot_encoded/cnn_model.py`, `cnn_utils.py` |
-| Aligned-FASTA → CDS → protein translation (gap-aware) | `protein-tasks/protein_translation/` (`data_preprocessing.py`, `gene_coordinate_map.ipynb`) |
+| DNA CNN training loop | `dna-tasks/SD-CNN/model_training/run_SDCNN_ccp_crossval.py` |
+| DNA CNN architecture, one-hot encoding, drug→loci map, alpha weighting, threshold search — corrected 2026-07-01, an earlier note misattributed these to `protein-tasks/esm_models/data_utils.py` | `dna-tasks/SD-CNN/model_training/parameters/tb_cnn_codebase.py` (`BASE_TO_COLUMN`, `DRUG_TO_LOCI`, `get_one_hot`, `sequence_dictionary`, `make_genotype_df`, `rs_encoding_to_numeric`, `alpha_mat`, `get_threshold_val`) |
+| Protein one-hot CNN (conv-stack shape reused for `ConvBranch`) | `protein-tasks/one_hot_encoded/cnn_model.py`, `cnn_utils.py` |
+| Aligned-FASTA → CDS → protein translation (gap-aware) | `protein-tasks/protein_translation/` (`data_preprocessing.py`, `gene_coordinate_map.ipynb`) — not yet wired in, our own codon-walk in `biophysical.py` is a interim stand-in |
 | Per-isolate CSV schema (`Filename`, `Sequence`, `Phenotype`, `Protein_Sequence`, `Frameshift_Mutation`) | `Big-TB-benchmark/README.md` §Dataset Overview |
 | SHAP interpretability pattern to eventually reuse | `protein-tasks/esm_models/shap_esm.py`, `dna-tasks/SD-CNN/interpretability/run_interpret.py` |
 
@@ -49,47 +49,73 @@ without either cluster access or a synthetic fixture set.** Plan: build a
 small synthetic-data generator first (see Phase 0) so the pipeline and model
 shapes can be verified locally, then run for real on the cluster.
 
-## 4. Foundation build order (no code yet — this is the plan)
+## 4. Foundation build order
 
-**Phase 0 — synthetic fixtures**
-- Tiny fake aligned-FASTA + phenotype CSV generator (a few genes, ~50
-  isolates, deliberate gaps/frameshifts) so every later step is testable
-  without the real dataset.
+**Phase 0 — synthetic fixtures. IMPLEMENTED (`fixtures.py`).**
+Fake aligned-FASTA + phenotype CSV generator, gene length/isolate count
+configurable, deliberate gaps standing in for indels/frameshifts.
 
-**Phase 1 — biophysical property table + alignment utility**
-- Pin a 20-AA lookup table (MW / pI / Eisenberg hydrophobicity) as a static
-  module, not computed on the fly.
-- Build the nucleotide-position → codon → AA → property-vector mapper that
-  walks the *aligned* (gapped) DNA sequence used by the DNA CNN, so the
-  biophysical channel lines up 1:1 with existing one-hot positions per gene,
-  per isolate. Reuse `protein_translation`'s CDS/gap logic rather than
-  re-deriving it.
-- Define the sentinel for gap / stop / frameshift positions explicitly.
+**Phase 1 — biophysical property table + alignment utility. IMPLEMENTED
+(`biophysical.py`), table values themselves still a placeholder.**
+20-AA lookup table (MW / pI / Eisenberg hydrophobicity, z-scored) as a
+static module. `translate_seq` degaps the aligned nucleotide sequence then
+translates in triplets with a hardcoded standard genetic-code table,
+stopping at the first stop codon (truncates the protein like a real
+nonsense mutation would) — matches Kulkarni et al. 2026 Methods
+("Featurizing amino acid sequences": translated from the MSA, then
+left-aligned, i.e. *not* kept in gap-preserving positional correspondence
+with the nucleotide branch — this revised an earlier draft of decision #5
+that assumed gap-preserving alignment). `biophysical_matrix` then maps the
+translated protein string to a (3, K) property matrix, zero-padded.
+Does **not** yet reuse `protein_translation`'s gap/CDS logic (tightly
+coupled to real coordinate files we don't have locally); revisit once real
+data is in hand.
 
-**Phase 2 — modality module**
-- One small interface all modalities implement (isolate ids in → array out,
-  known length, known channel count), so DNA one-hot, biophysical, and
-  future modalities (lineage vector, protein embedding, etc.) are
-  interchangeable inputs to a fusion model rather than each model hardcoding
-  its own loader.
+**Phase 2 — dataset construction. IMPLEMENTED (`data.py`), as plain
+functions, not a class-based interface.**
+`build_dataset(drug, genotype_dir, phenotype_csv)` reuses
+`tb_cnn_codebase.sequence_dictionary`/`get_one_hot`/`rs_encoding_to_numeric`
+directly. One local fix needed: `tb_cnn_codebase`'s path handling
+(`filename.split("/")[-1]`) assumes POSIX paths and silently breaks on
+Windows backslash paths from `glob`/`os.path.join` — `_load_genotype_df`
+in `data.py` routes around it by always handing `sequence_dictionary` a
+forward-slash path, without touching the reference file.
 
-**Phase 3 — fusion model**
-- Two-branch CNN: existing DNA one-hot branch (mirrors `tb_cnn_codebase.py`'s
-  conv stack) + new biophysical branch (mirrors `ProteinCNN1x1`'s stem+conv
-  pattern), fused per the fusion-point decision below, single sigmoid head.
+**Phase 3 — fusion models. IMPLEMENTED (`models.py`).**
+Shared `ConvBranch` (mirrors `ProteinCNN1x1`'s stem+conv+pool stack) +
+`DenseHead`, composed three ways: `LateFusionCNN` (default — one DNA
+branch over the concatenated locus, one biophysical `ConvBranch` **per
+gene/protein** per decision #7's revision, flatten-and-concat into a
+2×256-node dense head, confirmed against Kulkarni et al. 2026's Model
+design Methods almost verbatim), `EarlyFusionCNN` (ablation, not from the
+paper), and `CrossAttentionFusionCNN` (experimental_plan.pdf's
+"Asymmetrical Cross-attention" — DNA branch as Query, the per-gene
+biophysical branches concatenated along the sequence axis as Key/Value,
+via `nn.MultiheadAttention`).
 
-**Phase 4 — training/eval harness**
-- Per-drug binary classification, 5-fold CV, AUC / AUC-PR / sens / spec at
-  optimal threshold — matching BIG-TB's reported metrics so results are
-  directly comparable to the 0.8753 baseline.
+**Phase 4 — training/eval harness. IMPLEMENTED (`train.py`).**
+`run_cv(...)` replicates BIG-TB's SD-CNN protocol per decision #6: fixed
+train/test split, plain KFold on train, masked weighted BCE (torch port of
+`masked_multi_weighted_bce`), `tb.alpha_mat`/`tb.get_threshold_val` reused
+directly for class weighting and sens/spec threshold search.
 
-**Phase 5 — first experiment**
-- Run Isoniazid + Rifampicin, DNA-only baseline vs. DNA+biophysical, compare.
+**Smoke test: `run_experiment.py`.** Runs the full Phase 0→4 pipeline
+against synthetic data for all three models — confirms the wiring works,
+numbers are meaningless (random data, 5 epochs). Verified passing
+2026-07-01.
 
-**Phase 6 — extensibility pass**
-- Only after Phase 5 has a result: slot in the next modality from
-  `experimental_plan.pdf` (lineage vector is the cheapest next one) to prove
-  the Phase 2 interface actually generalizes.
+**Phase 5 — first experiment (blocked on real data, see #8).**
+Run Isoniazid + Rifampicin, DNA-only baseline vs. DNA+biophysical, compare.
+
+**Phase 6 — extensibility pass.**
+Only after Phase 5 has a result: slot in the next modality from
+`experimental_plan.pdf` (lineage vector is the cheapest next one).
+
+### New dependencies installed locally
+`biopython`, `sparse`, `ipdb` — needed to import `tb_cnn_codebase.py`
+as-is for reuse (it pulls in `Bio.SeqIO`, `sparse`, `ipdb` at module level
+even though we only use a handful of its functions). `torch` and
+`tensorflow` were already present.
 
 ## 5. Design decisions
 
@@ -114,29 +140,39 @@ shapes can be verified locally, then run for real on the cluster.
    same `DNABranch`/`BiophysicalBranch` classes rather than duplicated code.
 
 3. & 4. **Biophysical property table + normalization: use Kulkarni et al.'s
-   actual method.** DECIDED (direction), BLOCKED on source material. Our
-   `Literature Review.pdf` notes only name the Eisenberg (1984) scale for
-   hydrophobicity and don't capture Kulkarni et al. 2026's exact MW/pI
-   table or normalization scheme — need the paper itself (or its
-   supplementary materials) to pin this down rather than substituting a
-   different reproducible-but-not-their table. **Open question for you:**
-   do you have the Kulkarni et al. 2026 PDF (or supplement) already, or
-   should this be tracked down (e.g. via web search) before Phase 1 starts?
-   Until resolved, Phase 1 (property table + alignment utility) is blocked;
-   everything else in Phase 0 is not.
+   actual method.** DECIDED (architecture confirmed from the full paper,
+   added 2026-07-01), STILL PARTIALLY BLOCKED on exact numeric values. The
+   full-text Methods (`reference_docs/Kulkarni et al. - 2026 - ...pdf`,
+   "Featurizing amino acid sequences") confirms three features — molecular
+   weight (g/mol), isoelectric point, hydrophobicity (Eisenberg scale) — as
+   a 3×K matrix per protein, "inspired by EVEscape" (Thadani et al. 2023,
+   *Nature*, ref 28) — but the main text does not give the literal MW/pI
+   numbers or a normalization scheme (no "z-score"/"standardize"/"min-max"
+   anywhere in the paper). Likely explanation: MW and pI each have one
+   essentially-standard chemistry definition (unlike hydrophobicity, where
+   many competing scales exist — which is presumably *why* only that one
+   needed a named scale). Current implementation (`biophysical.py`) uses
+   standard published tables — average residue mass for MW, free-amino-acid
+   pI, Eisenberg (1984) for hydrophobicity — z-scored per channel. Still
+   worth asking the authors directly (§6) or checking EVEscape's own
+   supplement, but this is now a low-confidence-but-plausible match rather
+   than a guess.
 
-   Standing default so this doesn't fully block the rest of the plan:
-   Biopython-derived tables (`IUPACData.protein_weights` for MW,
-   `Bio.SeqUtils.IsoelectricPoint`'s EMBOSS pKa set for pI, hardcoded
-   Eisenberg 1984 for hydrophobicity) + per-channel z-score, swapped out
-   for Kulkarni's actual values/scheme as soon as we have them.
-
-5. **Gap/stop/frameshift sentinel: encode as gaps.** DECIDED. Positions
-   past a gap, indel, or premature stop get the same treatment as the DNA
-   branch's own gap channel (`BASE_TO_COLUMN['-']`) — i.e. the biophysical
-   branch emits a zero vector at any position where the DNA one-hot branch
-   is also encoding a gap, rather than a separate out-of-range sentinel.
-   Keeps the two branches positionally and semantically consistent.
+5. **Gap/stop/frameshift representation: translate-then-left-align, not
+   gap-preserving.** REVISED 2026-07-01 (supersedes the original
+   "encode as gaps, positionally consistent with the DNA branch" draft) —
+   the paper's Methods are explicit: protein sequences are translated from
+   the MSA then "left-aligned (i.e., not a multiple sequence alignment) and
+   ... padded to the same length in the same manner as the nucleotide
+   sequences." I.e. the biophysical branch does **not** stay in
+   per-codon positional correspondence with the DNA one-hot branch —
+   `translate_seq` (`biophysical.py`) degaps first (so an indel shifts the
+   downstream reading frame, like a real frameshift) and stops at the first
+   stop codon (truncating like a real nonsense mutation), then the
+   resulting protein string is padded independently. Inferred (not stated
+   at this granularity in the paper) and worth confirming with the authors:
+   that stop-codon truncation, rather than continuing translation with a
+   placeholder, is the right read of "distinguish nonsense from missense."
 
 6. **CV protocol: replicate BIG-TB's existing methods exactly.** DECIDED,
    specifically *because* multi-drug is a planned future step — keep the
@@ -147,11 +183,19 @@ shapes can be verified locally, then run for real on the cluster.
    through the same masked-loss path) so extending to multi-drug later is
    a data-shape change, not an architecture change.
 
-7. **Multi-locus genes: shared branch.** DECIDED. Isoniazid's katG+inhA
-   (and similar multi-locus drugs) get one concatenated biophysical conv
-   stack across the gene-concatenated length axis, mirroring exactly how
-   the DNA one-hot branch already concatenates multi-locus genes in
-   `create_X`.
+7. **Multi-locus genes: separate branch per gene (biophysical only).**
+   REVISED 2026-07-01 (reverses the original "shared branch" draft, which
+   was made before we had the full paper). The paper's Methods are
+   explicit: "Individual proteins were encoded as separate channels, even
+   if they are translated from the same locus (i.e., rpoB and rpoC
+   proteins are in two separate channels in the amino acid block, while the
+   corresponding gene sequences are concatenated into a single contiguous
+   locus in the nucleotide block)." So: the **DNA branch** still
+   concatenates multi-locus genes into one locus (that part of the
+   original decision was right) — but the **biophysical branch** gets one
+   `ConvBranch` per gene/protein (`LateFusionCNN`/`CrossAttentionFusionCNN`
+   in `models.py` use `nn.ModuleList` over `bio_lens`, one length per
+   gene), each flattened independently before concatenation.
 
 8. **HPC path — found two, access pending.** DECIDED (path identified,
    access not yet granted). Both existing BIG-TB pipelines hardcode paths
@@ -167,9 +211,58 @@ shapes can be verified locally, then run for real on the cluster.
    0–4 (synthetic fixtures, property table, modality interface, model code,
    training harness) don't depend on it and can proceed now.**
 
-## 6. Non-goals for this pass
+## 6. Questions for author meeting
 
-Not building yet: cross-attention fusion, late-fusion+modality-dropout,
-adversarial lineage decoupling, MIC+ABR multi-task, causal probing via
-latent injection. These are real candidates from `experimental_plan.pdf`
-but come after Phase 5 has a working biophysical-fusion result to build on.
+**Kulkarni et al. 2026 (biophysical fusion / MIC paper) — updated
+2026-07-01 after reading the full paper (`reference_docs/Kulkarni et al. -
+2026 - ...pdf`); items resolved by the paper are struck through, not
+deleted, so it's visible what we already checked:**
+1. Exact MW / isoelectric point numeric values and normalization scheme
+   for the 3×K input — the paper names the properties and cites EVEscape
+   (Thadani et al. 2023, *Nature*) as inspiration but never states the
+   literal table or a normalization step. Still the one real gap.
+2. ~~Exact fusion point~~ — ANSWERED: two independent conv blocks (same
+   architecture as each other), each flattened, concatenated with lineage
+   SNPs, through two 256-node dense layers. `LateFusionCNN` matches this.
+3. Whether stop-codon truncation (translate up to, not past, the first
+   stop) is the intended way the amino-acid branch "distinguishes nonsense
+   from missense" — the paper states the *effect* (pncA nonsense vs.
+   missense distinguishability, Supplementary Fig. 3) but not this
+   mechanical detail; we inferred it.
+4. ~~Shared or per-gene branch for multi-locus genes~~ — ANSWERED:
+   per-gene/per-protein separate channels, confirmed explicitly with the
+   rpoB/rpoC example.
+5. Which drug lost performance from adding lineage, and why — ANSWERED for
+   MIC models (pyrazinamide, due to small dataset + lineage skew) but
+   they *also* say lineage "did not significantly alter performance" for
+   rifampicin/isoniazid specifically — worth asking whether that's still
+   their recommendation for a binary (not MIC) task before we add our own
+   lineage branch (Phase 6).
+6. They do have MIC labels for 8 drugs (14,834 isolates, Supplementary
+   Data 1/2) — worth asking directly whether any could be shared,
+   independent of BIG-TB's binary R/S labels, for the "predict both MIC
+   and ABR" idea from `experimental_plan.pdf`.
+
+**Tasmin & Mohanty 2026 / BIG-TB authors:**
+7. Was the SD-CNN's train/test-split-then-plain-`KFold` (not stratified,
+   despite importing `StratifiedKFold`) intentional? Notably, Kulkarni et
+   al. 2026 explicitly use *stratified* 5-fold CV ("stratified by binary
+   resistance phenotype") for the closely related architecture — worth
+   asking whether BIG-TB's non-stratified split was a deliberate choice or
+   should not be treated as "the protocol to replicate" for the reported
+   0.8753 baseline.
+8. Confirm `/project/pi_annagreen_umass_edu/` Unity paths in the SD-CNN
+   parameter files (§5.8) are still the current location of the real
+   genotype/phenotype data, and what's needed to get access provisioned.
+9. Is `mycobrowser_h37rv_genes_v4.csv` / the WHO 2023 catalogue still the
+   reference version to build against, or is there a newer curation in
+   progress we should target instead?
+
+## 7. Non-goals for this pass
+
+Not building yet: late-fusion+modality-dropout, adversarial lineage
+decoupling, MIC+ABR multi-task, causal probing via latent injection.
+(Cross-attention fusion moved out of this list 2026-07-01 —
+`CrossAttentionFusionCNN` is implemented in `models.py`.) The rest are real
+candidates from `experimental_plan.pdf` but come after Phase 5 has a
+working biophysical-fusion result to build on.

@@ -1,0 +1,12 @@
+step,stage,operation,notes,output_shape
+1,input,DNA one-hot,one contiguous locus,B x 5 x 240
+2,input,Biophysical (upsampled concat),padded to DNA length,B x 3 x 240
+3,fusion,Concatenate on channel axis,5 DNA + 3 bio,B x 8 x 240
+4,Shared branch,Conv1d 1x1 (stem) + ReLU,8->64 channels,B x 64 x 240
+5,Shared branch,Conv1d k=12 pad=6 + ReLU,"64 filters, length +1",B x 64 x 241
+6,Shared branch,MaxPool1d /3,length // 3,B x 64 x 80
+7,Shared branch,Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 80
+8,Shared branch,Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 80
+9,Shared branch,MaxPool1d /3,length // 3,B x 32 x 26
+10,shared branch,Flatten,,B x 832
+11,head,DenseHead 256->256->out,,B x 1

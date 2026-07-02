@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="760" viewBox="0 0 1180 760" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<defs><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0b1420" flood-opacity="0.20"/></filter><marker id="arw" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b8794"/></marker><marker id="arwR" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#c0453b"/></marker><marker id="arwP" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b5ea7"/></marker></defs>
+<rect width="1180" height="760" fill="#fbfcfd"/>
+<text x="34" y="46" font-size="23" font-weight="700" fill="#1f2933">Adversarial Lineage Decoupling</text>
+<text x="34" y="71" font-size="13.5" fill="#52606d">A gradient-reversal head penalizes lineage information in the shared latent -&gt; lineage-agnostic ABR features</text>
+<rect x="410.0" y="92" width="300" height="56" rx="11" fill="#5c6b7a" filter="url(#sh)"/>
+<text x="560" y="116.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Genotype features</text>
+<text x="560" y="134.0" font-size="11" fill="#eef2f6" text-anchor="middle">DNA / protein / … encoders</text>
+<rect x="410.0" y="186" width="300" height="84" rx="11" fill="#ffffff" stroke="#d7dee6" stroke-width="1.2" filter="url(#sh)"/>
+<path d="M410.0,216 L410.0,197 Q410.0,186 421.0,186 L699.0,186 Q710.0,186 710.0,197 L710.0,216 Z" fill="#2f8f4e"/>
+<text x="560" y="206" font-size="13.5" font-weight="700" fill="#ffffff" text-anchor="middle">Shared encoder / trunk</text>
+<text x="425.0" y="235" font-size="11.5" fill="#52606d">conv branches -&gt; shared MLP</text>
+<text x="425.0" y="251" font-size="11.5" fill="#52606d">produces latent z</text>
+<rect x="455.0" y="314" width="210" height="50" rx="11" fill="#7b5ea7" filter="url(#sh)"/>
+<text x="560" y="344.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Shared latent  z</text>
+<rect x="267.0" y="424" width="250" height="56" rx="11" fill="#324a5f" filter="url(#sh)"/>
+<text x="392" y="448.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">ABR head</text>
+<text x="392" y="466.0" font-size="11" fill="#eef2f6" text-anchor="middle">Linear -&gt; sigmoid</text>
+<rect x="267.0" y="536" width="250" height="52" rx="11" fill="#0f9d8f" filter="url(#sh)"/>
+<text x="392" y="567.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Resistant / Susceptible</text>
+<rect x="627.0" y="410" width="290" height="66" rx="11" fill="#c0453b" filter="url(#sh)"/>
+<text x="772" y="439.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Gradient Reversal Layer</text>
+<text x="772" y="457.0" font-size="11" fill="#eef2f6" text-anchor="middle">forward: identity   ·   backward: x (-lambda)</text>
+<rect x="647.0" y="524" width="250" height="52" rx="11" fill="#3f7cac" filter="url(#sh)"/>
+<text x="772" y="555.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Lineage head</text>
+<rect x="647.0" y="620" width="250" height="52" rx="11" fill="#3f7cac" filter="url(#sh)"/>
+<text x="772" y="651.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Lineage  (L1 … L7)</text>
+<polyline points="560.0,148.0 560.0,185.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="560.0,270.0 560.0,313.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<rect x="520.8" y="279.0" width="78.4" height="26" rx="13" fill="#eef3f8" stroke="#cdd8e3"/>
+<text x="560" y="296.5" font-size="12" font-family="'SF Mono', 'Menlo', 'Consolas', monospace" fill="#1f2933" text-anchor="middle">z in R^d</text>
+<polyline points="560.0,364.0 560.0,398.0 392.0,398.0 392.0,423.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="560.0,364.0 560.0,398.0 772.0,398.0 772.0,409.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="392.0,480.0 392.0,535.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="772.0,476.0 772.0,523.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="772.0,576.0 772.0,619.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="930.0,424.0 1120.0,424.0 1120.0,228.0 712.0,228.0" fill="none" stroke="#c0453b" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arwR)"/>
+<text x="1112" y="330" font-size="11.5" font-weight="600" fill="#c0453b" text-anchor="end">back-prop: sign flipped</text>
+<text x="1112" y="347" font-size="11.5" font-weight="600" fill="#c0453b" text-anchor="end">-> removes lineage signal from z</text>
+<rect x="40" y="640" width="270" height="58" rx="8" fill="#ffffff" stroke="#dde3ea"/>
+<line x1="54" y1="658" x2="84" y2="658" stroke="#7b8794" stroke-width="2.2"/>
+<text x="92" y="662" font-size="11.5" fill="#1f2933">forward / data flow</text>
+<line x1="54" y1="678" x2="84" y2="678" stroke="#c0453b" stroke-width="2.2" stroke-dasharray="6 5"/>
+<text x="92" y="682" font-size="11.5" fill="#1f2933">adversarial gradient (reversed)</text>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="640" viewBox="0 0 1060 640" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<defs><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0b1420" flood-opacity="0.20"/></filter><marker id="arw" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b8794"/></marker><marker id="arwR" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#c0453b"/></marker><marker id="arwP" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b5ea7"/></marker></defs>
+<rect width="1060" height="640" fill="#fbfcfd"/>
+<text x="34" y="46" font-size="23" font-weight="700" fill="#1f2933">Multi-Task: Predict MIC and ABR jointly</text>
+<text x="34" y="71" font-size="13.5" fill="#52606d">Two heads off one shared latent -&gt; features organize around mutation severity, not just a binary label</text>
+<rect x="380.0" y="92" width="300" height="56" rx="11" fill="#5c6b7a" filter="url(#sh)"/>
+<text x="530" y="125.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Genotype features</text>
+<rect x="380.0" y="186" width="300" height="84" rx="11" fill="#ffffff" stroke="#d7dee6" stroke-width="1.2" filter="url(#sh)"/>
+<path d="M380.0,216 L380.0,197 Q380.0,186 391.0,186 L669.0,186 Q680.0,186 680.0,197 L680.0,216 Z" fill="#2f8f4e"/>
+<text x="530" y="206" font-size="13.5" font-weight="700" fill="#ffffff" text-anchor="middle">Shared encoder</text>
+<text x="395.0" y="235" font-size="11.5" fill="#52606d">conv branches -&gt; shared MLP</text>
+<text x="395.0" y="251" font-size="11.5" fill="#52606d">produces latent z</text>
+<rect x="380.0" y="314" width="300" height="52" rx="11" fill="#7b5ea7" filter="url(#sh)"/>
+<text x="530" y="336.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Shared latent  z</text>
+<text x="530" y="354.0" font-size="11" fill="#eef2f6" text-anchor="middle">organizes around biological severity</text>
+<rect x="235.0" y="430" width="250" height="56" rx="11" fill="#324a5f" filter="url(#sh)"/>
+<text x="360" y="454.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">ABR head</text>
+<text x="360" y="472.0" font-size="11" fill="#eef2f6" text-anchor="middle">Linear -&gt; sigmoid</text>
+<rect x="235.0" y="542" width="250" height="52" rx="11" fill="#0f9d8f" filter="url(#sh)"/>
+<text x="360" y="573.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">R / S   (binary)</text>
+<rect x="575.0" y="430" width="250" height="56" rx="11" fill="#324a5f" filter="url(#sh)"/>
+<text x="700" y="454.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">MIC head</text>
+<text x="700" y="472.0" font-size="11" fill="#eef2f6" text-anchor="middle">Linear -&gt; ordinal bins</text>
+<rect x="575.0" y="542" width="250" height="52" rx="11" fill="#c77d0a" filter="url(#sh)"/>
+<text x="700" y="573.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">MIC bin  (qualitative)</text>
+<rect x="630.2" y="531" width="200.79999999999998" height="21" rx="10.5" fill="#c77d0a" stroke="#ffffff" stroke-width="1.4"/>
+<text x="730.6" y="545.5" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">labels sparse -&gt; masked loss</text>
+<polyline points="530.0,148.0 530.0,185.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="530.0,270.0 530.0,313.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="530.0,366.0 530.0,400.0 360.0,400.0 360.0,429.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="530.0,366.0 530.0,400.0 700.0,400.0 700.0,429.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="360.0,486.0 360.0,541.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="700.0,486.0 700.0,541.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+</svg>

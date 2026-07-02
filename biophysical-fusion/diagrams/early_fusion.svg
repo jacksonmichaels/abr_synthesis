@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="850" viewBox="0 0 1020 850" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<defs><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0b1420" flood-opacity="0.20"/></filter><marker id="arw" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b8794"/></marker></defs>
+<rect x="0" y="0" width="1020" height="850" fill="#fbfcfd"/>
+<text x="34" y="46" font-size="24" font-weight="700" fill="#1f2933">Early-Fusion CNN  (channel-stack ablation)</text>
+<text x="34" y="72" font-size="13.5" fill="#52606d">Representative scenario — Rifampicin (loci rpoB + rpoC):  DNA one-hot 5x240,  biophysical 3 channels,  protein lengths K = 78 / 66</text>
+<rect x="195.0" y="100" width="250" height="64" rx="11" fill="#5c6b7a" filter="url(#sh)"/>
+<text x="320" y="128.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">DNA one-hot</text>
+<text x="320" y="146.0" font-size="11" fill="#eef2f6" text-anchor="middle">5 channels</text>
+<rect x="575.0" y="100" width="250" height="64" rx="11" fill="#5c6b7a" filter="url(#sh)"/>
+<text x="700" y="128.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Biophysical (upsampled)</text>
+<text x="700" y="146.0" font-size="11" fill="#eef2f6" text-anchor="middle">per-gene concat, x3 -&gt; DNA len</text>
+<rect x="345.0" y="220" width="330" height="60" rx="11" fill="#7b5ea7" filter="url(#sh)"/>
+<text x="510" y="246.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Concatenate on channels</text>
+<text x="510" y="264.0" font-size="11" fill="#eef2f6" text-anchor="middle">5 + 3 = 8 channels</text>
+<rect x="345.0" y="322" width="330" height="150" rx="11" fill="#ffffff" stroke="#d7dee6" stroke-width="1.2" filter="url(#sh)"/>
+<path d="M345.0,352 L345.0,333 Q345.0,322 356.0,322 L664.0,322 Q675.0,322 675.0,333 L675.0,352 Z" fill="#2f8f4e"/>
+<text x="510" y="342" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Shared Conv branch</text>
+<text x="361.0" y="372" font-size="11.5" fill="#52606d">Conv1d 1x1 stem: 8 -&gt; 64</text>
+<text x="361.0" y="389" font-size="11.5" fill="#52606d">Conv1d k=12 p=6 -&gt; 64  + ReLU</text>
+<text x="361.0" y="406" font-size="11.5" fill="#52606d">MaxPool1d / 3</text>
+<text x="361.0" y="423" font-size="11.5" fill="#52606d">Conv1d k=3 -&gt; 32  + ReLU</text>
+<text x="361.0" y="440" font-size="11.5" fill="#52606d">Conv1d k=3 -&gt; 32  + ReLU</text>
+<text x="361.0" y="457" font-size="11.5" fill="#52606d">MaxPool1d / 3</text>
+<rect x="345.0" y="506" width="330" height="48" rx="11" fill="#2f8f4e" filter="url(#sh)"/>
+<text x="510" y="535.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Flatten</text>
+<rect x="345.0" y="596" width="330" height="96" rx="11" fill="#ffffff" stroke="#d7dee6" stroke-width="1.2" filter="url(#sh)"/>
+<path d="M345.0,626 L345.0,607 Q345.0,596 356.0,596 L664.0,596 Q675.0,596 675.0,607 L675.0,626 Z" fill="#324a5f"/>
+<text x="510" y="616" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Dense head</text>
+<text x="361.0" y="646" font-size="11.5" fill="#52606d">Linear -&gt; 256  + ReLU</text>
+<text x="361.0" y="663" font-size="11.5" fill="#52606d">Linear 256 -&gt; 256  + ReLU</text>
+<text x="361.0" y="680" font-size="11.5" fill="#52606d">Linear 256 -&gt; n_drugs</text>
+<rect x="410.0" y="744" width="200" height="56" rx="11" fill="#0f9d8f" filter="url(#sh)"/>
+<text x="510" y="777.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Resistance logit</text>
+<polyline points="320.0,164.0 320.0,190.0 510.0,190.0 510.0,219.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<rect x="269.85" y="164.0" width="100.3" height="26" rx="13" fill="#eef3f8" stroke="#cdd8e3" stroke-width="1"/>
+<text x="320" y="181.5" font-size="12" font-family="'SF Mono', 'Menlo', 'Consolas', monospace" fill="#1f2933" text-anchor="middle">B x 5 x 240</text>
+<polyline points="700.0,164.0 700.0,190.0 510.0,190.0 510.0,219.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<rect x="649.85" y="164.0" width="100.3" height="26" rx="13" fill="#eef3f8" stroke="#cdd8e3" stroke-width="1"/>
+<text x="700" y="181.5" font-size="12" font-family="'SF Mono', 'Menlo', 'Consolas', monospace" fill="#1f2933" text-anchor="middle">B x 3 x 240</text>
+<polyline points="510.0,280.0 510.0,321.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<rect x="459.85" y="288.0" width="100.3" height="26" rx="13" fill="#eef3f8" stroke="#cdd8e3" stroke-width="1"/>
+<text x="510" y="305.5" font-size="12" font-family="'SF Mono', 'Menlo', 'Consolas', monospace" fill="#1f2933" text-anchor="middle">B x 8 x 240</text>
+<polyline points="510.0,472.0 510.0,505.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<rect x="459.85" y="476.0" width="100.3" height="26" rx="13" fill="#eef3f8" stroke="#cdd8e3" stroke-width="1"/>
+<text x="510" y="493.5" font-size="12" font-family="'SF Mono', 'Menlo', 'Consolas', monospace" fill="#1f2933" text-anchor="middle">B x 32 x 26</text>
+<polyline points="510.0,554.0 510.0,595.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<rect x="474.45" y="562.0" width="71.1" height="26" rx="13" fill="#eef3f8" stroke="#cdd8e3" stroke-width="1"/>
+<text x="510" y="579.5" font-size="12" font-family="'SF Mono', 'Menlo', 'Consolas', monospace" fill="#1f2933" text-anchor="middle">B x 832</text>
+<polyline points="510.0,692.0 510.0,743.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<rect x="481.75" y="705.0" width="56.5" height="26" rx="13" fill="#eef3f8" stroke="#cdd8e3" stroke-width="1"/>
+<text x="510" y="722.5" font-size="12" font-family="'SF Mono', 'Menlo', 'Consolas', monospace" fill="#1f2933" text-anchor="middle">B x 1</text>
+</svg>

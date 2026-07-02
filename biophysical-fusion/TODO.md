@@ -19,8 +19,12 @@ and to extend later with the other modalities/models sketched in
   network to identify the severe functional damage of nonsense truncations
   vs. missense changes."
 - **Test**: does the same biophysical branch improve BIG-TB's DNA CNN on
-  binary resistance classification? Start with Isoniazid (katG+inhA) and
-  Rifampicin (rpoB) — one multi-locus gene pair, one single-locus gene.
+  binary resistance classification? Start with Isoniazid (inhA+katG) and
+  Rifampicin (rpoB+rpoC) — both are multi-locus in BIG-TB's `DRUG_TO_LOCI`
+  (corrected 2026-07-02: an earlier note called Rifampicin single-locus, but
+  the reference map pairs rpoB with rpoC, matching Kulkarni's own
+  rpoB/rpoC example). Single-locus drugs in the map are e.g. Pyrazinamide
+  (pncA) / Kanamycin (rrs) if a true single-gene case is wanted.
 - Secondary goal (per experimental_plan.pdf): stand up a modality/model
   foundation general enough that later experiments — lineage vectors,
   richer protein features, cross-attention fusion, late-fusion with
@@ -40,14 +44,17 @@ and to extend later with the other modalities/models sketched in
 
 ## 3. Blocker to resolve before any real training run
 
-No genotype/phenotype data exists in this checkout — `dna-tasks/data/genotype/`
-and `dna-tasks/data/phenotype/` are literally placeholder files ("Download
-this data"), and `protein-tasks/` scripts hardcode
+Reference code is now present (updated 2026-07-02): the `Big-TB-benchmark/`
+tree is populated, so `bigtb_ref.py` imports `tb_cnn_codebase` for real and
+the smoke test runs (see Phase 4). What's still missing is the real
+**genotype/phenotype data** — `dna-tasks/data/genotype/` and
+`dna-tasks/data/phenotype/master_resistance_table.csv` are still placeholder
+files ("Download this data"), and `protein-tasks/` scripts hardcode
 `/project/pi_annagreen_umass_edu/mahbuba/Data-Curation-for-MTB/...` (an HPC
-path we don't have here). **We cannot validate any pipeline end-to-end
-without either cluster access or a synthetic fixture set.** Plan: build a
-small synthetic-data generator first (see Phase 0) so the pipeline and model
-shapes can be verified locally, then run for real on the cluster.
+path we don't have here). **We cannot validate any pipeline end-to-end on
+*real* data without cluster access; the synthetic fixture set (Phase 0) lets
+us verify pipeline + model shapes locally in the meantime.** Real runs move
+to the cluster once Unity access lands (§5.8).
 
 ## 4. Foundation build order
 
@@ -101,8 +108,19 @@ directly for class weighting and sens/spec threshold search.
 
 **Smoke test: `run_experiment.py`.** Runs the full Phase 0→4 pipeline
 against synthetic data for all three models — confirms the wiring works,
-numbers are meaningless (random data, 5 epochs). Verified passing
-2026-07-01.
+numbers are meaningless (random data, 5 epochs). Re-verified passing
+2026-07-02 in the `abr_env` conda env now that `Big-TB-benchmark/` is
+populated (all three models train + score without error; example run:
+`dna_X (60, 5, 240)`, `bio_Xs rpoB (60,3,20) / rpoC (60,3,31)`).
+
+**Model data-flow diagrams: `gen_model_diagrams.py` → `diagrams/`.** Added
+2026-07-02. Traces every step of each model's forward pass on dummy tensors
+and emits both a `.csv` (step / stage / operation / notes / output_shape)
+and an editable `.svg` (colored flowchart, one grouped box per step) for
+`late_fusion`, `early_fusion`, `cross_attention_fusion`. The final logits
+shape in each is asserted against the model's real output, so the diagrams
+can't silently drift from `models.py`. Shapes use a representative
+Rifampicin scenario (rpoB+rpoC); regenerate after any `models.py` change.
 
 **Phase 5 — first experiment (blocked on real data, see #8).**
 Run Isoniazid + Rifampicin, DNA-only baseline vs. DNA+biophysical, compare.
@@ -111,11 +129,18 @@ Run Isoniazid + Rifampicin, DNA-only baseline vs. DNA+biophysical, compare.
 Only after Phase 5 has a result: slot in the next modality from
 `experimental_plan.pdf` (lineage vector is the cheapest next one).
 
-### New dependencies installed locally
-`biopython`, `sparse`, `ipdb` — needed to import `tb_cnn_codebase.py`
-as-is for reuse (it pulls in `Bio.SeqIO`, `sparse`, `ipdb` at module level
-even though we only use a handful of its functions). `torch` and
-`tensorflow` were already present.
+### Environment (updated 2026-07-02)
+Project env is the **`abr_env` conda env** — use it for all Python here
+(`conda activate abr_env`; base miniforge env has no torch). It has
+Python 3.12 and `torch 2.6.0+cu124` with working GPU (`cuda.is_available()`
+True on the machine's NVIDIA RTX 2080 Ti, Turing sm_75). Also installed, all
+needed to import `tb_cnn_codebase.py` as-is (it pulls in `Bio.SeqIO`,
+`sparse`, `ipdb`, `h5py`, `yaml`, and `tensorflow` at module level even
+though we only use a handful of its functions): `numpy`, `pandas`,
+`scikit-learn`, `biopython`, `sparse`, `ipdb`, `h5py`, `pyyaml`,
+`tensorflow` (CPU build — the reused utilities don't need GPU TF, and CPU
+avoids CUDA-library conflicts with torch's cu124 wheels; the actual GPU
+training runs through PyTorch).
 
 ## 5. Design decisions
 

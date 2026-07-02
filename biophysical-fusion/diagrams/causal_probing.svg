@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1220" height="700" viewBox="0 0 1220 700" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<defs><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0b1420" flood-opacity="0.20"/></filter><marker id="arw" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b8794"/></marker><marker id="arwR" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#c0453b"/></marker><marker id="arwP" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b5ea7"/></marker></defs>
+<rect width="1220" height="700" fill="#fbfcfd"/>
+<text x="34" y="46" font-size="23" font-weight="700" fill="#1f2933">Causal Interpretability via Latent Probing</text>
+<text x="34" y="71" font-size="13.5" fill="#52606d">Inject a canonical-variant latent into a FROZEN model and read the change in prediction — a causal probe, not correlational SHAP</text>
+<rect x="290.0" y="100" width="280" height="54" rx="11" fill="#5c6b7a" filter="url(#sh)"/>
+<text x="430" y="132.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Genotype features</text>
+<rect x="290.0" y="188" width="280" height="78" rx="11" fill="#ffffff" stroke="#d7dee6" stroke-width="1.2" filter="url(#sh)"/>
+<path d="M290.0,218 L290.0,199 Q290.0,188 301.0,188 L559.0,188 Q570.0,188 570.0,199 L570.0,218 Z" fill="#5b6670"/>
+<rect x="299.0" y="202" width="12" height="9" rx="1.6" fill="#ffffff"/>
+<path d="M301.5,202 v-2.5 a3.5,3.5 0 0 1 7,0 v2.5" fill="none" stroke="#ffffff" stroke-width="1.6"/>
+<text x="439" y="208" font-size="13.5" font-weight="700" fill="#ffffff" text-anchor="middle">Frozen encoder</text>
+<text x="305.0" y="237" font-size="11.5" fill="#52606d">weights fixed (already trained)</text>
+<rect x="305.0" y="310" width="250" height="56" rx="11" fill="#7b5ea7" filter="url(#sh)"/>
+<text x="430" y="343.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Latent  z</text>
+<circle cx="555" cy="338" r="11" fill="#ffffff" stroke="#7b5ea7" stroke-width="2"/>
+<path d="M550,338 h10 M555,333 v10" stroke="#7b5ea7" stroke-width="2"/>
+<rect x="290.0" y="420" width="280" height="70" rx="11" fill="#ffffff" stroke="#d7dee6" stroke-width="1.2" filter="url(#sh)"/>
+<path d="M290.0,450 L290.0,431 Q290.0,420 301.0,420 L559.0,420 Q570.0,420 570.0,431 L570.0,450 Z" fill="#5b6670"/>
+<rect x="299.0" y="434" width="12" height="9" rx="1.6" fill="#ffffff"/>
+<path d="M301.5,434 v-2.5 a3.5,3.5 0 0 1 7,0 v2.5" fill="none" stroke="#ffffff" stroke-width="1.6"/>
+<text x="439" y="440" font-size="13.5" font-weight="700" fill="#ffffff" text-anchor="middle">Frozen prediction head</text>
+<text x="305.0" y="469" font-size="11.5" fill="#52606d">weights fixed</text>
+<rect x="290.0" y="540" width="280" height="54" rx="11" fill="#0f9d8f" filter="url(#sh)"/>
+<text x="430" y="572.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Prediction  y-hat</text>
+<rect x="760.0" y="196" width="300" height="74" rx="11" fill="#7b5ea7" filter="url(#sh)"/>
+<text x="910" y="229.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Canonical variant bank</text>
+<text x="910" y="247.0" font-size="11" fill="#eef2f6" text-anchor="middle">sparse ref-alt latent per variant</text>
+<polyline points="430.0,154.0 430.0,187.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="430.0,266.0 430.0,309.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="430.0,366.0 430.0,419.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="430.0,490.0 430.0,539.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="910.0,270.0 910.0,338.0 568.0,338.0" fill="none" stroke="#7b5ea7" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arwP)"/>
+<text x="900" y="300" font-size="11.5" font-weight="600" fill="#7b5ea7" text-anchor="end">inject variant latent (intervention)</text>
+<rect x="760" y="400" width="420" height="105" rx="9" fill="#7b5ea7" fill-opacity="0.08" stroke="#7b5ea7" stroke-opacity="0.35"/>
+<text x="774" y="422" font-size="12" fill="#1f2933">Compare y-hat to the un-injected baseline:</text>
+<text x="774" y="439" font-size="12" fill="#1f2933">   Δy-hat  =  causal effect of that variant.</text>
+<text x="774" y="456" font-size="12" fill="#1f2933">Read-only — no weights updated.</text>
+<text x="774" y="473" font-size="12" fill="#1f2933">Contrast SHAP, which is correlational and</text>
+<text x="774" y="490" font-size="12" fill="#1f2933">confounded by co-resistance to other drugs.</text>
+</svg>

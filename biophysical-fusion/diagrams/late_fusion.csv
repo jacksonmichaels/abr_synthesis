@@ -1,0 +1,27 @@
+step,stage,operation,notes,output_shape
+1,input,DNA one-hot (genes concatenated),one contiguous locus,B x 5 x 240
+2,input,Biophysical matrix — rpoB,separate channel,B x 3 x 78
+3,input,Biophysical matrix — rpoC,separate channel,B x 3 x 66
+4,DNA branch,Conv1d 1x1 (stem) + ReLU,5->64 channels,B x 64 x 240
+5,DNA branch,Conv1d k=12 pad=6 + ReLU,"64 filters, length +1",B x 64 x 241
+6,DNA branch,MaxPool1d /3,length // 3,B x 64 x 80
+7,DNA branch,Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 80
+8,DNA branch,Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 80
+9,DNA branch,MaxPool1d /3,length // 3,B x 32 x 26
+10,DNA branch,Flatten,,B x 832
+11,Bio branch (rpoB),Conv1d 1x1 (stem) + ReLU,3->64 channels,B x 64 x 78
+12,Bio branch (rpoB),Conv1d k=12 pad=6 + ReLU,"64 filters, length +1",B x 64 x 79
+13,Bio branch (rpoB),MaxPool1d /3,length // 3,B x 64 x 26
+14,Bio branch (rpoB),Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 26
+15,Bio branch (rpoB),Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 26
+16,Bio branch (rpoB),MaxPool1d /3,length // 3,B x 32 x 8
+17,Bio branch (rpoB),Flatten,,B x 256
+18,Bio branch (rpoC),Conv1d 1x1 (stem) + ReLU,3->64 channels,B x 64 x 66
+19,Bio branch (rpoC),Conv1d k=12 pad=6 + ReLU,"64 filters, length +1",B x 64 x 67
+20,Bio branch (rpoC),MaxPool1d /3,length // 3,B x 64 x 22
+21,Bio branch (rpoC),Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 22
+22,Bio branch (rpoC),Conv1d k=3 pad=1 + ReLU,"32 filters, length kept",B x 32 x 22
+23,Bio branch (rpoC),MaxPool1d /3,length // 3,B x 32 x 7
+24,Bio branch (rpoC),Flatten,,B x 224
+25,fusion,"Concatenate [DNA, bio...]",late concat,B x 1312
+26,head,DenseHead 256->256->out,,B x 1

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1340" height="620" viewBox="0 0 1340 620" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<defs><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0b1420" flood-opacity="0.20"/></filter><marker id="arw" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b8794"/></marker><marker id="arwR" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#c0453b"/></marker><marker id="arwP" markerWidth="12" markerHeight="12" refX="7.5" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#7b5ea7"/></marker></defs>
+<rect width="1340" height="620" fill="#fbfcfd"/>
+<text x="34" y="46" font-size="23" font-weight="700" fill="#1f2933">Staged Training with Frozen Encoders</text>
+<text x="34" y="71" font-size="13.5" fill="#52606d">Pretrain sequence encoders -&gt; freeze them -&gt; add the lineage branch and train only the fusion head</text>
+<rect x="40" y="108" width="380" height="440" rx="14" fill="#ffffff" stroke="#2f8f4e" stroke-width="1.4" stroke-opacity="0.5"/>
+<rect x="40" y="108" width="380" height="34" rx="14" fill="#2f8f4e" fill-opacity="0.14"/>
+<rect x="40" y="128" width="380" height="14" fill="#ffffff"/>
+<text x="230.0" y="130" font-size="14" font-weight="700" fill="#2f8f4e" text-anchor="middle">Stage 1 — pretrain encoders</text>
+<rect x="105.0" y="200" width="250" height="74" rx="11" fill="#2f8f4e" filter="url(#sh)"/>
+<text x="230" y="233.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">DNA encoder</text>
+<text x="230" y="251.0" font-size="11" fill="#eef2f6" text-anchor="middle">trained on sequences</text>
+<rect x="285.6" y="189" width="75.4" height="21" rx="10.5" fill="#2f8f4e" stroke="#ffffff" stroke-width="1.4"/>
+<text x="323.3" y="203.5" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">trainable</text>
+<rect x="105.0" y="330" width="250" height="74" rx="11" fill="#2f8f4e" filter="url(#sh)"/>
+<text x="230" y="363.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Protein encoder</text>
+<text x="230" y="381.0" font-size="11" fill="#eef2f6" text-anchor="middle">trained on sequences</text>
+<rect x="285.6" y="319" width="75.4" height="21" rx="10.5" fill="#2f8f4e" stroke="#ffffff" stroke-width="1.4"/>
+<text x="323.3" y="333.5" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">trainable</text>
+<text x="230" y="470" font-size="11.5" fill="#52606d" text-anchor="middle">each learns its own sequence representation</text>
+<rect x="460" y="108" width="380" height="440" rx="14" fill="#ffffff" stroke="#5b6670" stroke-width="1.4" stroke-opacity="0.5"/>
+<rect x="460" y="108" width="380" height="34" rx="14" fill="#5b6670" fill-opacity="0.14"/>
+<rect x="460" y="128" width="380" height="14" fill="#ffffff"/>
+<text x="650.0" y="130" font-size="14" font-weight="700" fill="#5b6670" text-anchor="middle">Stage 2 — freeze</text>
+<rect x="525.0" y="200" width="250" height="74" rx="11" fill="#5b6670" filter="url(#sh)"/>
+<text x="650" y="233.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">DNA encoder</text>
+<text x="650" y="251.0" font-size="11" fill="#eef2f6" text-anchor="middle">weights locked</text>
+<rect x="725.4" y="189" width="55.599999999999994" height="21" rx="10.5" fill="#5b6670" stroke="#ffffff" stroke-width="1.4"/>
+<text x="753.1999999999999" y="203.5" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">frozen</text>
+<rect x="525.0" y="330" width="250" height="74" rx="11" fill="#5b6670" filter="url(#sh)"/>
+<text x="650" y="363.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Protein encoder</text>
+<text x="650" y="381.0" font-size="11" fill="#eef2f6" text-anchor="middle">weights locked</text>
+<rect x="725.4" y="319" width="55.599999999999994" height="21" rx="10.5" fill="#5b6670" stroke="#ffffff" stroke-width="1.4"/>
+<text x="753.1999999999999" y="333.5" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">frozen</text>
+<text x="650" y="470" font-size="11.5" fill="#52606d" text-anchor="middle">latents reused, no longer updated</text>
+<rect x="880" y="108" width="420" height="440" rx="14" fill="#ffffff" stroke="#7b5ea7" stroke-width="1.4" stroke-opacity="0.5"/>
+<rect x="880" y="108" width="420" height="34" rx="14" fill="#7b5ea7" fill-opacity="0.14"/>
+<rect x="880" y="128" width="420" height="14" fill="#ffffff"/>
+<text x="1090.0" y="130" font-size="14" font-weight="700" fill="#7b5ea7" text-anchor="middle">Stage 3 — fuse and train heads</text>
+<rect x="895.0" y="180" width="120" height="64" rx="11" fill="#5b6670" filter="url(#sh)"/>
+<text x="955" y="217.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">DNA enc</text>
+<rect x="1030.0" y="180" width="120" height="64" rx="11" fill="#5b6670" filter="url(#sh)"/>
+<text x="1090" y="217.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Protein enc</text>
+<rect x="1165.0" y="180" width="120" height="64" rx="11" fill="#3f7cac" filter="url(#sh)"/>
+<text x="1225" y="217.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Lineage</text>
+<rect x="1242.0" y="169" width="49.0" height="21" rx="10.5" fill="#3f7cac" stroke="#ffffff" stroke-width="1.4"/>
+<text x="1266.5" y="183.5" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">train</text>
+<rect x="940.0" y="300" width="300" height="46" rx="11" fill="#7b5ea7" filter="url(#sh)"/>
+<text x="1090" y="328.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Concatenate latents</text>
+<rect x="940.0" y="380" width="300" height="60" rx="11" fill="#324a5f" filter="url(#sh)"/>
+<text x="1090" y="406.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">Dense head</text>
+<text x="1090" y="424.0" font-size="11" fill="#eef2f6" text-anchor="middle">only this is trained now</text>
+<rect x="980.0" y="480" width="220" height="46" rx="11" fill="#0f9d8f" filter="url(#sh)"/>
+<text x="1090" y="508.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">ABR prediction</text>
+<polyline points="955.0,244.0 955.0,278.0 1090.0,278.0 1090.0,299.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="1090.0,244.0 1090.0,278.0 1090.0,278.0 1090.0,299.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="1225.0,244.0 1225.0,278.0 1090.0,278.0 1090.0,299.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="1090.0,346.0 1090.0,379.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="1090.0,440.0 1090.0,479.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="424.0,328.0 456.0,328.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<polyline points="844.0,328.0 876.0,328.0" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#arw)"/>
+<text x="440" y="318" font-size="11" font-weight="600" fill="#52606d" text-anchor="middle">freeze</text>
+<text x="860" y="318" font-size="11" font-weight="600" fill="#52606d" text-anchor="middle">reuse</text>
+</svg>

@@ -60,8 +60,11 @@ def make_phenotype_fixture(phenotype_csv, isolate_ids, drugs, seed=0, missing_fr
     return phenotype_csv
 
 
-def build_fixture_dataset(root, genes, drugs, n_isolates=60, n_codons=40, seed=0):
+def build_fixture_dataset(root, genes, drugs, n_isolates=60, n_codons=40, seed=0,
+                          regulatory_regions=()):
     """Write a synthetic genotype dir + phenotype csv under `root`.
+    Regulatory-region FASTAs (if any) are written into the same dir with the
+    same aligned layout, so the regulatory modality has data to load.
     Returns (genotype_dir, phenotype_csv)."""
     root = Path(root)
     genotype_dir = root / "genotype"
@@ -69,6 +72,10 @@ def build_fixture_dataset(root, genes, drugs, n_isolates=60, n_codons=40, seed=0
     isolate_ids = [f"ISO{idx:04d}" for idx in range(n_isolates)]
     for i, gene in enumerate(genes):
         make_gene_fixture(genotype_dir, gene, isolate_ids, n_codons=n_codons, seed=seed + i)
+    # regulatory/promoter regions: shorter aligned sequences, same convention
+    for j, region in enumerate(sorted(set(regulatory_regions))):
+        make_gene_fixture(genotype_dir, region, isolate_ids,
+                          n_codons=max(6, n_codons // 4), seed=seed + 100 + j)
     phenotype_csv = root / "phenotype.csv"
     make_phenotype_fixture(phenotype_csv, isolate_ids, drugs, seed=seed)
     return genotype_dir, phenotype_csv

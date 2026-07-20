@@ -58,6 +58,130 @@ class DenseHead(nn.Module):
         return self.fc_out(x)  # (B, out_dim) logits
 
 
+class DNAOnlyCNN(nn.Module):
+    """DNA-only 1D CNN baseline — no biophysical branch. This is BIG-TB's
+    SD-CNN in spirit (one-hot DNA -> conv stack -> dense head) and the
+    control the biophysical-fusion models are measured against (TODO.md
+    Phase 5). Shares ConvBranch/DenseHead with the fusion models so the only
+    difference from LateFusionCNN is the absence of the bio branches.
+
+    Accepts (and ignores) bio_lens / bio_xs so it is a drop-in for the same
+    training harness as the fusion models."""
+
+    bio_input = "none"
+
+    def __init__(self, dna_len, bio_lens=None, n_drugs=1, dna_channels=5):
+        super().__init__()
+        self.dna_branch = ConvBranch(dna_channels)
+        dna_flat = self.dna_branch.out_channels * self.dna_branch.out_len(dna_len)
+        self.head = DenseHead(dna_flat, out_dim=n_drugs)
+
+    def forward(self, dna_x, bio_xs=None):
+        d = torch.flatten(self.dna_branch(dna_x), 1)
+        return self.head(d)
+
+
+# ---------------------------------------------------------------------------
+# Per-branch encoders. Each maps one (B, C, L) block to a flat (B, F) feature
+# vector and exposes `out_features`. The registry lets each modality pick its
+# own architecture (see MultiModalNet / train_multimodal / run_experiment).
+# ---------------------------------------------------------------------------
+
+class CNNEncoder(nn.Module):
+    """1D-CNN branch encoder: the ConvBranch conv stack, flattened. This is the
+    original per-branch model (what every branch used before encoders existed).
+    Strong local motif detector — a good default for DNA/regulatory/biophysical."""
+
+    kind = "cnn"
+
+    def __init__(self, in_channels, length):
+        super().__init__()
+        self.branch = ConvBranch(in_channels)
+        self.out_features = self.branch.out_channels * self.branch.out_len(length)
+
+    def forward(self, x):
+        return torch.flatten(self.branch(x), 1)
+
+
+class TransformerEncoder(nn.Module):
+    """Patch-embedding Transformer branch encoder. A strided conv chunks the
+    (B, C, L) input into ~L/patch tokens (ViT-style patch embedding, which keeps
+    self-attention tractable on long genomic sequences), adds a learned
+    positional embedding, runs a small Transformer encoder, and mean-pools the
+    tokens. Models long-range interactions between distant positions (e.g.
+    epistatic residue pairs) that a local CNN can miss — a candidate for the
+    protein branch."""
+
+    kind = "transformer"
+
+    def __init__(self, in_channels, length, d_model=64, nhead=4, layers=2,
+                 dim_ff=128, patch=9, dropout=0.1):
+        super().__init__()
+        patch = max(1, min(patch, length))
+        self.tokenize = nn.Conv1d(in_channels, d_model, kernel_size=patch, stride=patch)
+        n_tokens = max(1, (length - patch) // patch + 1)
+        self.pos = nn.Parameter(torch.zeros(1, n_tokens, d_model))
+        nn.init.trunc_normal_(self.pos, std=0.02)
+        layer = nn.TransformerEncoderLayer(d_model, nhead, dim_ff, dropout=dropout,
+                                           batch_first=True)
+        self.encoder = nn.TransformerEncoder(layer, layers)
+        self.out_features = d_model
+
+    def forward(self, x):
+        t = self.tokenize(x).transpose(1, 2)       # (B, n_tokens, d_model)
+        t = t + self.pos[:, :t.shape[1], :]
+        t = self.encoder(t)
+        return t.mean(dim=1)                        # (B, d_model)
+
+
+ENCODERS = {"cnn": CNNEncoder, "transformer": TransformerEncoder}
+
+
+class MultiModalNet(nn.Module):
+    """Generic late-fusion network with a PER-BRANCH choice of encoder.
+
+    Takes one ``(in_channels, length)`` spec per feature block — DNA (5ch),
+    per-gene protein (20ch), per-gene biophysical (3ch), per-region regulatory
+    (5ch), in any combination — and one encoder key per block (`encoder_types`,
+    from ENCODERS). Each block is encoded independently, all feature vectors are
+    concatenated, and a shared dense head maps the fused vector to the drug
+    logits. This is how 'DNA uses a CNN, protein uses a Transformer' is
+    expressed: the trainer resolves a per-modality choice into this per-block
+    list. All-CNN reproduces the previous behavior exactly."""
+
+    bio_input = "blocks"  # forward takes the list of block tensors as-is
+
+    def __init__(self, branch_specs, encoder_types=None, n_drugs=1):
+        super().__init__()
+        if not branch_specs:
+            raise ValueError("MultiModalNet needs at least one branch spec")
+        if encoder_types is None:
+            encoder_types = ["cnn"] * len(branch_specs)
+        if len(encoder_types) != len(branch_specs):
+            raise ValueError("encoder_types must match branch_specs length")
+        unknown = [t for t in encoder_types if t not in ENCODERS]
+        if unknown:
+            raise ValueError(f"unknown encoder(s) {unknown}; available: {list(ENCODERS)}")
+        self.encoders = nn.ModuleList(
+            ENCODERS[t](c, l) for t, (c, l) in zip(encoder_types, branch_specs))
+        self.encoder_types = list(encoder_types)
+        total = sum(e.out_features for e in self.encoders)
+        self.head = DenseHead(total, out_dim=n_drugs)
+
+    def forward(self, xs):
+        """xs: list of (B, C_i, L_i) tensors, same order as branch_specs."""
+        feats = [enc(x) for enc, x in zip(self.encoders, xs)]
+        return self.head(torch.cat(feats, dim=1) if len(feats) > 1 else feats[0])
+
+
+class MultiModalCNN(MultiModalNet):
+    """All-CNN MultiModalNet (one ConvBranch per block) — the previous default,
+    kept for backward compatibility."""
+
+    def __init__(self, branch_specs, n_drugs=1):
+        super().__init__(branch_specs, ["cnn"] * len(branch_specs), n_drugs)
+
+
 class LateFusionCNN(nn.Module):
     """Default fusion (decision #2), matches Kulkarni et al. 2026's Model
     design and training Methods exactly: DNA branch and one biophysical

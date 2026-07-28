@@ -2,3 +2,4 @@
 *__pycache__/
 biophysical-fusion/results/
 *slurm_logs*
+regulatory_msa/

@@ -5,22 +5,23 @@ per region.
 
 Per-drug regions come from the **WHO 2023 catalogue** (`who_catalogue.py`,
 Tables 21 & 22). The default set for a drug is its WHO Table-21 candidate genes
-**minus its primary coding loci** (`DRUG_TO_LOCI`) — i.e. the extra candidate
-loci that carry the promoter/upstream signal. This reproduces the previous
-hand-picked default (fabG1 for isoniazid & ethionamide — the fabG1–inhA operon
-promoter) and extends it from the catalogue (e.g. eis for kanamycin — the eis
-promoter). Where WHO Table 22 gives an explicit upstream region + TSS for a
-region, that is attached to the block as metadata.
+that also have a **Table-22 promoter entry** — i.e. every candidate for which
+WHO delimits an upstream/promoter region. Genes with no Table-22 region are not
+regulatory (WHO specifies no upstream window for them).
 
-Only regions whose aligned `{region}.fasta` is present are loaded; the rest are
-skipped, and if a drug has no available region the modality yields nothing and
-the loader drops it. Note: this loads the aligned *locus* as the regulatory
-input (as the previous fabG1 default did); true promoter-coordinate slicing
-using the stored Table-22 region/TSS is a future refinement.
+Each region's `{region}.fasta` is the per-isolate MSA of the **Table-22 promoter
+window** (the upstream coordinates + 30 bp flank), extracted separately from the
+BIG-TB VCFs into a dedicated dir (``bigtb_ref.REAL_REGULATORY_DIR``, built by
+``regulatory_msa/{build_promoter_coords,submit_promoter_msa}.py``). So a region
+named e.g. ``embA`` here is the *embA promoter* (the embC–embA intergenic
+window), NOT the embA CDS — it is disjoint from the coding sequence the DNA /
+protein branches already model, keeping the modalities' information separate.
+
+Only regions whose FASTA is present are loaded; the rest are skipped, and if a
+drug has no available region the modality yields nothing and the loader drops it.
 """
 from typing import List
 
-from bigtb_ref import tb
 from . import who_catalogue as who
 from .base import FeatureBlock, LoadContext, Modality
 from .sequences import NT_CHANNELS, load_sequence_df, one_hot_nt, stack_padded
@@ -36,15 +37,17 @@ DRUG_NAME_TO_WHO = {
 
 
 def _regulatory_default(drug):
-    """WHO Table-21 candidate genes for the drug, excluding its primary coding
-    loci — the extra candidate/regulatory loci for that drug. Availability on
-    disk is filtered later, at load time."""
+    """WHO Table-21 candidate genes for the drug that have a WHO Table-22
+    promoter region — the loci for which the catalogue delimits an upstream
+    window. Includes primary-gene promoters (e.g. katG/inhA promoters for INH):
+    the promoter window is upstream and disjoint from the CDS, so it is still
+    information separate from the DNA/protein branches. Availability on disk is
+    filtered later, at load time."""
     abbrev = DRUG_NAME_TO_WHO.get(drug.upper())
     if abbrev is None or abbrev not in who.TABLE_21:
         return []
-    coding = set(tb.DRUG_TO_LOCI.get(drug.upper(), []))
     genes = [g for g, _rv in who.genes_for_drug(abbrev)]
-    return list(dict.fromkeys(g for g in genes if g not in coding))
+    return list(dict.fromkeys(g for g in genes if g in who.TABLE_22))
 
 
 # drug -> default regulatory regions (WHO-derived). Override per call via

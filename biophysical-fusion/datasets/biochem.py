@@ -14,29 +14,33 @@ Swap the three dicts below for Kulkarni's real table once we have it; the
 translation / featurization logic does not change.
 """
 import numpy as np
+from Bio.Data import CodonTable
+from Bio.Seq import Seq
 
 AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
 AA_TO_INDEX = {a: i for i, a in enumerate(AMINO_ACIDS)}
 
+# --- RDKit-derived amino-acid properties (paste into datasets/biochem.py) ---
+
 _MW = {
-    "A": 71.0788, "R": 156.1875, "N": 114.1038, "D": 115.0886, "C": 103.1388,
-    "Q": 128.1307, "E": 129.1155, "G": 57.0519, "H": 137.1411, "I": 113.1594,
-    "L": 113.1594, "K": 128.1741, "M": 131.1926, "F": 147.1766, "P": 97.1167,
-    "S": 87.0782, "T": 101.1051, "W": 186.2132, "Y": 163.1760, "V": 99.1326,
-}
+    "A": 71.079, "C": 103.146, "D": 115.088, "E": 129.115, "F": 147.177,
+    "G": 57.052, "H": 137.142, "I": 113.16, "K": 128.175, "L": 113.16,
+    "M": 131.2, "N": 114.104, "P": 97.117, "Q": 128.131, "R": 156.189,
+    "S": 87.078, "T": 101.105, "V": 99.133, "W": 186.214, "Y": 163.176
+} 
 
 _PI = {
-    "A": 6.00, "R": 10.76, "N": 5.41, "D": 2.77, "C": 5.07,
-    "Q": 5.65, "E": 3.22, "G": 5.97, "H": 7.59, "I": 6.02,
-    "L": 5.98, "K": 9.74, "M": 5.74, "F": 5.48, "P": 6.30,
-    "S": 5.68, "T": 5.60, "W": 5.89, "Y": 5.66, "V": 5.96,
-}
+    "A": 5.97, "C": 5.32, "D": 2.99, "E": 3.29, "F": 5.97, "G": 5.97,
+    "H": 7.8, "I": 5.97, "K": 10.07, "L": 5.97, "M": 5.97, "N": 5.97,
+    "P": 5.97, "Q": 5.97, "R": 11.04, "S": 5.97, "T": 5.97, "V": 5.97,
+    "W": 5.97, "Y": 5.91
+} 
 
 _HYDRO_EISENBERG = {
-    "A": 0.62, "R": -2.53, "N": -0.78, "D": -0.90, "C": 0.29,
-    "Q": -0.85, "E": -0.74, "G": 0.48, "H": -0.40, "I": 1.38,
-    "L": 1.06, "K": -1.50, "M": 0.64, "F": 1.19, "P": 0.12,
-    "S": -0.18, "T": -0.05, "W": 0.81, "Y": 0.26, "V": 1.08,
+    "A": -0.582, "C": -0.672, "D": -1.127, "E": -0.737, "F": 0.641,
+    "G": -0.97, "H": -0.636, "I": 0.444, "K": -0.473, "L": 0.444, "M": 0.151,
+    "N": -1.726, "P": -0.177, "Q": -1.336, "R": -1.338, "S": -1.609,
+    "T": -1.221, "V": 0.054, "W": 1.122, "Y": 0.347
 }
 
 PROPERTY_NAMES = ("molecular_weight", "isoelectric_point", "hydrophobicity")
@@ -59,11 +63,15 @@ AA_PROPERTY = {
 }
 N_PROPERTIES = len(PROPERTY_NAMES)
 
-# Standard genetic code (DNA codons -> single-letter AA, '*' = stop).
-_bases = "TCAG"
-_codons = [b1 + b2 + b3 for b1 in _bases for b2 in _bases for b3 in _bases]
-_aas = "FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG"
-CODON_TABLE = dict(zip(_codons, _aas))
+# Standard genetic code (NCBI translation table 1), sourced from Biopython
+# rather than hand-typed: forward_table maps each sense codon -> single-letter
+# AA, and the three stop codons are added as '*'. Same DNA-codon -> AA mapping
+# as before, now from a validated reference.
+_STANDARD_CODE = CodonTable.unambiguous_dna_by_id[1]
+CODON_TABLE = {
+    **_STANDARD_CODE.forward_table,
+    **{codon: "*" for codon in _STANDARD_CODE.stop_codons},
+}
 
 
 def translate_codon(codon: str) -> str:
@@ -82,15 +90,18 @@ def translate_seq(aligned_nt_seq: str) -> str:
     before translating (so an indel shifts the reading frame downstream, like a
     real frameshift), and translation stops at the first stop codon, truncating
     the protein exactly like a real nonsense mutation would.
+
+    Translation itself goes through Biopython's ``Seq.translate`` (NCBI standard
+    code, ``to_stop=True``) — the validated engine — rather than a hand-rolled
+    loop. Any trailing 1-2 nt that don't complete a codon are dropped; ambiguous
+    codons (e.g. containing N) become 'X', which the downstream featurizers treat
+    as an unknown residue (zero column).
     """
     degapped = aligned_nt_seq.replace("-", "")
-    aa = []
-    for i in range(0, len(degapped) - 2, 3):
-        a = translate_codon(degapped[i:i + 3])
-        if a in ("*", "-"):
-            break
-        aa.append(a)
-    return "".join(aa)
+    whole_codons = degapped[: len(degapped) - len(degapped) % 3]
+    if not whole_codons:
+        return ""
+    return str(Seq(whole_codons).translate(to_stop=True))
 
 
 def biophysical_matrix(protein_seq: str, pad_to: int = None) -> np.ndarray:

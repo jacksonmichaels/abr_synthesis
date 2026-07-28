@@ -32,7 +32,8 @@ from pathlib import Path
 import pandas as pd
 import torch
 
-from bigtb_ref import REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, tb
+from bigtb_ref import (REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
+                       REAL_REGULATORY_DIR, tb)
 from datasets import DRUG_TO_REGULATORY, MODALITIES, load_dataset
 from fixtures import build_fixture_dataset
 from models import ENCODERS
@@ -175,7 +176,7 @@ def main():
     with contextlib.ExitStack() as stack:
         if args.real:
             genotype_dir, phenotype_csv, regulatory_dir = (
-                REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, REAL_GENOTYPE_DIR)
+                REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR)
         else:
             tmp = stack.enter_context(tempfile.TemporaryDirectory())
             genotype_dir, phenotype_csv = _make_synthetic(

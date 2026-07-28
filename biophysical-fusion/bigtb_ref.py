@@ -44,3 +44,13 @@ REAL_PHENOTYPE_CSV = (
     "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
     "/phenotype_data/master_resistance_table.csv"
 )
+# Per-region promoter FASTAs for the regulatory modality — WHO Table-22 upstream
+# windows (+30 bp flank) extracted per-isolate from the BIG-TB VCFs. These are
+# DIFFERENT sequences from the coding gene FASTAs in REAL_GENOTYPE_DIR (a gene
+# name like embA/katG here is the *promoter* window, not the CDS), so the
+# regulatory branch carries information disjoint from the DNA/protein branches.
+# Built by regulatory_msa/{build_promoter_coords,submit_promoter_msa}.py. This
+# lives in the user's workspace (pi_annagreen is read-only for us).
+REAL_REGULATORY_DIR = (
+    "/home/jacksonmicha_umass_edu/abr_workspace/regulatory_msa/aligned"
+)

@@ -122,6 +122,25 @@ encoders are printed and recorded in each result JSON. Add a new architecture by
 registering it in `models.ENCODERS` — nothing else changes. All-CNN reproduces
 the previous behavior exactly, so existing results are unaffected.
 
+### Running many jobs on SLURM
+
+`scripts/sbatch_all_runs.py` submits **one sbatch job per (experiment × drug)**,
+so each run gets its own `--mem`/GPU allocation and a single-drug memory
+footprint — that isolation is what stops runs from crashing each other (the
+all-drugs-in-one-process host-RAM growth that OOM-killed an interactive
+`--drugs all`). Experiments (modality/encoder configs) are defined in the
+`EXPERIMENTS` dict at the top of the script; all its per-drug jobs share one
+`--run-name` folder.
+
+```bash
+python scripts/sbatch_all_runs.py --dry_run                       # print scripts, submit nothing
+python scripts/sbatch_all_runs.py --experiments dna --drugs all   # DNA baseline, every drug
+python scripts/sbatch_all_runs.py --mem 48G --time 06:00:00       # full sweep (all experiments × drugs)
+```
+Tune `--mem / --gpus / --time / --partition / --constraint` for the cluster.
+Note: batch size caps **GPU** memory; the `Killed` OOM was **host** RAM during
+data loading, which `--mem` (per isolated job) is what actually addresses.
+
 ### Live monitoring
 
 Add `--tb`, then:

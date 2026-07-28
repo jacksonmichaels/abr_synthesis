@@ -46,11 +46,21 @@ class ConvBranch(nn.Module):
 
 
 class DenseHead(nn.Module):
-    def __init__(self, in_features, out_dim=1, hidden=256):
+    def __init__(self, in_features, out_dim=1, hidden=256, out_bias=None):
         super().__init__()
         self.fc1 = nn.Linear(in_features, hidden)
         self.fc2 = nn.Linear(hidden, hidden)
         self.fc_out = nn.Linear(hidden, out_dim)
+        # Optional output-bias initialization to the class log-odds (TODO #6).
+        # sigmoid(bias) then starts at the positive-class base rate, matching the
+        # "carefully initialize the output bias" trick for imbalanced data. A
+        # constant bias shift cannot change AUC ranking — it only calibrates the
+        # initial loss / operating point. out_bias=None keeps PyTorch's default
+        # Linear bias (small uniform); baseline Keras uses a zero bias, but since
+        # neither affects ranking this difference is immaterial to AUC.
+        if out_bias is not None:
+            with torch.no_grad():
+                self.fc_out.bias.fill_(float(out_bias))
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -151,7 +161,7 @@ class MultiModalNet(nn.Module):
 
     bio_input = "blocks"  # forward takes the list of block tensors as-is
 
-    def __init__(self, branch_specs, encoder_types=None, n_drugs=1):
+    def __init__(self, branch_specs, encoder_types=None, n_drugs=1, out_bias=None):
         super().__init__()
         if not branch_specs:
             raise ValueError("MultiModalNet needs at least one branch spec")
@@ -166,7 +176,7 @@ class MultiModalNet(nn.Module):
             ENCODERS[t](c, l) for t, (c, l) in zip(encoder_types, branch_specs))
         self.encoder_types = list(encoder_types)
         total = sum(e.out_features for e in self.encoders)
-        self.head = DenseHead(total, out_dim=n_drugs)
+        self.head = DenseHead(total, out_dim=n_drugs, out_bias=out_bias)
 
     def forward(self, xs):
         """xs: list of (B, C_i, L_i) tensors, same order as branch_specs."""

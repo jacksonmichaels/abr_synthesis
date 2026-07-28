@@ -25,14 +25,63 @@ from data import concat_upsampled
 def masked_weighted_bce(logits, alpha, eps=1e-7):
     """Torch port of tb_cnn_codebase.masked_multi_weighted_bce. `alpha`
     encodes both label and class weight: positive = susceptible (weighted),
-    negative = resistant (weighted), 0 = missing (masked out)."""
+    negative = resistant (weighted), 0 = missing (masked out).
+
+    Reduction (TODO #3): the per-row masked BCE is averaged over the rows that
+    carry at least one valid label, NOT over the raw batch size. This makes the
+    loss invariant to masked (all-missing) padding rows — a batch of k valid
+    rows and the same k rows padded with all-missing rows give an identical
+    value. When no row is masked (the regime after the missing-phenotype filter
+    in run_modal_cv), this is exactly the batch mean the baseline Keras loss
+    reduces to, so it does not diverge from BIG-TB on real training data."""
     y_pred = torch.sigmoid(logits).clamp(eps, 1 - eps)
     y_true = (alpha > 0).float()
     mask = (alpha != 0).float()
     a = alpha.abs()
     bce = -a * y_true * torch.log(y_pred) - (1 - a) * (1 - y_true) * torch.log(1 - y_pred)
-    denom = mask.sum(dim=-1).clamp_min(eps)
-    return ((bce * mask).sum(dim=-1) / denom).mean()
+    valid_per_row = mask.sum(dim=-1)                       # valid labels in each row
+    per_row = (bce * mask).sum(dim=-1) / valid_per_row.clamp_min(eps)
+    n_valid_rows = (valid_per_row > 0).float().sum().clamp_min(eps)
+    return per_row.sum() / n_valid_rows
+
+
+class EarlyStopper:
+    """Validation-loss early stopping with best-weight restore (TODO #4),
+    mirroring Keras ``EarlyStopping(monitor='val_loss', patience=5,
+    min_delta=1e-4, restore_best_weights=True)`` used by BIG-TB's
+    run_SDCNN_ccp_crossval.
+
+    An epoch counts as an improvement only if its loss beats the best-so-far by
+    more than ``min_delta``. After ``patience`` consecutive non-improving epochs
+    ``step`` returns True (stop). ``restore`` loads the state_dict snapshotted at
+    the best epoch — call it whether training stopped early or ran to the epoch
+    ceiling, exactly as restore_best_weights=True does."""
+
+    def __init__(self, patience=5, min_delta=1e-4):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.best = float("inf")
+        self.best_epoch = None
+        self.num_bad = 0
+        self.best_state = None
+
+    def step(self, epoch, val_loss, model):
+        """Record ``val_loss`` for ``epoch``; snapshot weights if it improved.
+        Returns True when training should stop now."""
+        if val_loss < self.best - self.min_delta:
+            self.best = val_loss
+            self.best_epoch = epoch
+            self.num_bad = 0
+            self.best_state = {k: v.detach().cpu().clone()
+                               for k, v in model.state_dict().items()}
+            return False
+        self.num_bad += 1
+        return self.num_bad >= self.patience
+
+    def restore(self, model):
+        """Restore the weights from the best epoch (no-op if never improved)."""
+        if self.best_state is not None:
+            model.load_state_dict(self.best_state)
 
 
 def _select_bio_input(model_cls, bio_Xs, dna_len):

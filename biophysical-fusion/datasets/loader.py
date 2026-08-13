@@ -13,12 +13,13 @@ model-ready feature blocks plus labels and metadata.
 Adding a modality is a one-line entry in MODALITIES; nothing else changes.
 """
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List
 
 import numpy as np
 
 from bigtb_ref import tb
-from .base import FeatureBlock, LoadContext
+from .base import FeatureBlock, LoadContext, merge_modality_blocks
 from .biophysical import BiophysicalModality
 from .dna import DNAModality
 from .protein import ProteinModality
@@ -34,6 +35,41 @@ MODALITIES = {
 }
 
 DRUG_TO_LOCI = tb.DRUG_TO_LOCI
+
+# --- locus-set policy -------------------------------------------------------
+# Two reference codebases pick loci two different ways, and we inherited the
+# narrower one. SD-CNN uses the PER-DRUG map above; MD-CNN ignores it entirely
+# and feeds every locus in its flat `parameters/locus_order.py` (19) to every
+# drug. The one locus that differs is fabG1, which has a FASTA on disk but is
+# named by no drug in DRUG_TO_LOCI — so our multi-drug union came out at 18.
+#
+# EXTRA_LOCI is the opt-in overlay: WHO 2023 catalogue Table 21 TIER 1 genes
+# that DRUG_TO_LOCI omits. fabG1 (Rv1483) heads the fabG1-inhA operon whose
+# promoter carries the dominant non-katG isoniazid / ethionamide resistance
+# mechanism, and WHO lists it tier 1 for both. Default OFF: turning it on makes
+# a single-drug run no longer locus-matched to BIG-TB's SD-CNN, which is the
+# baseline those runs are compared against.
+EXTRA_LOCI = {"ISONIAZID": ["fabG1"], "ETHIONAMIDE": ["fabG1"]}
+
+
+def drug_loci(drug, extra=False):
+    """Gene loci for one drug: BIG-TB's DRUG_TO_LOCI, plus EXTRA_LOCI when
+    ``extra`` is set (order preserved, no duplicates)."""
+    base = list(DRUG_TO_LOCI.get(drug.upper(), []))
+    if extra:
+        base += [g for g in EXTRA_LOCI.get(drug.upper(), []) if g not in base]
+    return base
+
+
+def loci_on_disk(genotype_dir):
+    """Every locus with an aligned FASTA in ``genotype_dir``, sorted.
+
+    MD-CNN's own rule — its locus list is drug-independent, one channel per
+    curated locus — so this is what a multi-drug run should default to if the
+    goal is comparability with it. Picks up any locus curated later for free.
+    Do NOT point this at a directory that also holds regulatory windows (the
+    synthetic fixtures do): promoter regions would be read as coding loci."""
+    return sorted(p.stem for p in Path(genotype_dir).glob("*.fasta"))
 
 
 @dataclass
@@ -95,27 +131,71 @@ def _resolve(modalities):
 
 
 def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
-                 regulatory_dir=None, loci=None, regulatory_loci=None, verbose=True):
+                 regulatory_dir=None, loci=None, regulatory_loci=None,
+                 per_modality_branch=True, dna_per_locus=True,
+                 extra_loci=False, all_regulatory=False, delta=False, verbose=True):
     """Build a DrugData bundle for one drug over the requested modalities.
 
-    loci             : which gene loci to load for dna/protein/biophysical.
-                       Default = DRUG_TO_LOCI[drug] (the current behavior). Pass
-                       a subset/reordering to control which — and how many — are
-                       loaded, e.g. loci=['katG'].
-    regulatory_loci  : which regulatory regions to load. Default = the WHO-derived
-                       DRUG_TO_REGULATORY[drug]. Pass a list to override.
+    loci                : which gene loci to load for dna/protein/biophysical.
+                          Default = DRUG_TO_LOCI[drug] (the current behavior). Pass
+                          a subset/reordering to control which — and how many — are
+                          loaded, e.g. loci=['katG'].
+    regulatory_loci     : which regulatory regions to load. Default = the WHO-derived
+                          DRUG_TO_REGULATORY[drug]. Pass a list to override.
+    per_modality_branch : ONE branch per modality (default) — each modality's
+                          per-gene/per-region blocks are concatenated along length
+                          into a single branch (matches the multi-drug layout). Pass
+                          False for the older one-branch-per-gene layout.
+    extra_loci          : add the EXTRA_LOCI overlay (WHO Table 21 tier-1 genes
+                          DRUG_TO_LOCI omits — fabG1 for INH/ETO) to the default
+                          locus set. Ignored when `loci` is given explicitly.
+                          Default False: on, a run is no longer locus-matched to
+                          BIG-TB's SD-CNN.
+    all_regulatory      : keep the FULL WHO region set for the drug. By default the
+                          regions are intersected with the loaded `loci`, so a run
+                          never carries more promoter windows than coding loci —
+                          the WHO candidate list is much longer than DRUG_TO_LOCI
+                          (INH: 12 regions vs 2 loci) and most of those promoters
+                          belong to genes whose CDS is not loaded at all. Note the
+                          strictness cuts real signal in one known case: KANAMYCIN
+                          keeps only `rrs` and loses the `eis` promoter, because
+                          `eis` is not one of its coding loci. Ignored when
+                          `regulatory_loci` is given explicitly.
+    delta               : reference-difference encoding — zero every column that
+                          matches the H37Rv reference, in every modality (see
+                          datasets/sequences.py). Shape, channels and alphabet are
+                          unchanged; what goes is the ~99.9% of each sequence that
+                          is identical in every isolate and therefore carries no
+                          discriminative signal. Default False (it changes the
+                          input, so it is not comparable to an existing run).
+    dna_per_locus       : only when per_modality_branch=False — emit one DNA block
+                          per locus instead of one concatenated DNA block. Mirrors
+                          load_multidrug_dataset. Needed by the mdcnn architecture,
+                          which stacks loci as channels and so must SEE them
+                          separately; with it False, DNA stays one block even in
+                          the per-locus layout (what this loader used to do).
     Requested loci with no FASTA on disk are skipped (warned when explicit)."""
     drug = drug.upper()
     modalities = _resolve(modalities)
     regulatory_dir = regulatory_dir or genotype_dir
 
     user_loci = loci is not None
-    loci = list(loci) if user_loci else list(DRUG_TO_LOCI.get(drug, []))
+    loci = list(loci) if user_loci else drug_loci(drug, extra_loci)
     user_reg = regulatory_loci is not None
     regulatory_loci = (list(regulatory_loci) if user_reg
                        else list(DRUG_TO_REGULATORY.get(drug, [])))
+    if not user_reg and not all_regulatory:
+        regulatory_loci = [r for r in regulatory_loci if r in set(loci)]
 
     mods = [MODALITIES[m]() for m in modalities]
+    for m in mods:
+        # DNA concatenates its loci internally unless told otherwise (protein /
+        # biophysical / regulatory are per-locus by construction), so the
+        # per-locus layout has to switch it on explicitly — same rule as
+        # load_multidrug_dataset.
+        if hasattr(m, "per_locus"):
+            m.per_locus = (not per_modality_branch) and dna_per_locus
+        m.delta = delta
     needs_genes = any(m.uses_genes for m in mods)
 
     df_phenos = load_phenotype(phenotype_csv)
@@ -123,10 +203,14 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
     # --- establish the shared isolate axis ---------------------------------
     gene_seqs, gene_order = (load_sequence_df(genotype_dir, loci)
                              if needs_genes and loci else (None, []))
-    if needs_genes and user_loci and verbose:
+    # warn for ANY requested-but-missing locus, not just an explicit --loci: a
+    # silently dropped locus is how fabG1 went unnoticed in the first place.
+    if needs_genes and verbose:
         missing = [g for g in loci if g not in gene_order]
         if missing:
-            print(f"  [load] {drug}: gene loci not found on disk, skipped: {missing}")
+            src = "--loci" if user_loci else "the default locus set"
+            print(f"  [load] {drug}: gene loci from {src} not found on disk, "
+                  f"skipped: {missing}")
 
     if gene_seqs is not None and not gene_seqs.empty:
         isolates = list(gene_seqs.index.intersection(df_phenos.index))
@@ -150,13 +234,20 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
     blocks, used, dropped = [], [], []
     for mod in mods:
         mod_blocks = mod.build(ctx)
-        if mod.name == "regulatory" and user_reg and verbose:
+        # report ANY skipped region, not just an explicit --regulatory-loci:
+        # a silently dropped region is how the fabG1 gap stayed invisible.
+        if mod.name == "regulatory" and verbose:
             loaded = {b.name.split(":", 1)[1] for b in mod_blocks}
             miss = [r for r in regulatory_loci if r not in loaded]
             if miss:
-                print(f"  [load] {drug}: regulatory regions not found on disk, "
-                      f"skipped: {miss}")
+                src = "--regulatory-loci" if user_reg else "the WHO default set"
+                print(f"  [load] {drug}: regulatory regions from {src} not found "
+                      f"on disk, skipped: {miss}")
         if mod_blocks:
+            # one branch per modality: concatenate this modality's per-gene/region
+            # blocks (in their fixed order) into a single branch.
+            if per_modality_branch and len(mod_blocks) > 1:
+                mod_blocks = [merge_modality_blocks(mod_blocks, mod.name)]
             blocks.extend(mod_blocks)
             used.append(mod.name)
         else:

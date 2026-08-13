@@ -4,7 +4,7 @@ items #1-#9). These do NOT launch a real training run — every check is either 
 pure unit test or a tiny synthetic-fixture integration test that finishes in
 seconds on CPU. Run:
 
-    python test_baseline_alignment.py
+    python tests/test_baseline_alignment.py
 
 Each check prints PASS/FAIL and the script exits non-zero if any fails.
 
@@ -18,20 +18,26 @@ discrepancy is called out in the check's comment:
     y==1 = susceptible, the majority class).
   * DNA channel order is (A, C, T, G, gap), NOT (A, C, G, T, gap).
 """
+import sys
 import tempfile
 import traceback
+from pathlib import Path
 
-import numpy as np
-import torch
+# this file lives in tests/; put the project root on the path so the imports
+# below resolve when run directly (python tests/test_baseline_alignment.py)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bigtb_ref import tb
-from datasets import load_dataset
-from datasets.sequences import NT_CHANNELS, one_hot_nt
-from fixtures import build_fixture_dataset
-from models import DenseHead
-from sklearn.model_selection import StratifiedKFold
-from train import EarlyStopper, masked_weighted_bce
-from train_multimodal import run_modal_cv
+import numpy as np  # noqa: E402  (import after the sys.path bootstrap, by design)
+import torch  # noqa: E402
+from sklearn.model_selection import StratifiedKFold  # noqa: E402
+
+from bigtb_ref import tb  # noqa: E402
+from datasets import load_dataset  # noqa: E402
+from datasets.fixtures import build_fixture_dataset  # noqa: E402
+from datasets.sequences import NT_CHANNELS, one_hot_nt  # noqa: E402
+from models import DenseHead  # noqa: E402
+from training.core import EarlyStopper, masked_weighted_bce  # noqa: E402
+from training.multimodal import run_modal_cv  # noqa: E402
 
 _RESULTS = []
 
@@ -192,8 +198,12 @@ def _test_run_modal_cv_contract():
         data = load_dataset("MOXIFLOXACIN", ["dna"], geno_dir, pheno, verbose=False)
         n_missing = int((data.y == -1).sum())
         assert n_missing > 0, "fixture should contain some missing phenotypes to drop"
+        # out_bias='auto' exercises the log-odds init path (#6); the shipped
+        # default is now out_bias=None (see the MOXI collapse fix in
+        # training.multimodal's docstring), which would make out_bias None here.
         res = run_modal_cv(data, epochs=3, n_splits=3, batch_size=64,
-                           device="cpu", seed=0, patience=2, min_delta=1e-4)
+                           device="cpu", seed=0, patience=2, min_delta=1e-4,
+                           out_bias="auto")
         # #1: only valid isolates survive the filter
         assert res["n_valid"] == data.n - n_missing, "missing rows not dropped"
         assert res["n_resistant"] + res["n_susceptible"] == res["n_valid"]

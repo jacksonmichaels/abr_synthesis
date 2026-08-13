@@ -7,12 +7,15 @@ Everything that touches the BIG-TB reference codebase or the on-disk FASTA /
 phenotype layout lives here, so the individual modality files stay small and
 only describe *their own* featurization.
 """
+import functools
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from Bio import SeqIO
 
 from bigtb_ref import tb
+from .cds import REFERENCE_IDS
 
 # Vectorized equivalent of tb.get_one_hot: same BASE_TO_COLUMN mapping
 # (A,C,T,G,- -> 0..4), unknown bases (N, lowercase, etc.) left all-zero.
@@ -34,6 +37,83 @@ def one_hot_nt(seq: str) -> np.ndarray:
     valid = cols >= 0
     oh[np.nonzero(valid)[0], cols[valid]] = 1.0
     return oh
+
+
+# --- reference-difference ("delta") encoding --------------------------------
+# M. tuberculosis is effectively clonal: two isolates differ at a handful of
+# positions in a 2.6 kb gene. A plain one-hot therefore spends ~99.9% of its
+# columns restating sequence that is identical in every isolate, and the
+# measured consequence is severe — in the full_run_v2 setfusion cell the
+# per-isolate part of an encoded token is 0.14% of its magnitude (spread 0.00090
+# against a norm of 0.6654), so the fusion transformer sees essentially the same
+# vector for every sample and its attention collapses to uniform.
+#
+# Delta encoding keeps the one-hot alphabet and shape but ZEROES every column
+# where the isolate matches the H37Rv reference, so what reaches the CNN is the
+# variants and nothing else. No information that distinguishes isolates is lost:
+# the columns removed are constant across the cohort and therefore carry no
+# discriminative signal. The base an isolate actually has at a differing
+# position is still one-hot encoded, so "which substitution" survives.
+#
+# The reference is the real MT_H37Rv record shipped in each alignment (verified
+# present in both the genotype and regulatory dirs), NOT a consensus over the
+# cohort — a consensus would be fitted on test isolates too.
+
+@functools.lru_cache(maxsize=512)
+def reference_row(seq_dir, locus):
+    """The aligned H37Rv row for a locus, or None if the FASTA has no reference.
+
+    Same alignment column space as every other record in the file, so a
+    position-by-position comparison is well defined.
+    """
+    matches = sorted(Path(seq_dir).glob(f"{locus}*.fasta"))
+    if not matches:
+        return None
+    for rec in SeqIO.parse(matches[0].as_posix(), "fasta"):
+        if rec.id in REFERENCE_IDS or "H37Rv" in rec.id:
+            return str(rec.seq).upper()
+    return None
+
+
+def _match_mask(seq, ref):
+    """Boolean mask over the overlap: True where `seq` matches `ref`."""
+    n = min(len(seq), len(ref))
+    if n == 0:
+        return np.zeros(0, dtype=bool), 0
+    a = np.frombuffer(seq[:n].upper().encode("ascii", "replace"), dtype=np.uint8)
+    b = np.frombuffer(ref[:n].encode("ascii", "replace"), dtype=np.uint8)
+    return a == b, n
+
+
+def delta_one_hot_nt(seq, ref):
+    """(L, 5) one-hot with reference-matching columns zeroed.
+
+    Positions past the end of the reference are left encoded — they cannot be
+    compared, and dropping them would silently discard real sequence.
+    """
+    oh = one_hot_nt(seq)
+    if not ref:
+        return oh
+    same, n = _match_mask(seq, ref)
+    if n:
+        oh[:n][same] = 0.0
+    return oh
+
+
+def delta_zero_columns(mat, seq, ref):
+    """Zero the columns of a (C, K) feature matrix where `seq` matches `ref`.
+
+    The residue-level counterpart of ``delta_one_hot_nt``, shared by the protein
+    (20-channel one-hot) and biophysical (3-channel property) featurizers, both
+    of which are indexed by amino-acid position.
+    """
+    if not ref:
+        return mat
+    same, n = _match_mask(seq, ref)
+    n = min(n, mat.shape[1])
+    if n:
+        mat[:, :n][:, same[:n]] = 0.0
+    return mat
 
 
 def load_sequence_df(seq_dir, loci):

@@ -51,6 +51,26 @@ class FeatureBlock:
         return self.channels, self.length
 
 
+def merge_modality_blocks(mod_blocks, modality):
+    """Concatenate a modality's per-locus/region blocks along the LENGTH axis
+    into ONE block = one branch for that modality (e.g. the protein blocks for
+    embC/embA/embB -> a single (N, 20, sum K) protein branch). Every sub-block
+    shares the channel axis (true within a modality) and the isolate axis, so the
+    concat is well-defined; loci stay in the caller's fixed order so gene k keeps
+    the same ordinal slot across modalities. Alignment is ordinal, not positional
+    (see datasets/multidrug.py's docstring)."""
+    if len(mod_blocks) == 1:
+        b = mod_blocks[0]
+        return FeatureBlock(name=modality, modality=modality, array=b.array,
+                            channel_names=b.channel_names, note=b.note)
+    arr = np.concatenate([b.array for b in mod_blocks], axis=2)   # (N, C, sum L)
+    units = "+".join(b.name.split(":")[-1] for b in mod_blocks)
+    return FeatureBlock(
+        name=modality, modality=modality, array=arr,
+        channel_names=mod_blocks[0].channel_names,
+        note=f"{modality}: {len(mod_blocks)} loci concatenated in order ({units})")
+
+
 class Modality:
     """Base class. Subclasses set ``name`` and implement ``build``.
 

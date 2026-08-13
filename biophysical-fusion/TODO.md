@@ -1,91 +1,139 @@
-# Biophysical Fusion — TODO
+# ABR workspace — TODO
 
-Isolated workspace. We only *read* reference code from `Big-TB-benchmark/`;
-nothing here modifies it. Goal: test whether a biophysical-property branch
-improves BIG-TB's DNA CNN on binary resistance, then extend to other
-modalities.
+High-level on purpose: file layout is in flux, so this names *components* and
+*decisions*, not paths. Per-project detail stays in each project's own README.
 
-## The experiment
+## Where things stand
 
-BIG-TB's best single-drug model is the DNA one-hot CNN (AUC 0.8753).
-Kulkarni et al. 2026 fused amino-acid **molecular weight, isoelectric point,
-and Eisenberg hydrophobicity** as a 3×K matrix through a separate conv branch
-alongside the nucleotide input. **Test: does that branch improve BIG-TB's DNA
-CNN on binary R/S classification?** Start with Isoniazid (inhA+katG) and
-Rifampicin (rpoB+rpoC).
+- **full_run sweep** — 4 architectures × 5 modality sets × {single-drug,
+  multi-drug}, all at 150 epochs. 220 single-drug jobs (one per experiment ×
+  drug) + 20 joint jobs, landing in `results/experiments/full_run/`. That
+  folder's README describes the grid; `full_run_viewer.ipynb` beside it reads
+  whatever has finished and compares against both BIG-TB baselines.
+- **MD-CNN reproduction** (SLURM `62593892`) is queued on the `cpu` partition,
+  which has been wedged on `ReqNodeNotAvail`. CPU-only by design — the authors'
+  own published run never got a GPU (cuDNN 9 vs TF 2.14's `libcudnn.so.8`), so
+  matching that keeps the numbers comparable. ~5 h, ~226 GB peak.
+- **Earlier joint DNA-only run** (60 epochs, per-drug 18-locus union, late
+  fusion): macro CV 0.891 vs their 0.922 (−0.031, worse on all 11 drugs); macro
+  TEST 0.900 vs their 0.884 (+0.016, better on 9 of 11). Only STREPTOMYCIN and
+  MOXIFLOXACIN lose both ways. Its folds peaked *at* the 60-epoch cap in 4/5
+  folds, which is why the sweep runs at 150.
+- Not a leak story on the multi-drug side: MD-CNN derives train/test with one
+  identical call in both crossval and eval. (Unlike SD-CNN — see
+  `bigtb-baseline-leak`.)
 
-## Status
+## Open questions
 
-**Done**
-- Synthetic fixtures, biophysical property table + translation, dataset
-  builder, fusion models, CV/eval harness — all implemented and passing the
-  synthetic smoke test (`run_experiment.py`).
-- Models: `MultiModalNet` (generic late fusion, **per-branch encoder choice** via
-  `models.ENCODERS` — `cnn` / `transformer`); `run_experiment.py --encoders
-  dna=cnn protein=transformer …`. Also `LateFusionCNN` / `EarlyFusionCNN` /
-  `CrossAttentionFusionCNN`; diagrams (`gen_model_diagrams.py` → `diagrams/`).
-- Real data wired in (Unity access, 2026-07-14): `bigtb_ref.REAL_GENOTYPE_DIR`
-  / `REAL_PHENOTYPE_CSV`, joined on `New_ID` like BIG-TB's
-  `make_geno_pheno_dataset` (~17.9k isolates).
-- **DNA-only baseline** (`eval_dna_cnn.py`, `models.DNAOnlyCNN`): full real-data
-  eval per drug, mini-batched, held-out test metric. First result — ISONIAZID
-  CV fold-0 AUC 0.926. Full 11-drug run done via TensorBoard.
+Why is our joint CV below theirs while our test is above? Ordered by
+cost-to-test, not by expected effect:
 
-**Data layer (refactored 2026-07-20)**
-- All modality loading lives in the **`datasets/`** package, one file per
-  modality (`dna.py`, `protein.py`, `biophysical.py`, `regulatory.py`) behind a
-  single `datasets.load_dataset(drug, modalities, geno_dir, pheno_csv)` →
-  `DrugData` bundle of model-ready blocks. Shared substrate: `sequences.py`
-  (FASTA/label loading, one-hot), `biochem.py` (AA science), `base.py`
-  (`Modality`/`FeatureBlock`). Add a modality = one entry in `loader.MODALITIES`.
-- `models.MultiModalCNN` late-fuses any set of blocks (subsumes DNAOnly/Late
-  fusion). `train_multimodal.run_modal_cv` is the generic mini-batched CV+test
-  engine. `run_experiment.py --modalities dna biophysical …` runs any subset and
-  names outputs `results/experiments/{run}/{DRUG}__{modality-tag}.json`.
-- `data.py` is now a thin legacy adapter over `datasets/` (keeps
-  `eval_dna_cnn.py` working); old top-level `biophysical.py` is a shim →
-  `datasets.biochem`.
-- `datasets_overview.ipynb` visualizes each modality's shapes/coverage (runs on
-  synthetic fixtures by default; `USE_REAL=True` for cluster data).
-- **Locus selection**: `load_dataset(..., loci=[...], regulatory_loci=[...])` /
-  `run_experiment.py --loci --regulatory-loci` pick which & how many loci each
-  modality loads; defaults = `DRUG_TO_LOCI` (genes) and the WHO-derived set (regulatory).
-- Regulatory regions are WHO-2023-catalogue-driven (`datasets/who_catalogue.py`,
-  Tables 21 & 22): per-drug default = WHO candidate genes − coding loci. Real
-  data loads what exists — *fabG1* for INH/ETO, *eis* for KAN; Table-22
-  upstream coords/TSS ride along as block metadata for future promoter-slicing.
+1. **Non-identical partitions** — both split with seed 42, but over differently
+   ordered isolate sets, so the test cohorts genuinely differ (their LFX 20R/36S
+   vs our 17R/34S). Align the ordering before trusting any per-drug delta.
+2. **Small-n noise** — their CV→test drops −0.038 where ours gains +0.009. On
+   ~40-isolate strata, fold-seed variance exceeds the macro gap we're chasing.
+   Quantify fold variance before attributing anything to modeling.
+3. **Fewer tasks** — we train 11 drugs, they train 13; the two we drop are
+   fluoroquinolones sharing gyrA/gyrB with our worst drug (LFX, −0.115).
 
-**Next**
-1. DNA+biophysical fusion on real data: `run_experiment.py --modalities dna
-   biophysical --drugs ISONIAZID RIFAMPICIN --device cuda`.
-2. DNA-only vs. DNA+biophysical comparison — the core result.
-3. Then: slot in the next modality (lineage vector is cheapest).
+Epoch budget and locus set are no longer open: the sweep runs 150 epochs, and
+the joint runs use every curated locus (below).
 
-## Open questions / risks
+## Architectures
 
-- **Biophysical table values**: Kulkarni names the 3 properties but not the
-  literal MW/pI numbers or normalization. Current `biophysical.py` uses
-  standard published tables, z-scored per channel — plausible but unconfirmed.
-- **Stop-codon truncation**: we translate up to (not past) the first stop to
-  distinguish nonsense from missense. Inferred, not stated in the paper.
-- **Lineage confounding**: population structure correlates with both variants
-  and phenotype — a multimodal model can shortcut through it. Decide on
-  lineage-stratified eval / decoupling before adding a lineage branch.
-- **CV protocol**: we replicate BIG-TB's split-then-plain-KFold. Kulkarni uses
-  *stratified* CV — worth revisiting whether non-stratified is really "the
-  protocol to replicate."
+`--arch` selects the topology; every result JSON records `arch` and `n_params`.
 
-## Key reference files (in `Big-TB-benchmark/`)
+- **`late_fusion`** (default) — one encoder per feature block, outputs
+  concatenated into a shared dense head. `MultiModalNet` (one logit) /
+  `MultiDrugNet` (one logit per drug). Loci are concatenated end-to-end, so no
+  convolution ever mixes them — only the flatten does, and layer 1 is a 1×1 stem
+  (384 params). On the 18-locus joint DNA input that is a 137,952-wide flatten,
+  35.4 M parameters, nearly all in one FC layer, over ~11.5 k training isolates.
+- **`mdcnn`** — BIG-TB's own SD-CNN / MD-CNN topology (`MDCNNNet`), ported from
+  both reference `get_conv_nn`s: every locus is a **channel** on one shared
+  zero-padded position axis, `Conv2D(64, (5,12))` across all of them, then
+  `Conv1D(64,12) → pool3 → Conv1D(32,3) → Conv1D(32,3) → pool3`, valid padding
+  throughout. On their 19-locus 5-channel input it reproduces their shapes
+  exactly: 73,024 layer-1 params, 14,336 flatten, 3.87 M total. `n_drugs=1` is
+  SD-CNN, `n_drugs=11` is MD-CNN.
+- **`setfusion`** — one encoder shared per modality; each block becomes a token
+  carrying learned (modality, locus) embeddings, fused by a transformer, read
+  out by one attention query per drug. Block count and order stop mattering.
+- **`cisfusion`** — promoter ⊕ CDS concatenated per locus into a cis-unit, with
+  a segment channel marking which columns are which, then per-branch encoders.
 
-- DNA CNN + one-hot + drug→loci map + alpha weighting + threshold search:
-  `dna-tasks/SD-CNN/model_training/parameters/tb_cnn_codebase.py`
-- DNA CNN training loop: `dna-tasks/SD-CNN/model_training/run_SDCNN_ccp_crossval.py`
-- Protein CNN (conv-stack shape reused for `ConvBranch`):
-  `protein-tasks/one_hot_encoded/cnn_model.py`
-- Gap-aware translation (not yet wired in): `protein-tasks/protein_translation/`
+The last three need per-locus blocks and the runners imply that. Verified
+identical to the references and not worth re-litigating: LR `exp(-9)`, batch
+128, Adam, masked weighted BCE, per-drug inverse-frequency alpha on the train
+split, R=0/S=1 encoding, 5-fold shuffled KFold, `256→256→sigmoid` head.
 
-## Environment
+## Loci and regulatory regions
 
-Use the **`abr_env` conda env** (`conda activate abr_env`; base has no torch).
-Python 3.12, torch 2.6.0+cu124, GPU works (RTX 2080 Ti). `tb_cnn_codebase.py`
-pulls in biopython/sparse/h5py/tensorflow (CPU) at import — all installed.
+The two reference codebases pick loci differently, and both rules are available:
+
+- **Single-drug** uses SD-CNN's per-drug map (`tb.DRUG_TO_LOCI`), which keeps a
+  run locus-matched to the SD-CNN baseline. `datasets.EXTRA_LOCI` (`--extra-loci`,
+  off by default) adds the WHO Table-21 tier-1 genes that map omits — fabG1 for
+  INH/ETO. Turning it on un-matches the baseline, so it belongs to its own
+  experiment.
+- **Multi-drug** uses `datasets.loci_on_disk()` — every curated locus FASTA (19,
+  including fabG1), which is MD-CNN's own drug-independent rule.
+  `--per-drug-loci` selects the per-drug union instead (18).
+
+Regulatory regions come from WHO Table 21 candidate genes; Table 22 supplies a
+region's upstream **coordinates**, not its membership. Availability is decided at
+load, and any requested region without a FASTA is reported and skipped.
+
+The default region set is **intersected with the loaded loci**, so a run never
+carries more promoter windows than coding loci — WHO's list is far longer (INH:
+12 regions vs 2 loci) and most of those promoters belong to genes whose CDS is
+never loaded. INH gets `inhA` + `katG`; the multi-drug union drops 48 → 16.
+`--all-regulatory` restores the full set, and an explicit `--regulatory-loci`
+overrides both. Known cost: KANAMYCIN keeps only `rrs` and loses the `eis`
+promoter, since `eis` is not one of its coding loci (AMIKACIN and every
+multi-drug run keep it).
+
+**The fabG1–inhA operon promoter** is the one carrying the dominant non-*katG*
+INH/ETO mechanism (`c-15t`). WHO files it under `inhA` but keys it to
+tss=1,673,440, which is fabG1's own CDS start (Rv1483 1673440–1674183; inhA
+starts 762 bp later) — so the `inhA` regulatory window **is** that promoter, and
+any run with the regulatory modality already sees `c-15t`. `regulatory_msa`
+emits the same window under both names (`PROMOTER_ALIASES`) so `fabG1` can be
+requested when `inhA` is not in the region set; the two FASTAs are byte-identical
+by construction. `datasets.regulatory.REGION_ALIASES` drops the alias from the
+per-drug defaults when its primary is present, so no run feeds the model the
+same 873 bp twice.
+
+## SetFusionNet: identical logits at init
+
+At initialisation every drug gets the SAME logit. The cause is measured, not
+guessed: after fusion the block tokens are near-collinear (pairwise cosine
+0.9968–0.9978, spread ‖z_i − z̄‖/‖z‖ ≈ 4%), so every drug query pools essentially
+the same vector no matter what its attention weights are, and the per-drug MLP is
+shared. Scaling `drug_queries` ×50 does not move it; adding a final LayerNorm to
+the fusion encoder does not either (both tested).
+
+Candidate one-line fixes, measured as per-drug logit spread at init on a
+12-block / 4-drug setup: as-built `1.5e-04`; `h_in = norm(pooled) + drug_queries`
+`3.8e-03`; centering tokens (`z -= z.mean(dim=1, keepdim=True)`) before attention
+`1.5e-02`.
+
+Left as-is by decision: it is an init property, not a training failure — each
+drug's loss differs, so gradients into the queries differ and they do separate.
+Revisit once the sweep shows whether setfusion actually underperforms.
+
+## Reporting caveats
+
+- Their `test_set_auc.csv` **spec/sens columns are garbage** (binarization summed
+  across all 13 drugs — their own file shows values >1). Compare AUC / AUC-PR only.
+- Our test model is best-of-5 folds by val macro-AUC; theirs is fold 4
+  unconditionally. Our test number is favourably selected — say so when quoting it.
+- Any macro comparison must be restricted to the 11 shared drugs.
+- Single-drug and joint runs use different locus sets by design, so INH/ETO are
+  not locus-matched across scopes.
+
+## Constraints
+
+- `pi_annagreen` is **read-only**. Everything we write goes under this workspace.
+- Workspace expires 2026-08-15 — extend before then (`ws_extend`).

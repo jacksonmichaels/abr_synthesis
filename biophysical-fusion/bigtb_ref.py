@@ -32,7 +32,7 @@ import tb_cnn_codebase as tb  # noqa: E402  (import after sys.path edit, by desi
 #   Big-TB-benchmark/dna-tasks/SD-CNN/model_training/parameter_files/
 #     optimized_epochs/RIF_ccp_epoch_60.txt  (lines `genotype_input_directory:`
 #     / `phenotype_file:`).
-# `data.build_dataset` joins them exactly as tb_cnn_codebase.make_geno_pheno_dataset
+# `datasets.load_dataset` joins them exactly as tb_cnn_codebase.make_geno_pheno_dataset
 # does: phenotype indexed on New_ID, intersected with the FASTA record IDs
 # (sample accessions like SAMN…/SAMEA…). Verified 2026-07-07: 17,942/17,943
 # rpoB isolates intersect (only the MT_H37Rv reference row drops out).
@@ -54,3 +54,17 @@ REAL_PHENOTYPE_CSV = (
 REAL_REGULATORY_DIR = (
     "/home/jacksonmicha_umass_edu/abr_workspace/regulatory_msa/aligned"
 )
+# Trained model weights. NOT under results/ — that lives on the workspace
+# filesystem and is git-ignored, and a full grid is tens of GB. This is the
+# lab's shared large-storage volume, so every run's checkpoints and the config
+# needed to rebuild them land in one place across projects and users.
+#
+# Layout: MODEL_WEIGHTS_DIR/{run_name}/{drug-or-multidrug}__{tag}/
+#           config.json     everything needed to rebuild the model (schema v1)
+#           isolates.txt    the exact row order the model was fit on
+#           fold{k}.pt      state_dict per saved CV fold
+# See training/checkpoint.py; load with training.checkpoint.load_model().
+#
+# NB the volume is shared and was 95% full when this was added — prefer
+# --save-weights best (the default) over 'all' unless the folds are needed.
+MODEL_WEIGHTS_DIR = "/project/pi_mfiterau_umass_edu/abr_model_weights"

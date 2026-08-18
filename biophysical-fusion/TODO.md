@@ -10,10 +10,16 @@ High-level on purpose: file layout is in flux, so this names *components* and
   drug) + 20 joint jobs, landing in `results/experiments/full_run/`. That
   folder's README describes the grid; `full_run_viewer.ipynb` beside it reads
   whatever has finished and compares against both BIG-TB baselines.
-- **MD-CNN reproduction** (SLURM `62593892`) is queued on the `cpu` partition,
-  which has been wedged on `ReqNodeNotAvail`. CPU-only by design — the authors'
-  own published run never got a GPU (cuDNN 9 vs TF 2.14's `libcudnn.so.8`), so
-  matching that keeps the numbers comparable. ~5 h, ~226 GB peak.
+- **MD-CNN reproduction** — folds 0–3 done and matching: macro CV **0.9205** vs
+  the authors' **0.9212** over the same four folds and our 11 shared drugs,
+  **−0.0007**, largest per-drug gap AMIKACIN −0.0069. Job `62593892` was then
+  killed by its 16 h wall clock 48 epochs into fold 4 (the ~5 h the authors
+  logged does not transfer: ~45 min to load plus 3h31m per fold here), so it
+  never wrote the aggregate `auc.csv` and never reached stage 2. Fold 4 + merge +
+  eval resubmitted 2026-08-18 as `63188024` (`-t 12:00:00`) via
+  `mdcnn_eval/scripts/_sbatch_mdcnn_fold4_eval.sh`. CPU-only by design — the
+  authors' own published run never got a GPU (cuDNN 9 vs TF 2.14's
+  `libcudnn.so.8`), so matching that keeps the numbers comparable.
 - **Earlier joint DNA-only run** (60 epochs, per-drug 18-locus union, late
   fusion): macro CV 0.891 vs their 0.922 (−0.031, worse on all 11 drugs); macro
   TEST 0.900 vs their 0.884 (+0.016, better on 9 of 11). Only STREPTOMYCIN and
@@ -21,7 +27,14 @@ High-level on purpose: file layout is in flux, so this names *components* and
   folds, which is why the sweep runs at 150.
 - Not a leak story on the multi-drug side: MD-CNN derives train/test with one
   identical call in both crossval and eval. (Unlike SD-CNN — see
-  `bigtb-baseline-leak`.)
+  `reference_docs/BASELINE_LEAK_FINDING.md`.)
+- **`alllocus_run`** (2026-08-06, 221 jobs) answers open question 4 below for
+  `mdcnn` and `cisfusion`: give the SINGLE-drug grid the joint 19-locus input and
+  the joint advantage disappears — multi-task sharing is worth ≈+0.002 macro CV
+  under `mdcnn`, inside fold SD. It survives only under `late_fusion` (+0.029 to
+  +0.031 on the clean cells). Its results folder was lost and has been rebuilt
+  from SLURM logs; see `results/experiments/alllocus_run/README.md` for what is
+  and is not recoverable.
 
 ## Open questions
 
@@ -36,6 +49,11 @@ cost-to-test, not by expected effect:
    Quantify fold variance before attributing anything to modeling.
 3. **Fewer tasks** — we train 11 drugs, they train 13; the two we drop are
    fluoroquinolones sharing gyrA/gyrB with our worst drug (LFX, −0.115).
+4. **Locus universe, not multi-task sharing** — single-drug runs see 2–3 loci and
+   joint runs see 19, so "joint wins" conflated the two. **Settled for `mdcnn` /
+   `cisfusion`**: matched at 19 loci the gap closes to ≈+0.002 / +0.005. Still
+   open for `late_fusion`, where +0.03 survives; the untested explanation is
+   regularization (36M params on one drug's labels vs 11) rather than transfer.
 
 Epoch budget and locus set are no longer open: the sweep runs 150 epochs, and
 the joint runs use every curated locus (below).
@@ -136,4 +154,5 @@ Revisit once the sweep shows whether setfusion actually underperforms.
 ## Constraints
 
 - `pi_annagreen` is **read-only**. Everything we write goes under this workspace.
-- Workspace expires 2026-08-15 — extend before then (`ws_extend`).
+- Workspace expires **2026-09-03** (extended; `ws_list` is authoritative, 9998
+  extensions left). Extend before then with `ws_extend abr_synthesis`.

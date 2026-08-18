@@ -1,0 +1,13 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --multidrug --experiments dna__late_fusion --save-weights all --mem 64G --cpus 6 --gpus 1 --run-prefix joint_convergence/a5_monitor500_ --time 20:00:00 --epochs 150 --monitor-min-n 500",
+  "submitted_jobs": [
+    {
+      "job_id": "62656455",
+      "experiment": "dna__late_fusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "joint_convergence/a5_monitor500_dna__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__late_fusion_multidrug_20260806_200458_job1-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name joint_convergence/a5_monitor500_multidrug_dna__late_fusion --save-weights all --monitor-min-n 500"
+    }
+  ]
+}

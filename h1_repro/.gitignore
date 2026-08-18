@@ -1,0 +1,7 @@
+# The SD-CNN train/test leak reproduction (reference_docs/BASELINE_LEAK_FINDING.md).
+# eval_leak.py / eval_leak_all.py are tracked; leak_all.csv, their output, is not.
+*
+!*/
+!.gitignore
+!*.md
+!*.py

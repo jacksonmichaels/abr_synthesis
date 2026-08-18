@@ -1,0 +1,93 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments dna_mdcnn --drugs all --epochs 150 --mem 48G --time 06:00:00",
+  "submitted_jobs": [
+    {
+      "job_id": "62595006",
+      "experiment": "dna_mdcnn",
+      "drug": "ISONIAZID",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_ISONIAZID_20260804_141739_job1-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ISONIAZID --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595007",
+      "experiment": "dna_mdcnn",
+      "drug": "RIFAMPICIN",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_RIFAMPICIN_20260804_141741_job2-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs RIFAMPICIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595008",
+      "experiment": "dna_mdcnn",
+      "drug": "ETHAMBUTOL",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_ETHAMBUTOL_20260804_141742_job3-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHAMBUTOL --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595009",
+      "experiment": "dna_mdcnn",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_PYRAZINAMIDE_20260804_141744_job4-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs PYRAZINAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595011",
+      "experiment": "dna_mdcnn",
+      "drug": "STREPTOMYCIN",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_STREPTOMYCIN_20260804_141745_job5-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs STREPTOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595012",
+      "experiment": "dna_mdcnn",
+      "drug": "KANAMYCIN",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_KANAMYCIN_20260804_141746_job6-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs KANAMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595013",
+      "experiment": "dna_mdcnn",
+      "drug": "AMIKACIN",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_AMIKACIN_20260804_141748_job7-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs AMIKACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595014",
+      "experiment": "dna_mdcnn",
+      "drug": "CAPREOMYCIN",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_CAPREOMYCIN_20260804_141749_job8-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs CAPREOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595015",
+      "experiment": "dna_mdcnn",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_LEVOFLOXACIN_20260804_141751_job9-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs LEVOFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595016",
+      "experiment": "dna_mdcnn",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_MOXIFLOXACIN_20260804_141752_job10-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs MOXIFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62595017",
+      "experiment": "dna_mdcnn",
+      "drug": "ETHIONAMIDE",
+      "run_name": "dna_mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_mdcnn_ETHIONAMIDE_20260804_141753_job11-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHIONAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name dna_mdcnn --arch mdcnn"
+    }
+  ]
+}

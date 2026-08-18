@@ -1,0 +1,45 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --multidrug --experiments dna__setfusion dna_protein__setfusion dna_biophysical__setfusion dna_regulatory__setfusion all_modalities__setfusion --epochs 150 --min-epochs 50 --run-prefix setfusion_warmup/ --mem 64G --cpus 6 --gpus 1 --time 16:00:00 --delay 0.5",
+  "submitted_jobs": [
+    {
+      "job_id": "62639000",
+      "experiment": "dna__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_multidrug_20260806_134739_job1-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/multidrug_dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62639001",
+      "experiment": "dna_protein__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_multidrug_20260806_134739_job2-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/multidrug_dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62639002",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_multidrug_20260806_134740_job3-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna biophysical --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/multidrug_dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62639003",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_multidrug_20260806_134740_job4-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/multidrug_dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62639004",
+      "experiment": "all_modalities__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_multidrug_20260806_134741_job5-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein biophysical regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/multidrug_all_modalities__setfusion --arch setfusion --min-epochs 50"
+    }
+  ]
+}

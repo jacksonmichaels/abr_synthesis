@@ -1,0 +1,445 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments dna__setfusion dna_protein__setfusion dna_biophysical__setfusion dna_regulatory__setfusion all_modalities__setfusion --drugs all --epochs 150 --min-epochs 50 --run-prefix setfusion_warmup/ --mem 48G --cpus 4 --gpus 1 --time 08:00:00 --delay 0.5",
+  "submitted_jobs": [
+    {
+      "job_id": "62638942",
+      "experiment": "dna__setfusion",
+      "drug": "ISONIAZID",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_ISONIAZID_20260806_134701_job1-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ISONIAZID --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638943",
+      "experiment": "dna__setfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_RIFAMPICIN_20260806_134702_job2-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs RIFAMPICIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638944",
+      "experiment": "dna__setfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_ETHAMBUTOL_20260806_134702_job3-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHAMBUTOL --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638945",
+      "experiment": "dna__setfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_PYRAZINAMIDE_20260806_134703_job4-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs PYRAZINAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638946",
+      "experiment": "dna__setfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_STREPTOMYCIN_20260806_134703_job5-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs STREPTOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638947",
+      "experiment": "dna__setfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_KANAMYCIN_20260806_134704_job6-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs KANAMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638949",
+      "experiment": "dna__setfusion",
+      "drug": "AMIKACIN",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_AMIKACIN_20260806_134704_job7-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs AMIKACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638950",
+      "experiment": "dna__setfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_CAPREOMYCIN_20260806_134705_job8-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs CAPREOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638951",
+      "experiment": "dna__setfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_LEVOFLOXACIN_20260806_134706_job9-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs LEVOFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638952",
+      "experiment": "dna__setfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_MOXIFLOXACIN_20260806_134706_job10-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs MOXIFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638953",
+      "experiment": "dna__setfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "setfusion_warmup/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_ETHIONAMIDE_20260806_134707_job11-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHIONAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638955",
+      "experiment": "dna_protein__setfusion",
+      "drug": "ISONIAZID",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_ISONIAZID_20260806_134707_job12-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ISONIAZID --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638956",
+      "experiment": "dna_protein__setfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_RIFAMPICIN_20260806_134708_job13-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs RIFAMPICIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638957",
+      "experiment": "dna_protein__setfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_ETHAMBUTOL_20260806_134708_job14-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ETHAMBUTOL --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638958",
+      "experiment": "dna_protein__setfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_PYRAZINAMIDE_20260806_134709_job15-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs PYRAZINAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638959",
+      "experiment": "dna_protein__setfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_STREPTOMYCIN_20260806_134709_job16-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs STREPTOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638960",
+      "experiment": "dna_protein__setfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_KANAMYCIN_20260806_134710_job17-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs KANAMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638961",
+      "experiment": "dna_protein__setfusion",
+      "drug": "AMIKACIN",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_AMIKACIN_20260806_134711_job18-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs AMIKACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638962",
+      "experiment": "dna_protein__setfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_CAPREOMYCIN_20260806_134711_job19-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs CAPREOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638963",
+      "experiment": "dna_protein__setfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_LEVOFLOXACIN_20260806_134712_job20-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs LEVOFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638964",
+      "experiment": "dna_protein__setfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_MOXIFLOXACIN_20260806_134712_job21-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs MOXIFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638965",
+      "experiment": "dna_protein__setfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "setfusion_warmup/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_ETHIONAMIDE_20260806_134713_job22-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ETHIONAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_protein__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638966",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "ISONIAZID",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_ISONIAZID_20260806_134713_job23-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ISONIAZID --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638967",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_RIFAMPICIN_20260806_134714_job24-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs RIFAMPICIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638968",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_ETHAMBUTOL_20260806_134714_job25-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ETHAMBUTOL --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638970",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_PYRAZINAMIDE_20260806_134715_job26-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs PYRAZINAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638971",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_STREPTOMYCIN_20260806_134716_job27-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs STREPTOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638972",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_KANAMYCIN_20260806_134716_job28-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs KANAMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638973",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "AMIKACIN",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_AMIKACIN_20260806_134717_job29-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs AMIKACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638974",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_CAPREOMYCIN_20260806_134717_job30-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs CAPREOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638975",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_LEVOFLOXACIN_20260806_134718_job31-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs LEVOFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638976",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_MOXIFLOXACIN_20260806_134718_job32-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs MOXIFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638977",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "setfusion_warmup/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_ETHIONAMIDE_20260806_134719_job33-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ETHIONAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_biophysical__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638978",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "ISONIAZID",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_ISONIAZID_20260806_134719_job34-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ISONIAZID --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638979",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_RIFAMPICIN_20260806_134720_job35-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs RIFAMPICIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638980",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_ETHAMBUTOL_20260806_134721_job36-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ETHAMBUTOL --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638981",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_PYRAZINAMIDE_20260806_134721_job37-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs PYRAZINAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638982",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_STREPTOMYCIN_20260806_134722_job38-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs STREPTOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638983",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_KANAMYCIN_20260806_134722_job39-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs KANAMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638984",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "AMIKACIN",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_AMIKACIN_20260806_134723_job40-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs AMIKACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638985",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_CAPREOMYCIN_20260806_134723_job41-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs CAPREOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638986",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_LEVOFLOXACIN_20260806_134724_job42-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs LEVOFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638987",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_MOXIFLOXACIN_20260806_134724_job43-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs MOXIFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638988",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "setfusion_warmup/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_ETHIONAMIDE_20260806_134725_job44-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ETHIONAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/dna_regulatory__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638989",
+      "experiment": "all_modalities__setfusion",
+      "drug": "ISONIAZID",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_ISONIAZID_20260806_134726_job45-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ISONIAZID --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638990",
+      "experiment": "all_modalities__setfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_RIFAMPICIN_20260806_134726_job46-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs RIFAMPICIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638991",
+      "experiment": "all_modalities__setfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_ETHAMBUTOL_20260806_134727_job47-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ETHAMBUTOL --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638992",
+      "experiment": "all_modalities__setfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_PYRAZINAMIDE_20260806_134728_job48-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs PYRAZINAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638993",
+      "experiment": "all_modalities__setfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_STREPTOMYCIN_20260806_134728_job49-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs STREPTOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638994",
+      "experiment": "all_modalities__setfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_KANAMYCIN_20260806_134729_job50-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs KANAMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638995",
+      "experiment": "all_modalities__setfusion",
+      "drug": "AMIKACIN",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_AMIKACIN_20260806_134729_job51-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs AMIKACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638996",
+      "experiment": "all_modalities__setfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_CAPREOMYCIN_20260806_134730_job52-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs CAPREOMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638997",
+      "experiment": "all_modalities__setfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_LEVOFLOXACIN_20260806_134730_job53-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs LEVOFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638998",
+      "experiment": "all_modalities__setfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_MOXIFLOXACIN_20260806_134731_job54-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs MOXIFLOXACIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    },
+    {
+      "job_id": "62638999",
+      "experiment": "all_modalities__setfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "setfusion_warmup/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_ETHIONAMIDE_20260806_134732_job55-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ETHIONAMIDE --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_warmup/all_modalities__setfusion --arch setfusion --min-epochs 50"
+    }
+  ]
+}

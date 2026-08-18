@@ -1,0 +1,18 @@
+# Promoter-window MSA generation. Only the three generators at the top level are
+# tracked (~38 KB).
+#
+# NOT tracked:
+#   aligned/              279 MB of generated promoter FASTAs — the data itself
+#   slurm_logs/           49 MB of job output, plus the 49 generated
+#                         _sbatch_<locus>.sh scripts, which submit_promoter_msa.py
+#                         writes. Hence *.sh is NOT allowlisted here: the only
+#                         shell scripts in this tree are machine-generated.
+#   promoter_windows.json the computed coordinate table. Regenerable with
+#                         `python build_promoter_coords.py`; excluded as derived
+#                         data. Track it if you ever need the windows pinned
+#                         rather than recomputed.
+*
+!*/
+!.gitignore
+!*.md
+!/*.py

@@ -1,7 +1,25 @@
+# --- editor / interpreter noise ---------------------------------------------
 .claude*
 *__pycache__/
-biophysical-fusion/results/
-*slurm_logs*
-regulatory_msa/
-mdcnn_eval*
-h1_repro*
+*.py[cod]
+.ipynb_checkpoints/
+
+# --- output trees ------------------------------------------------------------
+# These are NOT ignored wholesale any more. Each carries its own .gitignore that
+# ignores its contents and re-includes only the small text that explains and
+# reproduces a run:
+#
+#   biophysical-fusion/results/     per-run README.md, submit.sh, run scripts
+#   biophysical-fusion/slurm_logs/  the archive-policy README + job manifests
+#   mdcnn_eval/                     the MD-CNN reproduction's code and params
+#   h1_repro/                       the leak-reproduction scripts
+#   regulatory_msa/                 the promoter-MSA generators
+#
+# Numbers, figures, arrays, executed notebooks, saved models and raw job logs
+# all stay untracked. Each of those .gitignore files is an ALLOWLIST (`*` then
+# targeted `!` lines), so a new output format cannot leak in by default.
+#
+# Why this changed: results/experiments/alllocus_run/ — 221 jobs, ~350 GPU-hours
+# — was deleted with no copy anywhere, because a blanket `results/` rule here
+# meant its README and its findings lived in no repository at all. The write-up
+# is what preserves a run; it belongs in git even when its outputs do not.

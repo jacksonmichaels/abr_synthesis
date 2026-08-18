@@ -1,0 +1,165 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments all --multidrug --epochs 150 --run-prefix full_run/ --mem 64G --time 16:00:00 --cpus 6 --delay 0.4",
+  "submitted_jobs": [
+    {
+      "job_id": "62598173",
+      "experiment": "dna__late_fusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__late_fusion_multidrug_20260804_155729_job1-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna__late_fusion"
+    },
+    {
+      "job_id": "62598175",
+      "experiment": "dna__mdcnn",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna__mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__mdcnn_multidrug_20260804_155730_job2-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna__mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62598176",
+      "experiment": "dna__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_multidrug_20260804_155731_job3-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna__setfusion --arch setfusion"
+    },
+    {
+      "job_id": "62598177",
+      "experiment": "dna__cisfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_multidrug_20260804_155732_job4-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna__cisfusion --arch cisfusion"
+    },
+    {
+      "job_id": "62598178",
+      "experiment": "dna_protein__late_fusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_protein__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__late_fusion_multidrug_20260804_155732_job5-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_protein__late_fusion"
+    },
+    {
+      "job_id": "62598179",
+      "experiment": "dna_protein__mdcnn",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_protein__mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__mdcnn_multidrug_20260804_155733_job6-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_protein__mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62598180",
+      "experiment": "dna_protein__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_multidrug_20260804_155734_job7-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_protein__setfusion --arch setfusion"
+    },
+    {
+      "job_id": "62598181",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_multidrug_20260804_155735_job8-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_protein__cisfusion --arch cisfusion"
+    },
+    {
+      "job_id": "62598182",
+      "experiment": "dna_biophysical__late_fusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_biophysical__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__late_fusion_multidrug_20260804_155736_job9-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna biophysical --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_biophysical__late_fusion"
+    },
+    {
+      "job_id": "62598183",
+      "experiment": "dna_biophysical__mdcnn",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_biophysical__mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__mdcnn_multidrug_20260804_155736_job10-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna biophysical --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_biophysical__mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62598184",
+      "experiment": "dna_biophysical__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_biophysical__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__setfusion_multidrug_20260804_155737_job11-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna biophysical --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_biophysical__setfusion --arch setfusion"
+    },
+    {
+      "job_id": "62598185",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_multidrug_20260804_155738_job12-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna biophysical --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_biophysical__cisfusion --arch cisfusion"
+    },
+    {
+      "job_id": "62598186",
+      "experiment": "dna_regulatory__late_fusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_regulatory__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__late_fusion_multidrug_20260804_155739_job13-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_regulatory__late_fusion"
+    },
+    {
+      "job_id": "62598187",
+      "experiment": "dna_regulatory__mdcnn",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_regulatory__mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__mdcnn_multidrug_20260804_155739_job14-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_regulatory__mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62598188",
+      "experiment": "dna_regulatory__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_regulatory__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__setfusion_multidrug_20260804_155740_job15-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_regulatory__setfusion --arch setfusion"
+    },
+    {
+      "job_id": "62598189",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_multidrug_20260804_155741_job16-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_dna_regulatory__cisfusion --arch cisfusion"
+    },
+    {
+      "job_id": "62598190",
+      "experiment": "all_modalities__late_fusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/all_modalities__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__late_fusion_multidrug_20260804_155741_job17-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein biophysical regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_all_modalities__late_fusion"
+    },
+    {
+      "job_id": "62598191",
+      "experiment": "all_modalities__mdcnn",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/all_modalities__mdcnn",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__mdcnn_multidrug_20260804_155742_job18-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein biophysical regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_all_modalities__mdcnn --arch mdcnn"
+    },
+    {
+      "job_id": "62598194",
+      "experiment": "all_modalities__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_multidrug_20260804_155743_job19-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein biophysical regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_all_modalities__setfusion --arch setfusion"
+    },
+    {
+      "job_id": "62598195",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "full_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_multidrug_20260804_155743_job20-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein biophysical regulatory --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name full_run/multidrug_all_modalities__cisfusion --arch cisfusion"
+    }
+  ]
+}

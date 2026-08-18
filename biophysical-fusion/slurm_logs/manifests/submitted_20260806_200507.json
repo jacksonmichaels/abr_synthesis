@@ -1,0 +1,21 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --multidrug --experiments dna_protein__late_fusion dna_protein__cisfusion --epochs 150 --save-weights all --mem 64G --cpus 6 --gpus 1 --time 24:00:00 --run-prefix joint_capacity/b1_hidden512_ --hidden 512",
+  "submitted_jobs": [
+    {
+      "job_id": "62656456",
+      "experiment": "dna_protein__late_fusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "joint_capacity/b1_hidden512_dna_protein__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__late_fusion_multidrug_20260806_200506_job1-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name joint_capacity/b1_hidden512_multidrug_dna_protein__late_fusion --hidden 512 --save-weights all"
+    },
+    {
+      "job_id": "62656457",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "joint_capacity/b1_hidden512_dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_multidrug_20260806_200507_job2-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name joint_capacity/b1_hidden512_multidrug_dna_protein__cisfusion --arch cisfusion --hidden 512 --save-weights all"
+    }
+  ]
+}

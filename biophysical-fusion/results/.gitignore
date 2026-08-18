@@ -1,0 +1,15 @@
+# Run outputs are not tracked — result JSON, summary/fold CSVs, figures, .npz
+# arrays and executed notebooks all live here and belong on the filesystem.
+#
+# What IS tracked is the small text that explains and reproduces a run: its
+# README.md (the thing that actually preserves the finding), its submit.sh, and
+# any script that lives with it under the project's "per-experiment scripts live
+# with their run" rule.
+#
+# Allowlist, so a new output format cannot leak in by default.
+*
+!*/
+!.gitignore
+!*.md
+!*.sh
+!*.py

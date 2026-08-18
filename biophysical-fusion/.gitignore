@@ -1,12 +1,7 @@
-# Run outputs. Also covered by ../.gitignore; repeated here so the rule is
-# visible from inside the project (README refers to results/ as git-ignored).
-results/
-slurm_logs/
-
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 
-# Regenerable from the result json next to them:
-#   python training/curves.py <run_dir>
-*_curves.png
+# results/ and slurm_logs/ are no longer ignored from here: each has its own
+# allowlist .gitignore so run write-ups are tracked while outputs are not.
+# See ../.gitignore for the rationale.

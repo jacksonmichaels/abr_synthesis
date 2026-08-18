@@ -1,0 +1,21 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments all_modalities__setfusion --drugs ISONIAZID MOXIFLOXACIN --epochs 300 --patience 30 --min-epochs 50 --save-weights best --mem 64G --cpus 6 --gpus 1 --time 16:00:00 --run-prefix token_signal/a3_both_ --token-norm keyed --delta",
+  "submitted_jobs": [
+    {
+      "job_id": "62792771",
+      "experiment": "all_modalities__setfusion",
+      "drug": "ISONIAZID",
+      "run_name": "token_signal/a3_both_all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_ISONIAZID_20260811_153017_job1-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name token_signal/a3_both_all_modalities__setfusion --arch setfusion --patience 30 --min-epochs 50 --delta --token-norm keyed"
+    },
+    {
+      "job_id": "62792772",
+      "experiment": "all_modalities__setfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "token_signal/a3_both_all_modalities__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__setfusion_MOXIFLOXACIN_20260811_153018_job2-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name token_signal/a3_both_all_modalities__setfusion --arch setfusion --patience 30 --min-epochs 50 --delta --token-norm keyed"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments dna_protein__setfusion --run-prefix setfusion_scaling/b2_ff1024_ --epochs 300 --patience 30 --min-epochs 50 --save-weights best --mem 64G --cpus 6 --gpus 1 --time 48:00:00 --delay 0.5 --multidrug --dim-ff 1024",
+  "submitted_jobs": [
+    {
+      "job_id": "62758192",
+      "experiment": "dna_protein__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "setfusion_scaling/b2_ff1024_multidrug_dna_protein__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__setfusion_multidrug_20260810_132850_job1-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna protein --drugs all --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_scaling/b2_ff1024_multidrug_dna_protein__setfusion --arch setfusion --patience 30 --min-epochs 50 --dim-ff 1024"
+    }
+  ]
+}

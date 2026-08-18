@@ -1,0 +1,19 @@
+# The MD-CNN reproduction. Its code, parameter files and write-up are tracked;
+# everything it produces is not.
+#
+# NOT tracked: training_output/ — the saved Keras models (.pb/.index/.data,
+# ~175 MB) and the per-fold AUC / history CSVs. Those are models and results.
+#
+# Tracked: README.md, scripts/ (the sbatch jobs + merge_cv_auc.py),
+# parameter_files/*.txt, and model_training/*.py. That last one is the
+# reference code copied verbatim from the authors' working tree — worth having
+# in git precisely BECAUSE it is a copy: our single deviation from it
+# (start_cv_fold read from the parameter file) is otherwise invisible, and the
+# public Big-TB-benchmark copy cannot run on the real data as shipped.
+*
+!*/
+!.gitignore
+!*.md
+!*.sh
+!*.py
+!*.txt

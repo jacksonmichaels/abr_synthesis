@@ -1,0 +1,13 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments all_modalities__late_fusion --drugs KANAMYCIN --epochs 150 --loci eis embA embB embC ethA ethR fabG1 gid gyrA gyrB inhA katG pncA rpoB rpoC rpsL rrl rrs tlyA --run-prefix alllocus_run/ --mem 64G --cpus 4 --gpus 1 --constraint vram23 --time 12:00:00",
+  "submitted_jobs": [
+    {
+      "job_id": "62643407",
+      "experiment": "all_modalities__late_fusion",
+      "drug": "KANAMYCIN",
+      "run_name": "alllocus_run/all_modalities__late_fusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__late_fusion_KANAMYCIN_20260806_160457_job1-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs KANAMYCIN --epochs 150 --batch-size 128 --n-splits 5 --seed 0 --run-name alllocus_run/all_modalities__late_fusion --loci eis embA embB embC ethA ethR fabG1 gid gyrA gyrB inhA katG pncA rpoB rpoC rpsL rrl rrs tlyA"
+    }
+  ]
+}

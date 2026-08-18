@@ -1,0 +1,13 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments dna__setfusion --run-prefix setfusion_scaling/x6_big_tuned_ --epochs 300 --patience 30 --min-epochs 50 --save-weights best --mem 64G --cpus 6 --gpus 1 --time 96:00:00 --constraint vram23 --delay 0.5 --multidrug --d-model 384 --dim-ff 1536 --fusion-layers 6 --hidden 512 --enc-depth 2 --enc-bins 32 --enc-width 128 --enc-out-channels 64 --lr-schedule cosine --warmup-epochs 20 --dropout 0.3 --weight-decay 1e-4",
+  "submitted_jobs": [
+    {
+      "job_id": "62758265",
+      "experiment": "dna__setfusion",
+      "drug": "ALL(multidrug)",
+      "run_name": "setfusion_scaling/x6_big_tuned_multidrug_dna__setfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__setfusion_multidrug_20260810_132958_job1-%j.out",
+      "command": "python -u scripts/run_multidrug.py --real --device cuda --modalities dna --drugs all --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name setfusion_scaling/x6_big_tuned_multidrug_dna__setfusion --arch setfusion --patience 30 --min-epochs 50 --weight-decay 0.0001 --dropout 0.3 --hidden 512 --lr-schedule cosine --warmup-epochs 20 --d-model 384 --fusion-layers 6 --dim-ff 1536 --enc-width 128 --enc-out-channels 64 --enc-depth 2 --enc-bins 32"
+    }
+  ]
+}

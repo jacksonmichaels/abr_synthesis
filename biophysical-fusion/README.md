@@ -39,22 +39,30 @@ training/                 training engines
   multidrug.py            multi-drug (MD-CNN style) engine, macro-AUC early stopping
   curves.py               per-epoch loss / val-metric plots; also a re-plot CLI
 
-scripts/                  entry points (run from the project root)
+scripts/                  entry points (run from the project root). Kept
+                          deliberately small: per-experiment sweep, analysis and
+                          monitoring scripts are NOT added here — they live with
+                          the run, and are deleted once it is written up.
   run_experiment.py       single-drug CLI — pick modalities, drugs, real/synthetic
   run_multidrug.py        multi-drug CLI — all drugs in one MultiDrugNet
   sbatch_all_runs.py      submit the experiment grid — one job per (experiment ×
                           drug), or one per experiment with --multidrug
   trace_models.py         push one real isolate through every net, diagram the dataflow
-  build_full_run_viewer.py  regenerates the full_run results notebook
-  sweep_moxi.py           one-off early-stopping knob sweep on MOXIFLOXACIN
-  sbatch/                 standalone job scripts (multidrug, traces)
+  build_full_run_viewer.py  builds <run>/full_run_viewer.ipynb for any full_run-style
+                          sweep; also holds the BIG-TB baseline tables (single source)
+  build_datasets_overview.py  regenerates notebooks/datasets_overview.ipynb
+  sbatch/trace_models.sh  standalone job script for the dataflow traces
 
-notebooks/                datasets_overview (modality tour), results_viewer (runs vs.
-                          BIG-TB baselines), biophysical_properties_rdkit
+notebooks/                datasets_overview (modality tour, generated — edit the
+                          builder, not the .ipynb), biophysical_properties_rdkit
 tests/                    test_baseline_alignment.py — SD-CNN protocol checks
+                          test_checkpoint.py / test_setfusion.py / test_cisfusion.py
 bigtb_ref.py              imports BIG-TB utilities + real data paths (REAL_*)
 TODO.md                   status, next steps, open questions
-results/                  run outputs (git-ignored); results/archive/ = superseded runs
+results/                  run outputs (git-ignored). One folder per run, each with its
+                          own README.md + submit.sh; results/archive/ = superseded runs
+slurm_logs/               job logs (git-ignored); slurm_logs/manifests/ = the job_id →
+                          run provenance record, see its README
 diagrams/                 model/architecture figures
 ```
 

@@ -3,3 +3,5 @@
 biophysical-fusion/results/
 *slurm_logs*
 regulatory_msa/
+mdcnn_eval*
+h1_repro*

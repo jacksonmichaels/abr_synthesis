@@ -446,11 +446,16 @@ def main():
             # gone. Microseconds plus a collision guard, so back-to-back
             # invocations each keep their own file.
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            track = os.path.join(args.logs_dir, f"submitted_{stamp}.json")
+            # Manifests live in their own folder (2026-08-13): they are the only
+            # job_id -> run mapping there is, and keeping them out of the .out
+            # stream means log housekeeping can never sweep them up by accident.
+            manifest_dir = os.path.join(args.logs_dir, "manifests")
+            os.makedirs(manifest_dir, exist_ok=True)
+            track = os.path.join(manifest_dir, f"submitted_{stamp}.json")
             n = 0
             while os.path.exists(track):
                 n += 1
-                track = os.path.join(args.logs_dir, f"submitted_{stamp}_{n}.json")
+                track = os.path.join(manifest_dir, f"submitted_{stamp}_{n}.json")
             with open(track, "w") as fh:
                 json.dump({"invocation": " ".join(map(shlex.quote, sys.argv)),
                            "submitted_jobs": submitted}, fh, indent=2)

@@ -2,8 +2,8 @@
 Amino-acid biochemistry: property tables, the genetic code, translation, and
 the featurizers the protein / biophysical modalities are built on. This is the
 single source of truth for anything that turns a nucleotide sequence into
-amino-acid–level features (moved here from the old top-level ``biophysical.py``
-so all data handling lives under ``datasets/``; that module is now a shim).
+amino-acid–level features. Not to be confused with ``datasets/biophysical.py``,
+which is the traits *modality* built on top of these tables.
 
 PLACEHOLDER property table pending Kulkarni et al. 2026's exact values /
 normalization (see TODO.md) — standard published tables used as stand-ins:

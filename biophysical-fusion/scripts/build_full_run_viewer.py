@@ -108,7 +108,7 @@ single 20% split of one best-CV-fold model; it is reported because it is what th
 paper publishes, but it swings by ±0.05 on the small drugs. `—` is a run that
 has not finished, never a zero.
 
-**Baselines are carried over unchanged from `notebooks/results_viewer.ipynb`:**
+**Baselines (this script is their single source of truth):**
 
 | baseline | what our models compare against | corrected? |
 |---|---|---|
@@ -224,7 +224,7 @@ def is_degenerate(arch, modset):
     return ""
 
 # --- BIG-TB SD-CNN, leak-corrected (single-drug baseline) -------------------
-# From notebooks/results_viewer.ipynb, unchanged. The published test AUC comes
+# The published test AUC comes
 # from an `assess` script that re-splits with the same seed but a different
 # `stratify` than the script that TRAINED the saved model, so ~80% of its "test"
 # isolates were in training. These are THEIR saved best model re-scored on the
@@ -318,7 +318,7 @@ SD_BASE_TEST = pd.Series({d: v[0] for d, v in SDCNN_CLEAN.items()})
 MD_BASE_CV   = pd.Series({d: v[1] for d, v in BIGTB_MDCNN.items()})
 MD_BASE_TEST = pd.Series({d: v[0] for d, v in BIGTB_MDCNN.items()})
 
-# --- style (same palette as notebooks/results_viewer.ipynb) -----------------
+# --- style (colourblind-safe Okabe-Ito palette) -----------------------------
 OUTDIR = PROJECT / "results/figures/@@RUN_NAME@@"  # None to display without saving
 BLUE, ORANGE, VERM, GREY, INK = "#0072B2", "#E69F00", "#D55E00", "#7F7F7F", "#1A1A1A"
 GOOD_BG = "background-color:#d9ecd9;color:#14501e"

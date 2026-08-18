@@ -19,9 +19,10 @@ branch per block and runs BIG-TB's SD-CNN protocol
 Early-stopping defaults deviate from the strict baseline (monitor='val_loss',
 out_bias=log-odds), which collapsed to the all-susceptible majority on the
 imbalanced drugs (MOXI/ETO): val_loss bottoms out at the degenerate solution,
-so it stopped in ~1-9 epochs at CV AUC ~0.54. A MOXI sweep (scripts/sweep_moxi.py)
-found monitor='auc' + patience=15 + out_bias=None recovers CV AUC 0.59->0.85 and
-a usable operating point; those are now the defaults. Pass monitor='loss' /
+so it stopped in ~1-9 epochs at CV AUC ~0.54. A knob sweep over {monitor,
+patience, out_bias} on MOXIFLOXACIN DNA (2026-07, script since retired) found
+monitor='auc' + patience=15 + out_bias=None recovers CV AUC 0.59->0.85 and a
+usable operating point; those are now the defaults. Pass monitor='loss' /
 out_bias='auto' to reproduce the strict baseline.
 
 Everything is mini-batched (real data doesn't fit one GPU). ``arch`` selects the

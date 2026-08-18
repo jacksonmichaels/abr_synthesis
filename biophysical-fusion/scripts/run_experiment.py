@@ -190,6 +190,36 @@ def main():
                     help="per-output hidden branch width; no effect single-drug "
                          "(out_dim=1), kept so both entry points take the same "
                          "flags (default: 0 = off)")
+    # --- transformer encoder capacity ----------------------------------------
+    # Applies wherever a transformer is actually selected: per-branch under
+    # late_fusion / cisfusion, per-trunk under mdcnn. Same None-default
+    # discipline as the setfusion group — an unset flag stays out of the
+    # override dict, so models.TRANSFORMER_DEFAULTS stays the one place the
+    # defaults are written down.
+    #
+    # These exist because a transformer branch is NOT parameter-comparable to a
+    # CNN branch at its defaults: CNNEncoder flattens (out_features = 32*L/9, so
+    # ~3.1M head params on a 3.4 kb block) while TransformerEncoder mean-pools to
+    # d_model=64 regardless of length — a ~30x size gap. Matching capacity means
+    # raising these deliberately; see results/experiments/transformer_run/.
+    tf = ap.add_argument_group(
+        "transformer encoder capacity (only where --encoders/--default-encoder "
+        "select 'transformer')")
+    tf.add_argument("--tf-d-model", type=int, default=None,
+                    help="token width, and the per-branch output width since the "
+                         "encoder mean-pools (default 64)")
+    tf.add_argument("--tf-nhead", type=int, default=None,
+                    help="attention heads; must divide --tf-d-model (default 4)")
+    tf.add_argument("--tf-layers", type=int, default=None,
+                    help="TransformerEncoderLayer count (default 2)")
+    tf.add_argument("--tf-dim-ff", type=int, default=None,
+                    help="feed-forward width inside each layer (default 128)")
+    tf.add_argument("--tf-patch", type=int, default=None,
+                    help="patch-embedding kernel AND stride, so the position axis "
+                         "becomes ~L/patch tokens (default 9)")
+    tf.add_argument("--tf-dropout", type=float, default=None,
+                    help="dropout inside the transformer layers (default 0.1)")
+
     # --- setfusion capacity (ignored by every other arch) ---------------------
     # Defaults are None, not the values: an unset flag stays out of the override
     # dict entirely, so models.SETFUSION_DEFAULTS remains the one place the
@@ -314,6 +344,20 @@ def main():
     drugs = _resolve_choices(args.drugs or ["ISONIAZID", "RIFAMPICIN"],
                              ALL_DRUGS, "drug", ap)
     branch_models = _parse_encoders(args.encoders, ap)
+
+    transformer = {k: v for k, v in {
+        "d_model": args.tf_d_model, "nhead": args.tf_nhead,
+        "layers": args.tf_layers, "dim_ff": args.tf_dim_ff,
+        "patch": args.tf_patch, "dropout": args.tf_dropout,
+    }.items() if v is not None}
+    if transformer and "transformer" not in set(
+            list(branch_models.values()) + [args.default_encoder]):
+        # same rule as the setfusion flags: silently ignoring them would make a
+        # sweep arm look like it ran when it was really the control
+        ap.error(f"transformer capacity flags {sorted('--tf-'+k.replace('_','-') for k in transformer)} "
+                 "require a transformer encoder — pass --default-encoder transformer "
+                 "or --encoders MODALITY=transformer")
+
     epochs = args.epochs if args.epochs is not None else (60 if args.real else 5)
     # the mdcnn topology stacks LOCI as channels, so it needs one block per
     # locus; the per-modality default (loci concatenated end-to-end) would
@@ -331,8 +375,11 @@ def main():
           f"drugs={drugs}")
     print(f"arch={args.arch} branches={'per-locus' if per_locus else 'per-modality'}"
           f"{' extra_loci=on' if args.extra_loci else ''}")
+    # mdcnn takes ONE encoder for all its trunks (see _build_model), so say which
+    # one -- printing "n/a" was right only while the conv trunk was the sole option
     print(f"encoders: {branch_models or '{}'} (default: {args.default_encoder})"
-          if args.arch != "mdcnn" else "encoders: n/a under --arch mdcnn")
+          if args.arch != "mdcnn"
+          else f"encoders: {args.default_encoder} for every mdcnn trunk")
     print(f"device={args.device} epochs={epochs} batch_size={args.batch_size} "
           f"n_splits={args.n_splits}")
     print(f"lr={args.lr if args.lr is not None else 'exp(-9)'} "
@@ -378,6 +425,7 @@ def main():
                                       per_drug_hidden=args.per_drug_hidden,
                                       mdcnn_trunk_per_modality=args.mdcnn_trunk_per_modality,
                                       setfusion=setfusion,
+                                      transformer=transformer,
                                       lr_schedule=args.lr_schedule,
                                       warmup_epochs=args.warmup_epochs,
                                       run_name=run_name,

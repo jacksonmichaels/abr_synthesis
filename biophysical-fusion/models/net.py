@@ -165,6 +165,34 @@ class TransformerEncoder(nn.Module):
 
 ENCODERS = {"cnn": CNNEncoder, "transformer": TransformerEncoder}
 
+# Capacity knobs for the transformer branch encoder AND the transformer MD-CNN
+# trunk. These are TransformerEncoder's own signature defaults, so leaving them
+# alone reproduces every run made before they were tunable.
+#
+# They exist because a transformer branch is not remotely parameter-comparable to
+# a CNN branch at its defaults: CNNEncoder flattens, so its out_features scale
+# with sequence length (32 * L/9 — 12,064 for a 3.4 kb DNA block, which puts
+# ~3.1M params in the dense head alone), while TransformerEncoder mean-pools to
+# exactly d_model=64 no matter how long the input is. All-CNN and all-transformer
+# versions of the same cell therefore differ by ~30x in size unless d_model,
+# layers and dim_ff are raised deliberately. See results/experiments/
+# transformer_run/README.md for how the sweep picks them per architecture.
+TRANSFORMER_DEFAULTS = {
+    "d_model": 64, "nhead": 4, "layers": 2, "dim_ff": 128, "patch": 9,
+    "dropout": 0.1,
+}
+
+
+def make_encoder(kind, in_channels, length, transformer=None):
+    """Build one branch encoder. ``transformer`` overrides reach only the
+    transformer encoder — CNNEncoder does not accept them, and passing them to
+    it should be a loud TypeError in tests rather than a silent no-op here."""
+    if kind not in ENCODERS:
+        raise ValueError(f"unknown encoder {kind!r}; available: {list(ENCODERS)}")
+    if kind == "transformer" and transformer:
+        return ENCODERS[kind](in_channels, length, **transformer)
+    return ENCODERS[kind](in_channels, length)
+
 
 class MultiModalNet(nn.Module):
     """Generic late-fusion network with a PER-BRANCH choice of encoder.
@@ -181,7 +209,7 @@ class MultiModalNet(nn.Module):
     bio_input = "blocks"  # forward takes the list of block tensors as-is
 
     def __init__(self, branch_specs, encoder_types=None, n_drugs=1, out_bias=None,
-                 hidden=256, dropout=0.0, per_drug_hidden=0):
+                 hidden=256, dropout=0.0, per_drug_hidden=0, transformer=None):
         super().__init__()
         if not branch_specs:
             raise ValueError("MultiModalNet needs at least one branch spec")
@@ -193,8 +221,10 @@ class MultiModalNet(nn.Module):
         if unknown:
             raise ValueError(f"unknown encoder(s) {unknown}; available: {list(ENCODERS)}")
         self.encoders = nn.ModuleList(
-            ENCODERS[t](c, l) for t, (c, l) in zip(encoder_types, branch_specs))
+            make_encoder(t, c, l, transformer)
+            for t, (c, l) in zip(encoder_types, branch_specs))
         self.encoder_types = list(encoder_types)
+        self.transformer = dict(transformer) if transformer else None
         total = sum(e.out_features for e in self.encoders)
         self.head = DenseHead(total, out_dim=n_drugs, out_bias=out_bias,
                               hidden=hidden, dropout=dropout,
@@ -230,13 +260,14 @@ class MultiDrugNet(MultiModalNet):
     the BIG-TB MD-CNN's ``Dense(n_drugs, sigmoid)`` head."""
 
     def __init__(self, branch_specs, drug_names, encoder_types=None, out_bias=None,
-                 hidden=256, dropout=0.0, per_drug_hidden=0):
+                 hidden=256, dropout=0.0, per_drug_hidden=0, transformer=None):
         if not drug_names:
             raise ValueError("MultiDrugNet needs at least one drug name")
         super().__init__(branch_specs, encoder_types,
                          n_drugs=len(drug_names), out_bias=out_bias,
                          hidden=hidden, dropout=dropout,
-                         per_drug_hidden=per_drug_hidden)
+                         per_drug_hidden=per_drug_hidden,
+                         transformer=transformer)
         self.drug_names = list(drug_names)
 
 
@@ -295,6 +326,57 @@ class MDCNNTrunk(nn.Module):
         return torch.flatten(x, 1)
 
 
+class MDCNNTransformerTrunk(nn.Module):
+    """Transformer counterpart to MDCNNTrunk, over the same locus-as-channel input.
+
+    Keeps the property that makes this the MD-CNN topology rather than late
+    fusion — **layer 1 spans every locus and the full channel height at once**,
+    so loci mix before anything else happens — and swaps only the sequence model
+    that follows it.
+
+    The trick is that MD-CNN's layer 1 is already a strided-in-nothing Conv2d
+    over (n_loci, channels, L); making its stride equal its kernel width along
+    the position axis turns the very same op into a ViT-style patch embedding.
+    So one `Conv2d(n_loci, d_model, (channels, patch), stride=(1, patch))` both
+    mixes the loci exactly as the reference does AND chunks the position axis
+    into ~L/patch tokens. A learned positional embedding, a small Transformer
+    encoder and a mean-pool then stand in for the `Conv1d/pool` stack and the
+    flatten.
+
+    Takes (B, n_loci, C, L) -> (B, d_model), the same contract as MDCNNTrunk, so
+    MDCNNNet's grouping, padding and head are untouched.
+
+    The cost is the same one SetFusionNet pays and worth stating: the flatten is
+    gone, so absolute position is coarsened to a pooled summary over tokens.
+    MDCNNTrunk's 14,336-wide flatten keeps "this motif fired at column 315";
+    this keeps "it fired in this ~9 bp token, somewhere in the sequence".
+    """
+
+    def __init__(self, n_loci, channels, length, d_model=64, nhead=4, layers=2,
+                 dim_ff=128, patch=9, dropout=0.1):
+        super().__init__()
+        patch = max(1, min(int(patch), length))
+        self.tokenize = nn.Conv2d(n_loci, d_model, (channels, patch),
+                                  stride=(1, patch))
+        n_tokens = max(1, (length - patch) // patch + 1)
+        self.pos = nn.Parameter(torch.zeros(1, n_tokens, d_model))
+        nn.init.trunc_normal_(self.pos, std=0.02)
+        layer = nn.TransformerEncoderLayer(d_model, nhead, dim_ff, dropout=dropout,
+                                           batch_first=True)
+        self.encoder = nn.TransformerEncoder(layer, layers)
+        self.out_features = d_model
+
+    def forward(self, x):
+        """x: (B, n_loci, C, L) -> (B, d_model)."""
+        t = self.tokenize(x)                    # (B, d_model, 1, n_tokens)
+        t = t.squeeze(2).transpose(1, 2)        # (B, n_tokens, d_model)
+        t = t + self.pos[:, :t.shape[1], :]
+        return self.encoder(t).mean(dim=1)
+
+
+MDCNN_TRUNKS = {"cnn": MDCNNTrunk, "transformer": MDCNNTransformerTrunk}
+
+
 class MDCNNNet(nn.Module):
     """BIG-TB SD-CNN / MD-CNN topology on our block interface.
 
@@ -326,7 +408,7 @@ class MDCNNNet(nn.Module):
 
     def __init__(self, branch_specs, n_drugs=1, out_bias=None, filter_size=12,
                  drug_names=None, block_modalities=None, hidden=256,
-                 dropout=0.0, per_drug_hidden=0):
+                 dropout=0.0, per_drug_hidden=0, encoder="cnn", transformer=None):
         super().__init__()
         if not branch_specs:
             raise ValueError("MDCNNNet needs at least one branch spec")
@@ -345,9 +427,23 @@ class MDCNNNet(nn.Module):
         self.group_idx = [groups[k] for k in self.group_keys]
         self.group_len = [max(branch_specs[i][1] for i in idxs)
                           for idxs in self.group_idx]
-        self.trunks = nn.ModuleList(
-            MDCNNTrunk(len(idxs), branch_specs[idxs[0]][0], length, filter_size)
-            for idxs, length in zip(self.group_idx, self.group_len))
+        if encoder not in MDCNN_TRUNKS:
+            raise ValueError(f"unknown mdcnn encoder {encoder!r}; "
+                             f"available: {list(MDCNN_TRUNKS)}")
+        self.encoder = encoder
+        self.transformer = dict(transformer) if transformer else None
+        # One trunk per channel-height group either way; only the trunk's inside
+        # changes. `filter_size` is the conv trunk's kernel width and has no
+        # meaning for the transformer trunk, which takes `patch` instead.
+        if encoder == "transformer":
+            self.trunks = nn.ModuleList(
+                MDCNNTransformerTrunk(len(idxs), branch_specs[idxs[0]][0], length,
+                                      **(transformer or {}))
+                for idxs, length in zip(self.group_idx, self.group_len))
+        else:
+            self.trunks = nn.ModuleList(
+                MDCNNTrunk(len(idxs), branch_specs[idxs[0]][0], length, filter_size)
+                for idxs, length in zip(self.group_idx, self.group_len))
         total = sum(t.out_features for t in self.trunks)
         self.head = DenseHead(total, out_dim=n_drugs, out_bias=out_bias,
                               hidden=hidden, dropout=dropout,
@@ -851,7 +947,8 @@ class CisFusionNet(nn.Module):
 
     def __init__(self, block_keys, branch_specs, n_drugs=1, drug_names=None,
                  branch_models=None, default_encoder="cnn", spacer=0,
-                 out_bias=None, hidden=256, dropout=0.0, per_drug_hidden=0):
+                 out_bias=None, hidden=256, dropout=0.0, per_drug_hidden=0,
+                 transformer=None):
         super().__init__()
         if not branch_specs:
             raise ValueError("CisFusionNet needs at least one branch spec")
@@ -930,8 +1027,10 @@ class CisFusionNet(nn.Module):
         if unknown:
             raise ValueError(f"unknown encoder(s) {unknown}; available: {list(ENCODERS)}")
         self.encoders = nn.ModuleList(
-            ENCODERS[t](c, l) for t, (c, l) in zip(encoder_types, specs))
+            make_encoder(t, c, l, transformer)
+            for t, (c, l) in zip(encoder_types, specs))
         self.encoder_types = encoder_types
+        self.transformer = dict(transformer) if transformer else None
         self.head = DenseHead(sum(e.out_features for e in self.encoders),
                               out_dim=n_drugs, out_bias=out_bias, hidden=hidden,
                               dropout=dropout, per_drug_hidden=per_drug_hidden)

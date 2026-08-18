@@ -165,6 +165,32 @@ def main():
                          "(default: 0 = off). The joint models have no per-drug "
                          "capacity at all without this.")
     # --- setfusion capacity (ignored by every other arch) ---------------------
+    # --- transformer encoder capacity ----------------------------------------
+    # Applies wherever a transformer is actually selected: per-branch under
+    # late_fusion / cisfusion, per-trunk under mdcnn. Same None-default
+    # discipline as the setfusion group, so models.TRANSFORMER_DEFAULTS stays the
+    # single place the defaults live. A transformer branch is not
+    # parameter-comparable to a CNN branch at those defaults (CNNEncoder
+    # flattens, TransformerEncoder mean-pools to d_model), so matching capacity
+    # means raising these deliberately — see results/experiments/transformer_run/.
+    tf = ap.add_argument_group(
+        "transformer encoder capacity (only where --encoders/--default-encoder "
+        "select 'transformer')")
+    tf.add_argument("--tf-d-model", type=int, default=None,
+                    help="token width, and the per-branch output width since the "
+                         "encoder mean-pools (default 64)")
+    tf.add_argument("--tf-nhead", type=int, default=None,
+                    help="attention heads; must divide --tf-d-model (default 4)")
+    tf.add_argument("--tf-layers", type=int, default=None,
+                    help="TransformerEncoderLayer count (default 2)")
+    tf.add_argument("--tf-dim-ff", type=int, default=None,
+                    help="feed-forward width inside each layer (default 128)")
+    tf.add_argument("--tf-patch", type=int, default=None,
+                    help="patch-embedding kernel AND stride, so the position axis "
+                         "becomes ~L/patch tokens (default 9)")
+    tf.add_argument("--tf-dropout", type=float, default=None,
+                    help="dropout inside the transformer layers (default 0.1)")
+
     # Defaults are None, not the values: an unset flag stays out of the override
     # dict entirely, so models.SETFUSION_DEFAULTS remains the one place the
     # full_run/full_run_v2 configuration is written down. Swept by
@@ -236,11 +262,23 @@ def main():
     drugs = _resolve_drugs(args.drugs, ap)
     modalities = _resolve_modalities(args.modalities, ap)
     branch_models = {}
+
     for tok in (args.encoders or []):
         if "=" not in tok:
             ap.error(f"--encoders expects MODALITY=TYPE, got {tok!r}")
         m, e = (s.strip().lower() for s in tok.split("=", 1))
         branch_models[m] = e
+
+    transformer = {k: v for k, v in {
+        "d_model": args.tf_d_model, "nhead": args.tf_nhead,
+        "layers": args.tf_layers, "dim_ff": args.tf_dim_ff,
+        "patch": args.tf_patch, "dropout": args.tf_dropout,
+    }.items() if v is not None}
+    if transformer and "transformer" not in set(
+            list(branch_models.values()) + [args.default_encoder]):
+        ap.error(f"transformer capacity flags {sorted('--tf-'+k.replace('_','-') for k in transformer)} "
+                 "require a transformer encoder — pass --default-encoder transformer "
+                 "or --encoders MODALITY=transformer")
     out_bias = None if args.out_bias.lower() in ("none", "null") else float(args.out_bias)
     setfusion = {k: v for k, v in {
         "d_model": args.d_model, "nhead": args.nhead, "layers": args.fusion_layers,
@@ -323,6 +361,7 @@ def main():
                                   mdcnn_trunk_per_modality=args.mdcnn_trunk_per_modality,
                                   monitor_min_n=args.monitor_min_n,
                                   setfusion=setfusion,
+                                  transformer=transformer,
                                   lr_schedule=args.lr_schedule,
                                   warmup_epochs=args.warmup_epochs,
                                   run_name=run_name, save_weights=args.save_weights,

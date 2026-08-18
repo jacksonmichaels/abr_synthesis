@@ -120,16 +120,18 @@ def block_records(blocks):
 
 def model_config(*, arch, blocks, encoder_types, drug_names, out_bias, head,
                  mdcnn_trunk_per_modality=False, branch_models=None,
-                 default_encoder="cnn", n_params=None, setfusion=None):
+                 default_encoder="cnn", n_params=None, setfusion=None,
+                 transformer=None):
     """The `model` section — sufficient on its own for build_model_from_config.
 
-    ``setfusion`` records only the capacity knobs that DIFFER from
-    SETFUSION_DEFAULTS, so a config written before those knobs existed (key
+    ``setfusion`` and ``transformer`` record only the capacity knobs that DIFFER
+    from their defaults, so a config written before those knobs existed (key
     absent) rebuilds to exactly the model it always did — which is what keeps
     the full_run / full_run_v2 checkpoints loadable."""
     return {
         "arch": arch,
         "setfusion": dict(setfusion or {}),
+        "transformer": dict(transformer or {}),
         "drug_names": list(drug_names),          # logits[:, i] == drug_names[i]
         "n_drugs": len(drug_names),
         "branch_specs": [[int(c), int(l)] for c, l in (b.spec() for b in blocks)],
@@ -163,11 +165,18 @@ def build_model_from_config(cfg):
             "per_drug_hidden": m["per_drug_hidden"]}
     out_bias = m["out_bias"]
 
+    # .get, not [...]: configs written before these knobs existed carry no key
+    # and must still rebuild at the defaults.
+    transformer = m.get("transformer") or None
+    enc_kinds = sorted(set(m["encoder_types"]))
+
     if arch == "mdcnn":
         return MDCNNNet(specs, n_drugs=len(drugs),
                         drug_names=drugs if joint else None, out_bias=out_bias,
                         block_modalities=(modalities if m["mdcnn_trunk_per_modality"]
-                                          else None), **head)
+                                          else None),
+                        encoder=(enc_kinds[0] if len(enc_kinds) == 1 else "cnn"),
+                        transformer=transformer, **head)
     if arch == "setfusion":
         # .get, not [...]: configs written before the capacity knobs existed have
         # no 'setfusion' key at all and must still rebuild at the defaults
@@ -181,12 +190,13 @@ def build_model_from_config(cfg):
         return CisFusionNet(keys, specs, n_drugs=len(drugs),
                             drug_names=drugs if joint else None,
                             out_bias=out_bias, branch_models=m["branch_models"],
-                            default_encoder=m["default_encoder"], **head)
+                            default_encoder=m["default_encoder"],
+                            transformer=transformer, **head)
     if joint:
         return MultiDrugNet(specs, drugs, m["encoder_types"], out_bias=out_bias,
-                            **head)
+                            transformer=transformer, **head)
     return MultiModalNet(specs, m["encoder_types"], n_drugs=1, out_bias=out_bias,
-                         **head)
+                         transformer=transformer, **head)
 
 
 # ---------------------------------------------------------------------------

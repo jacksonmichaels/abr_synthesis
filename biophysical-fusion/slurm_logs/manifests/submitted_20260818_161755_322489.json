@@ -1,0 +1,445 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments dna__cisfusion dna_protein__cisfusion dna_biophysical__cisfusion dna_regulatory__cisfusion all_modalities__cisfusion --drugs all --default-encoder transformer --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640 --epochs 300 --patience 30 --min-epochs 50 --save-weights best --run-prefix transformer_run/ --mem 64G --cpus 4 --gpus 1 --time 36:00:00 --constraint vram23",
+  "submitted_jobs": [
+    {
+      "job_id": "63194661",
+      "experiment": "dna__cisfusion",
+      "drug": "ISONIAZID",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_ISONIAZID_20260818_161657_job1-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194662",
+      "experiment": "dna__cisfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_RIFAMPICIN_20260818_161658_job2-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194664",
+      "experiment": "dna__cisfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_ETHAMBUTOL_20260818_161659_job3-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194666",
+      "experiment": "dna__cisfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_PYRAZINAMIDE_20260818_161700_job4-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194667",
+      "experiment": "dna__cisfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_STREPTOMYCIN_20260818_161701_job5-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194669",
+      "experiment": "dna__cisfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_KANAMYCIN_20260818_161702_job6-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194671",
+      "experiment": "dna__cisfusion",
+      "drug": "AMIKACIN",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_AMIKACIN_20260818_161703_job7-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194672",
+      "experiment": "dna__cisfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_CAPREOMYCIN_20260818_161704_job8-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194691",
+      "experiment": "dna__cisfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_LEVOFLOXACIN_20260818_161706_job9-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194692",
+      "experiment": "dna__cisfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_MOXIFLOXACIN_20260818_161707_job10-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194694",
+      "experiment": "dna__cisfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "transformer_run/dna__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna__cisfusion_ETHIONAMIDE_20260818_161708_job11-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194696",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "ISONIAZID",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_ISONIAZID_20260818_161709_job12-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194697",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_RIFAMPICIN_20260818_161710_job13-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194699",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_ETHAMBUTOL_20260818_161711_job14-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194701",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_PYRAZINAMIDE_20260818_161712_job15-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194702",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_STREPTOMYCIN_20260818_161713_job16-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194704",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_KANAMYCIN_20260818_161714_job17-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194705",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "AMIKACIN",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_AMIKACIN_20260818_161715_job18-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194707",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_CAPREOMYCIN_20260818_161716_job19-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194708",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_LEVOFLOXACIN_20260818_161718_job20-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194710",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_MOXIFLOXACIN_20260818_161719_job21-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194711",
+      "experiment": "dna_protein__cisfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "transformer_run/dna_protein__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_protein__cisfusion_ETHIONAMIDE_20260818_161720_job22-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_protein__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194713",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "ISONIAZID",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_ISONIAZID_20260818_161721_job23-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194715",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_RIFAMPICIN_20260818_161722_job24-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194717",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_ETHAMBUTOL_20260818_161723_job25-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194719",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_PYRAZINAMIDE_20260818_161724_job26-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194720",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_STREPTOMYCIN_20260818_161725_job27-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194722",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_KANAMYCIN_20260818_161726_job28-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194723",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "AMIKACIN",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_AMIKACIN_20260818_161727_job29-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194724",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_CAPREOMYCIN_20260818_161728_job30-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194726",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_LEVOFLOXACIN_20260818_161729_job31-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194727",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_MOXIFLOXACIN_20260818_161730_job32-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194728",
+      "experiment": "dna_biophysical__cisfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "transformer_run/dna_biophysical__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_biophysical__cisfusion_ETHIONAMIDE_20260818_161731_job33-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_biophysical__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194730",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "ISONIAZID",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_ISONIAZID_20260818_161732_job34-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194732",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_RIFAMPICIN_20260818_161733_job35-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194734",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_ETHAMBUTOL_20260818_161734_job36-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194735",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_PYRAZINAMIDE_20260818_161736_job37-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194788",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_STREPTOMYCIN_20260818_161737_job38-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194790",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_KANAMYCIN_20260818_161738_job39-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194791",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "AMIKACIN",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_AMIKACIN_20260818_161739_job40-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194792",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_CAPREOMYCIN_20260818_161740_job41-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194794",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_LEVOFLOXACIN_20260818_161741_job42-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194795",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_MOXIFLOXACIN_20260818_161742_job43-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194797",
+      "experiment": "dna_regulatory__cisfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "transformer_run/dna_regulatory__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-dna_regulatory__cisfusion_ETHIONAMIDE_20260818_161743_job44-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/dna_regulatory__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194798",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "ISONIAZID",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_ISONIAZID_20260818_161744_job45-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194799",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_RIFAMPICIN_20260818_161745_job46-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194801",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_ETHAMBUTOL_20260818_161746_job47-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194804",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_PYRAZINAMIDE_20260818_161747_job48-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194805",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_STREPTOMYCIN_20260818_161748_job49-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194806",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_KANAMYCIN_20260818_161749_job50-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194808",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "AMIKACIN",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_AMIKACIN_20260818_161751_job51-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194809",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_CAPREOMYCIN_20260818_161752_job52-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194810",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_LEVOFLOXACIN_20260818_161753_job53-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194812",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_MOXIFLOXACIN_20260818_161754_job54-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    },
+    {
+      "job_id": "63194813",
+      "experiment": "all_modalities__cisfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "transformer_run/all_modalities__cisfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion/slurm_logs/slurm-all_modalities__cisfusion_ETHIONAMIDE_20260818_161755_job55-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name transformer_run/all_modalities__cisfusion --arch cisfusion --default-encoder transformer --patience 30 --min-epochs 50 --tf-d-model 160 --tf-nhead 4 --tf-layers 4 --tf-dim-ff 640"
+    }
+  ]
+}

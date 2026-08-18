@@ -132,6 +132,18 @@ def _training_knobs(args):
                       ("--enc-bins", args.enc_bins)):
         if val is not None:
             parts += [flag, str(val)]
+    # transformer encoder capacity: same rule. These are what make an all-
+    # transformer cell parameter-comparable to its CNN control -- a transformer
+    # branch mean-pools to d_model while a CNN branch flattens, so at the
+    # defaults the two differ by ~30x. Swept by results/experiments/transformer_run.
+    for flag, val in (("--tf-d-model", args.tf_d_model),
+                      ("--tf-nhead", args.tf_nhead),
+                      ("--tf-layers", args.tf_layers),
+                      ("--tf-dim-ff", args.tf_dim_ff),
+                      ("--tf-patch", args.tf_patch),
+                      ("--tf-dropout", args.tf_dropout)):
+        if val is not None:
+            parts += [flag, str(val)]
     if args.save_weights != "best":
         parts += ["--save-weights", args.save_weights]
     if args.weights_dir:
@@ -160,6 +172,12 @@ def run_experiment_command(exp_name, cfg, drug, args):
         parts += ["--per-locus-branches"]
     if cfg.get("encoders"):
         parts += ["--encoders", *[f"{m}={e}" for m, e in cfg["encoders"].items()]]
+    # A per-experiment `encoders` dict names ONE modality at a time; this sets the
+    # encoder for every block that dict does not name. It is how a whole cell is
+    # made uniformly transformer, which is the only form --arch mdcnn accepts
+    # (its trunks group by channel height and can span modalities).
+    if args.default_encoder != "cnn":
+        parts += ["--default-encoder", args.default_encoder]
     loci = cfg.get("loci") or args.loci
     if loci:
         parts += ["--loci", *loci]
@@ -383,6 +401,25 @@ def parse_args():
                    help="--arch mdcnn: one trunk per (modality, channels) rather "
                         "than per channel count, so promoter windows are not "
                         "padded to the longest CDS inside the DNA trunk")
+    p.add_argument("--default-encoder", default="cnn", choices=["cnn", "transformer"],
+                   help="encoder for every block not named by an experiment's own "
+                        "`encoders` dict (default: cnn). --arch mdcnn takes only a "
+                        "uniform choice, so this is the flag to use there.")
+    p.add_argument("--tf-d-model", type=int, default=None,
+                   help="transformer encoder token width. Only meaningful where "
+                        "--default-encoder/--encoders select 'transformer'; it is "
+                        "also the per-branch output width, since the encoder "
+                        "mean-pools (default 64)")
+    p.add_argument("--tf-nhead", type=int, default=None,
+                   help="transformer attention heads (default 4)")
+    p.add_argument("--tf-layers", type=int, default=None,
+                   help="transformer encoder layers (default 2)")
+    p.add_argument("--tf-dim-ff", type=int, default=None,
+                   help="transformer feed-forward width (default 128)")
+    p.add_argument("--tf-patch", type=int, default=None,
+                   help="transformer patch-embedding kernel and stride (default 9)")
+    p.add_argument("--tf-dropout", type=float, default=None,
+                   help="dropout inside the transformer layers (default 0.1)")
     p.add_argument("--save-weights", default="best",
                    choices=["best", "all", "none"],
                    help="which CV fold weights each job persists, alongside a "

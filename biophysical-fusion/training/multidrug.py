@@ -27,7 +27,8 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import KFold, train_test_split
 
 from bigtb_ref import tb
-from models import (SETFUSION_DEFAULTS, CisFusionNet, MDCNNNet, MultiDrugNet,
+from models import (SETFUSION_DEFAULTS, TRANSFORMER_DEFAULTS, CisFusionNet,
+                    MDCNNNet, MultiDrugNet,
                     SetFusionNet)
 from .checkpoint import RunCheckpointer, model_config
 from .core import EarlyStopper, masked_weighted_bce
@@ -208,7 +209,7 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                      mdcnn_trunk_per_modality=False, monitor_min_n=0,
                      run_name=None, save_weights="best", weights_dir=None,
                      data_config=None, setfusion=None, lr_schedule="none",
-                     warmup_epochs=0):
+                     warmup_epochs=0, transformer=None):
     """Train/eval a multi-drug net on a MultiDrugData bundle. Returns a result
     dict with per-drug and macro CV/TEST metrics.
 
@@ -222,11 +223,18 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     setfusion : setfusion-only capacity overrides (see models.SETFUSION_DEFAULTS);
                 ignored by every other arch. lr_schedule/warmup_epochs select the
                 per-epoch LR schedule (see training.multimodal.build_scheduler);
-                'none' is the flat LR every recorded run used."""
+                'none' is the flat LR every recorded run used.
+
+    transformer : capacity overrides for the transformer encoder / trunk (see
+                models.TRANSFORMER_DEFAULTS), applied wherever a transformer is
+                selected — per-locus branch under late_fusion / cisfusion, per
+                trunk under mdcnn. Ignored under an all-CNN run."""
     t0 = time.time()
     branch_models = branch_models or {}
     setfusion = {k: v for k, v in (setfusion or {}).items()
                  if v is not None and SETFUSION_DEFAULTS.get(k) != v}
+    transformer = {k: v for k, v in (transformer or {}).items()
+                   if v is not None and TRANSFORMER_DEFAULTS.get(k) != v}
     drugs = data.drugs
     n_drugs = len(drugs)
     tag = data.modality_tag()
@@ -268,15 +276,24 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     for fold, (tr, va) in enumerate(kf.split(train_idx)):
         writer = _new_writer(tb_root, f"cv_fold{fold}")
         if arch == "mdcnn":
+            # one uniform trunk encoder; see training.multimodal._build_model for
+            # why a per-modality mix is refused rather than half-applied
+            kinds = sorted(set(encoder_types))
+            if len(kinds) > 1:
+                raise ValueError(
+                    f"--arch mdcnn takes ONE encoder for every trunk, got {kinds}. "
+                    "Use --default-encoder.")
             model = MDCNNNet.from_blocks(data.blocks, drug_names=drugs,
                                          out_bias=out_bias,
                                          trunk_per_modality=mdcnn_trunk_per_modality,
-                                         **head)
+                                         encoder=(kinds[0] if kinds else "cnn"),
+                                         transformer=transformer, **head)
         elif arch == "cisfusion":
             model = CisFusionNet.from_blocks(data.blocks, drug_names=drugs,
                                              out_bias=out_bias,
                                              branch_models=branch_models,
-                                             default_encoder=default_encoder, **head)
+                                             default_encoder=default_encoder,
+                                             transformer=transformer, **head)
         elif arch == "setfusion":
             # built from the blocks: the (modality, locus) keys live in their
             # names. `hidden`/`per_drug_hidden` mean what they mean everywhere
@@ -289,7 +306,7 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                                              **{**SETFUSION_DEFAULTS, **setfusion})
         else:
             model = MultiDrugNet(specs, drugs, encoder_types, out_bias=out_bias,
-                                 **head)
+                                 transformer=transformer, **head)
         model = model.to(device)
         if fold == 0:
             n_params = sum(p.numel() for p in model.parameters())
@@ -341,7 +358,7 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
             drug_names=drugs, out_bias=out_bias, head=head,
             mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
             branch_models=branch_models, default_encoder=default_encoder,
-            n_params=n_params, setfusion=setfusion),
+            n_params=n_params, setfusion=setfusion, transformer=transformer),
         "data": {**(data_config or {}),
                  "modalities_used": data.modalities,
                  "modalities_requested": data.requested,
@@ -384,6 +401,8 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "lr": LR if lr is None else float(lr), "weight_decay": float(weight_decay),
         "lr_schedule": lr_schedule, "warmup_epochs": int(warmup_epochs),
         "setfusion": {**SETFUSION_DEFAULTS, **setfusion} if arch == "setfusion" else None,
+        "transformer": ({**TRANSFORMER_DEFAULTS, **transformer}
+                        if "transformer" in set(encoder_types) else None),
         "hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden,
         "mdcnn_trunk_per_modality": bool(mdcnn_trunk_per_modality),
         "monitor_min_n": monitor_min_n, "monitor_drugs": monitor_drugs,

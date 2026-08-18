@@ -46,7 +46,8 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from bigtb_ref import tb
-from models import (SETFUSION_DEFAULTS, CisFusionNet, MDCNNNet, MultiModalNet,
+from models import (SETFUSION_DEFAULTS, TRANSFORMER_DEFAULTS, CisFusionNet,
+                    MDCNNNet, MultiModalNet,
                     SetFusionNet)
 from .checkpoint import RunCheckpointer, model_config
 from .core import EarlyStopper, masked_weighted_bce
@@ -257,7 +258,8 @@ def _new_writer(tb_dir, *parts):
 
 def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
                  branch_models=None, default_encoder="cnn", head=None,
-                 mdcnn_trunk_per_modality=False, setfusion=None):
+                 mdcnn_trunk_per_modality=False, setfusion=None,
+                 transformer=None):
     """One model per fold.
 
     late_fusion -> our per-block encoder net; mdcnn -> BIG-TB's
@@ -272,9 +274,21 @@ def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
     exactly."""
     head = dict(head or {})
     if arch == "mdcnn":
+        # mdcnn groups blocks into trunks by channel height, and a trunk can span
+        # modalities (dna and regulatory are both 5-channel), so a PER-MODALITY
+        # encoder choice has no well-defined meaning here. One uniform choice
+        # does: take it when every block agrees, refuse when they do not, rather
+        # than silently dropping half the request.
+        kinds = sorted(set(encoder_types))
+        if len(kinds) > 1:
+            raise ValueError(
+                f"--arch mdcnn takes ONE encoder for every trunk, got {kinds}. "
+                "Its trunks group by channel height and can span modalities, so "
+                "a per-modality mix is ambiguous — use --default-encoder.")
         return MDCNNNet.from_blocks(blocks, n_drugs=n_drugs, out_bias=out_bias,
                                     trunk_per_modality=mdcnn_trunk_per_modality,
-                                    **head)
+                                    encoder=(kinds[0] if kinds else "cnn"),
+                                    transformer=transformer, **head)
     if arch == "setfusion":
         # `hidden`/`per_drug_hidden` mean the same thing here as in DenseHead,
         # so they come off the same head dict. (`hidden` was previously dropped
@@ -288,9 +302,10 @@ def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
     if arch == "cisfusion":
         return CisFusionNet.from_blocks(blocks, n_drugs=n_drugs, out_bias=out_bias,
                                         branch_models=branch_models,
-                                        default_encoder=default_encoder, **head)
+                                        default_encoder=default_encoder,
+                                        transformer=transformer, **head)
     return MultiModalNet(specs, encoder_types, n_drugs=n_drugs, out_bias=out_bias,
-                         **head)
+                         transformer=transformer, **head)
 
 
 def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
@@ -300,7 +315,8 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  hidden=256, dropout=0.0, per_drug_hidden=0,
                  mdcnn_trunk_per_modality=False, run_name=None,
                  save_weights="best", weights_dir=None, data_config=None,
-                 setfusion=None, lr_schedule="none", warmup_epochs=0):
+                 setfusion=None, lr_schedule="none", warmup_epochs=0,
+                 transformer=None):
     """Train/eval a MultiModalNet on a DrugData bundle, following BIG-TB's
     SD-CNN protocol (run_SDCNN_ccp_crossval / _assess). Returns a result dict.
 
@@ -326,6 +342,12 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                        branch_models/default_encoder and expect PER-LOCUS blocks.
     setfusion        : setfusion-only capacity overrides (see SETFUSION_DEFAULTS).
                        Ignored by every other arch.
+    transformer      : capacity overrides for the TRANSFORMER encoder / trunk
+                       (see TRANSFORMER_DEFAULTS). Applies wherever a transformer
+                       is actually selected — per-branch under late_fusion and
+                       cisfusion, per-trunk under mdcnn. Nothing at all under
+                       an all-CNN run, and ignored by setfusion, which has its
+                       own d_model/layers/dim_ff knobs.
     lr_schedule      : 'none' (flat LR, what every recorded run used) or
                        'cosine' with `warmup_epochs` (see build_scheduler).
     """
@@ -333,6 +355,8 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     branch_models = branch_models or {}
     setfusion = {k: v for k, v in (setfusion or {}).items()
                  if v is not None and SETFUSION_DEFAULTS.get(k) != v}
+    transformer = {k: v for k, v in (transformer or {}).items()
+                   if v is not None and TRANSFORMER_DEFAULTS.get(k) != v}
     head = {"hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden}
     drug, tag = data.drug, data.modality_tag()
     ckpt = RunCheckpointer(run_name, f"{drug}__{tag}", mode=save_weights,
@@ -355,7 +379,12 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     n = len(keep)
     assert (y != -1).all(), "missing phenotypes leaked past the filter"
     n_R, n_S = int((y == 0).sum()), int((y == 1).sum())
-    enc_desc = "n/a (mdcnn)" if arch == "mdcnn" else enc_by_modality
+    # mdcnn applies ONE encoder to every trunk rather than one per modality,
+    # so report the single kind it actually built. It used to print
+    # "n/a (mdcnn)" unconditionally, which was true only while the conv
+    # trunk was the sole option -- now it would hide a transformer run.
+    enc_desc = (f"{sorted(set(encoder_types))[0]} (all trunks)"
+                if arch == "mdcnn" else enc_by_modality)
     print(f"[{drug}/{tag}] arch={arch} blocks={[b.name for b in data.blocks]} "
           f"specs={specs} encoders={enc_desc} n_valid={n} R={n_R} S={n_S} "
           f"(dropped {data.n - n} missing)", flush=True)
@@ -399,7 +428,8 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         model = _build_model(arch, data.blocks, specs, encoder_types, 1, out_bias,
                              branch_models, default_encoder, head=head,
                              mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
-                             setfusion=setfusion).to(device)
+                             setfusion=setfusion,
+                             transformer=transformer).to(device)
         if fold == 0:
             n_params = sum(p.numel() for p in model.parameters())
             print(f"[{drug}/{tag}] {arch}: {n_params:,} parameters", flush=True)
@@ -450,7 +480,7 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
             drug_names=[drug], out_bias=out_bias, head=head,
             mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
             branch_models=branch_models, default_encoder=default_encoder,
-            n_params=n_params, setfusion=setfusion),
+            n_params=n_params, setfusion=setfusion, transformer=transformer),
         "data": {**(data_config or {}),
                  "modalities_used": data.modalities,
                  "modalities_requested": data.requested,
@@ -493,6 +523,10 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "lr": LR if lr is None else float(lr), "weight_decay": float(weight_decay),
         "lr_schedule": lr_schedule, "warmup_epochs": int(warmup_epochs),
         "setfusion": {**SETFUSION_DEFAULTS, **setfusion} if arch == "setfusion" else None,
+        # recorded whenever a transformer is actually in the model, so a result
+        # row always states the capacity it ran at
+        "transformer": ({**TRANSFORMER_DEFAULTS, **transformer}
+                        if "transformer" in set(encoder_types) else None),
         "hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden,
         "mdcnn_trunk_per_modality": bool(mdcnn_trunk_per_modality),
         "weights_dir": str(weights_path) if weights_path else None,

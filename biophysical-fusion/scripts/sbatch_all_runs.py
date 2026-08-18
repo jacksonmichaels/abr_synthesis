@@ -61,6 +61,18 @@ MODALITY_SETS = {
     "dna_biophysical":  ["dna", "biophysical"],
     "dna_regulatory":   ["dna", "regulatory"],
     "all_modalities":   ["dna", "protein", "biophysical", "regulatory"],
+    # --- leave-one-out arm, added 2026-08-13 for the SHAP follow-up ----------
+    # The ladder above only ever ADDS to DNA, so it cannot answer what SHAP
+    # claims about all_modalities: that the model gives its DNA input ~1% of the
+    # attribution budget and re-reads the same variant through the protein
+    # channel. `no_dna` is the falsifiable form of that claim — if the
+    # attribution is right, dropping DNA should cost almost nothing.
+    # `no_regulatory` is its control (regulatory is the only modality not
+    # derived from the coding sequence, so it should be the one that hurts), and
+    # `regulatory_only` bounds how much the promoter carries by itself.
+    "no_dna":           ["protein", "biophysical", "regulatory"],
+    "no_regulatory":    ["dna", "protein", "biophysical"],
+    "regulatory_only":  ["regulatory"],
 }
 GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion")
 

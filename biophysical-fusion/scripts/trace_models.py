@@ -82,7 +82,7 @@ from models import (DELTA_ARCHS, EXPERIMENTAL_DEFAULTS,  # noqa: E402
                     EXPERIMENTAL_MODELS, LOCUSFUSION_DEFAULTS, CisFusionNet,
                     LocusFusionNet, MDCNNNet, MultiDrugNet, MultiModalNet,
                     SetFusionNet, make_experimental, parse_block_key)
-from models.locusfusion import C_TOK  # noqa: E402
+from models.variant_tokens import C_TOK  # noqa: E402
 
 # --- palette: three validated categorical hues by OP ROLE + neutral ink ------
 # (dataviz reference palette slots 1-3, the set that clears the all-pairs

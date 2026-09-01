@@ -10,7 +10,9 @@ same reason biophysical traits are per-gene.
 """
 from typing import List
 
-from . import biochem, cds
+import numpy as np
+
+from . import biochem, cds, tokens
 from .base import FeatureBlock, LoadContext, Modality
 from .sequences import delta_zero_columns, reference_row, stack_padded
 
@@ -25,6 +27,12 @@ class ProteinModality(Modality):
     # H37Rv protein, so the block carries the substitutions and nothing else.
     delta = False
 
+    # One symbol id per residue instead of the 20-channel one-hot; see
+    # datasets/tokens.py. Residues past this isolate's own protein become
+    # ``AA_UNK`` rather than an all-zero column, so a premature stop is a
+    # deviation from the reference instead of silence.
+    variant_tokens = False
+
     def build(self, ctx: LoadContext) -> List[FeatureBlock]:
         seqs = ctx.gene_seqs
         gene_cols = [g for g in ctx.loci if g in seqs.columns]
@@ -32,6 +40,31 @@ class ProteinModality(Modality):
             return []
         seqs = seqs.fillna("")
         blocks = []
+
+        if self.variant_tokens:
+            for g in gene_cols:
+                window = cds.cds_columns(ctx.genotype_dir, g)
+                proteins = [biochem.translate_seq(
+                    cds.cds_slice(ctx.genotype_dir, g, seqs.at[iso, g], window))
+                    for iso in ctx.isolates]
+                ref_nt = reference_row(ctx.genotype_dir, g)
+                ref_aa = (biochem.translate_seq(
+                    cds.cds_slice(ctx.genotype_dir, g, ref_nt, window))
+                    if ref_nt else "")
+                k_max = max((len(p) for p in proteins), default=1) or 1
+                ids = np.stack([tokens.aa_symbol_ids(p, pad_to=k_max)
+                                for p in proteins])[:, None, :]
+                blocks.append(FeatureBlock(
+                    name=f"protein:{g}",
+                    modality=self.name,
+                    array=ids,
+                    channel_names=["symbol_id"],
+                    note=f"gene {g}, CDS window translated "
+                         f"(symbol ids, H37Rv reference in column_meta)",
+                    column_meta=tokens.protein_column_meta(ref_aa, k_max),
+                ))
+            return blocks
+
         for g in gene_cols:
             window = cds.cds_columns(ctx.genotype_dir, g)
             if window is None and g not in _WARNED:

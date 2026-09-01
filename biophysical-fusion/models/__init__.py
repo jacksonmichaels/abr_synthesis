@@ -89,4 +89,14 @@ ARCHITECTURES = (("late_fusion", "mdcnn", "setfusion", "cisfusion", "locusfusion
 PER_LOCUS_ARCHS = (("mdcnn", "setfusion", "cisfusion", "locusfusion")
                    + tuple(sorted(EXPERIMENTAL_MODELS)))
 # ...and those whose input representation is reference-difference encoded.
+# locusfusion stays on this list even though its nucleotide and protein blocks
+# are now symbol ids that carry their own reference: BIOPHYSICAL has no id form
+# (see models/locusfusion.py), so delta encoding is still what makes an unchanged
+# residue's properties zero, and therefore what makes its occupancy meaningful.
 DELTA_ARCHS = ("locusfusion",) + tuple(sorted(EXPERIMENTAL_MODELS))
+# Architectures that read one SYMBOL ID per column plus the per-column reference,
+# coordinate and codon phase (datasets/tokens.py), instead of a one-hot. The
+# aggregator family in experimental_models.py is deliberately NOT here: it was
+# measured on the legacy dense layout and porting it is separate work with its
+# own control run.
+VARIANT_TOKEN_ARCHS = ("locusfusion",)

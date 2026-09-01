@@ -37,6 +37,11 @@ class FeatureBlock:
     array: np.ndarray         # (N, C, L) float32
     channel_names: List[str] = field(default_factory=list)
     note: str = ""
+    # Per-COLUMN constants, identical for every isolate, so they ride alongside
+    # the array rather than inside it: {"coord", "phase", "ref_id"}, each (L,).
+    # Only the variant-token loaders fill it (see datasets/tokens.py); every
+    # other path leaves it None and nothing downstream looks at it.
+    column_meta: Optional[dict] = None
 
     @property
     def channels(self) -> int:

@@ -7,6 +7,7 @@ from typing import List
 
 import numpy as np
 
+from . import tokens
 from .base import FeatureBlock, LoadContext, Modality
 from .sequences import (NT_CHANNELS, delta_one_hot_nt, one_hot_nt,
                         reference_row, stack_padded)
@@ -27,12 +28,40 @@ class DNAModality(Modality):
     # single-drug path leaves it False and keeps the concatenated SD-CNN input.
     per_locus = False
 
+    # Emit one SYMBOL ID per column instead of a 5-channel one-hot (see
+    # datasets/tokens.py). Variant-token architectures read the id and the
+    # block's reference ids, so the one-hot is redundant width for them — and
+    # an id can say "N" where an all-zero one-hot column could not, which is
+    # what made a failed base call read as wild type. Per-locus only, since a
+    # concatenated block has no single coordinate system.
+    variant_tokens = False
+
     def build(self, ctx: LoadContext) -> List[FeatureBlock]:
         seqs = ctx.gene_seqs
         gene_cols = [g for g in ctx.loci if g in seqs.columns]
         if not gene_cols:
             return []
         seqs = seqs[gene_cols].fillna("")
+
+        if self.variant_tokens:
+            if not self.per_locus:
+                raise ValueError("DNAModality.variant_tokens requires per_locus "
+                                 "blocks: a concatenation of loci has no single "
+                                 "coordinate system to place a token in.")
+            blocks = []
+            for g in gene_cols:
+                length = max(len(seqs.at[iso, g]) for iso in ctx.isolates) or 1
+                ids = np.stack([tokens.nt_symbol_ids(seqs.at[iso, g], "nt", length)
+                                for iso in ctx.isolates])[:, None, :]   # (N, 1, L)
+                blocks.append(FeatureBlock(
+                    name=f"dna:{g}",
+                    modality=self.name,
+                    array=ids,
+                    channel_names=["symbol_id"],
+                    note=f"locus {g} (symbol ids, H37Rv reference in column_meta)",
+                    column_meta=tokens.gene_column_meta(ctx.genotype_dir, g, length),
+                ))
+            return blocks
 
         refs = ({g: reference_row(ctx.genotype_dir, g) for g in gene_cols}
                 if self.delta else {})

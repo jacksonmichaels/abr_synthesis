@@ -6,11 +6,11 @@ Two ideas, and everything here follows from them.
 **1. Fuse at the gene, then across genes.** Every other architecture in this
 project fuses the modalities and the loci in the SAME step — `late_fusion` at
 one flatten, `mdcnn` at layer 1, `setfusion` in one transformer over one token
-per block. This one is two stages: all of *rpoB*'s evidence (its CDS one-hot,
-its translation, that translation's biophysical profile, its promoter window)
-is fused into a single **locus representation** first, and only those 19 locus
-representations then talk to each other. A resistance mechanism is a property
-of a gene; a resistance *phenotype* is a property of the set of genes.
+per block. This one is two stages: all of *rpoB*'s evidence (its CDS symbols,
+its translation, that translation's biophysical profile, its promoter window) is
+fused into a single **locus representation** first, and only those 19 locus
+representations then talk to each other. A resistance mechanism is a property of
+a gene; a resistance *phenotype* is a property of the set of genes.
 
 **2. A token per VARIANT, not a token per patch.** This is the fix for the
 failure that `results/experiments/token_signal` diagnosed and that every
@@ -18,15 +18,13 @@ transformer arm in this project has died of. *M. tuberculosis* is clonal: the
 measured median isolate differs from H37Rv at **0-3 columns of a 2.5 kb gene**
 (census in `README.md`). A patch-embedding transformer therefore spends ~99.9%
 of its tokens restating sequence that is identical in every isolate, and the
-measured consequence was an encoded token whose per-isolate part is 0.14% of
-its magnitude, attention pinned at exactly uniform, and a linear probe on the
-encoder output beating the trained model.
+measured consequence was an encoded token whose per-isolate part is 0.14% of its
+magnitude, attention pinned at exactly uniform, and a linear probe on the encoder
+output beating the trained model.
 
 So do not tokenize the sequence. Tokenize the **difference from the reference**:
-run on ``--delta`` input (`datasets.sequences.delta_one_hot_nt`, which zeroes
-every column matching the real MT_H37Rv record) and emit one token per column
-that survives. A token then exists *only* where the genotype deviates from wild
-type, so 100% of it varies with the genotype by construction.
+a column becomes a token only where the isolate's symbol differs from H37Rv's.
+100% of a token varies with the genotype by construction.
 
 That is also the shape of the hypothesis the biology suggests and the reason
 this net is built the way it is: **a susceptible isolate is the empty set.**
@@ -35,75 +33,69 @@ every variant token is evidence against it. A pan-susceptible isolate presents
 19 sentinels and nothing else; the model's job is to score deviations, not to
 re-derive what a sensitive strain looks like from 12,000 constant columns.
 
-Three things fall out of that, all of them things the pooled architectures gave
-up:
+What a token is
+---------------
 
-* **Exact position survives.** A variant token carries its own coordinate
-  through a sinusoidal encoding, so "column 315 of katG" is preserved to the
-  nucleotide — better than `mdcnn`, which pools 9-fold, and unlike
-  `setfusion`, which coarsens a locus to 4 relative bins.
+A variant is a discrete event, so a token is three small integers and one
+coordinate — not a 42-wide sparse float vector::
+
+    alt    symbol id of what the ISOLATE has here      (35-symbol vocabulary)
+    ref    symbol id of what H37Rv has here            (same vocabulary)
+    phase  codon position 0/1/2, or "not applicable"   (amino-acid tokens)
+    coord  exact H37Rv codon number, fractional        (a float)
+
+embedded as ``alt_emb[alt] + ref_emb[ref] + phase_emb[phase] +
+pos_proj(sinusoid(coord)) + locus_emb[locus]``, plus a 3-dim projection of the
+biophysical properties when that modality is loaded and a single learned vector
+when the locus failed to assemble. The vocabulary and the coordinate map live in
+``datasets/tokens.py``, which is also where the two things this replaced are
+written up: the old layout's duplicated flags, and the coordinate bug.
+
+The coordinate is the point. It is the H37Rv codon number, computed from the
+CDS annotation and the reference gap pattern, so a DNA token and a protein token
+for the same residue land on the same axis — "katG 315" is 314.0 whether it
+arrives through the nucleotide stream or the protein stream. The previous
+version placed the nucleotide token at ``column/3`` minus a learned per-locus
+scalar, which put katG S315 at 357.3 against its protein token's 314, and read
+``[-0.0107, +0.0081]`` for that scalar off a fully trained checkpoint.
+
+Three things fall out of the variant-token design, all of them things the pooled
+architectures gave up:
+
+* **Exact position survives**, to the nucleotide — better than `mdcnn`, which
+  pools 9-fold, and unlike `setfusion`, which coarsens a locus to 4 relative
+  bins.
 * **The input collapses.** 19 loci x up to 4,066 columns becomes a median of
   ~14 tokens per isolate. Attention over 32 tokens is free where attention over
-  1,300 patches was not, so the size question that dominated
-  `transformer_run` stops being the binding constraint.
+  1,300 patches was not, so the size question that dominated `transformer_run`
+  stops being the binding constraint.
 * **Attribution is free and exact.** ``forward(..., return_attn=True)`` returns
-  which token each drug read, and a token IS a variant with a locus and a
-  coordinate — checkable against the WHO catalogue without SHAP.
+  which token each drug read, and a token IS a variant with a locus, a
+  coordinate and a ref->alt pair — checkable against the WHO catalogue without
+  SHAP.
 
 What it cannot see: anything constant across the cohort (which carries no
-discriminative signal, so this is a real restriction with no measured cost),
-and sequence *context* around a variant beyond what the position encoding says.
+discriminative signal, so this is a real restriction with no measured cost), and
+sequence *context* around a variant beyond what the position encoding says.
 
-Requires ``--delta`` and PER-LOCUS blocks. Given dense (non-delta) input every
-column is occupied, the cap keeps the first ``max_variants`` columns, and the
-model degenerates to reading the head of each block — the constructor cannot
-detect that, so ``forward`` checks occupancy on the first batch and warns.
+Requires symbol-id blocks (``load_dataset(variant_tokens=True)``) and PER-LOCUS
+blocks; both runners set them from ``--arch locusfusion``. The one modality with
+no symbol-id form is biophysical, deliberately: it is the modality whose claim is
+that three properties stand in for the residue identity, so handing it that
+identity would answer its own ablation. In a ``dna+biophysical`` cell the
+amino-acid stream therefore carries properties and coordinates but no symbol,
+and a residue whose properties are unchanged stays invisible there.
 """
-import math
 import warnings
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from datasets import tokens as tok
+
 from .net import NO_LOCUS, KeyedTokenNorm, parse_block_key
-
-# --- the token feature vector ----------------------------------------------
-# One fixed layout, whatever subset of modalities a run loads: a modality that
-# is absent simply leaves its slot zero. Dead input dims cost 128 weights each
-# in `tok_proj` and buy a token vector whose meaning does not change between
-# cells, which is what makes two runs' attention maps comparable.
-SLOTS = {                       # modality -> (start, stop) in the feature vector
-    "dna":         (0, 5),      # A C T G -   at one alignment column
-    "protein":     (5, 25),     # 20 amino acids at one codon
-    "biophysical": (25, 28),    # MW / pI / hydrophobicity of the new residue
-    "regulatory":  (28, 33),    # A C T G -   at one promoter column
-}
-F_IS_NT, F_IS_AA, F_IS_REG, F_IS_WT = 33, 34, 35, 36
-F_GAP, F_UNCOVERED = 37, 38
-F_PHASE = 39                    # 3 dims: alignment column % 3
-C_TOK = 42
-
-GAP_CHANNEL = 4                 # datasets.sequences.NT_CHANNELS == [A, C, T, G, -]
-
-# Which blocks share a coordinate system, and how their index maps onto it.
-# The unit is CODONS throughout so the streams are roughly commensurable:
-#   nt   dna, at alignment-column resolution           coord = col/3 - offset[locus]
-#   aa   protein + biophysical, at codon resolution    coord = k
-#   reg  the promoter window, upstream of the CDS      coord = (q - L)/3   (negative)
-#
-# "Roughly" is doing real work and is the one approximation in this model.
-# `datasets/protein.py` translates the CDS window after DEGAPPING each isolate,
-# so codon k is the k-th codon of that isolate's own degapped CDS, while the DNA
-# block stays in shared alignment-column space. The two agree exactly when no
-# indel sits upstream of the variant — the overwhelming majority of a clonal
-# cohort — and drift by the indel length when one does. We therefore do NOT fuse
-# nt and aa tokens by position: they stay separate tokens that the within-locus
-# attention may pair, and `coord_offset` is a LEARNED per-locus scalar so the
-# constant part of the offset (where the CDS starts inside the aligned record —
-# katG's is 2,223 bp of CDS inside a 2,488 bp record) is fitted rather than
-# assumed.
-STREAMS = {"dna": "nt", "protein": "aa", "biophysical": "aa", "regulatory": "reg"}
+from .variant_tokens import STREAMS, select_variants, sinusoid
 
 LOCUSFUSION_DEFAULTS = {
     # A  token width, shared by both stages, both embeddings and the readout
@@ -116,8 +108,11 @@ LOCUSFUSION_DEFAULTS = {
     #    census in README.md puts the 99th percentile at <=7 columns per locus
     #    for 17 of 19 loci and 26 for the two rRNA genes, so 16 covers >99% of
     #    (isolate, locus) pairs. Overflow keeps the FIRST 16 in positional
-    #    order (deterministic, and one-hot columns have no norm to rank by).
-    "max_variants": 16, "pos_dims": 64, "uncovered_frac": 0.5,
+    #    order (deterministic, and a symbol id has no magnitude to rank by).
+    #    `pos_dims` is 32 rather than 64 because the sinusoid band is now fitted
+    #    to the data — [1/3, 4096] codons, see variant_tokens.sinusoid — instead
+    #    of spending half its range on wavelengths longer than any locus.
+    "max_variants": 16, "pos_dims": 32, "uncovered_frac": 0.5,
     # E  per-locus specialization. 'shared' = one stage-1 encoder for every
     #    locus, identity carried only by `locus_emb`; 'adapter' = the same
     #    encoder plus a per-locus FiLM (scale+shift) on its input, 2*d_model
@@ -149,45 +144,10 @@ LOCUSFUSION_DEFAULTS = {
 LOCUS_ENCODERS = ("shared", "adapter", "per_locus")
 SUMMARY_NORMS = ("none", "keyed")
 
-
-def _sinusoid(coord, dims):
-    """(..., ) continuous coordinate -> (..., dims) sinusoidal encoding.
-
-    Continuous rather than table-indexed on purpose: the coordinate is in codon
-    units and a DNA column lands on k, k+1/3 or k+2/3, so the fractional part
-    carries the codon phase; and a learned table would need one row per column
-    per locus (1,355 x 128 x 19 = 3.3M parameters) to say what 0 parameters say
-    here. Wavelengths run 2*pi to 2*pi*10^4 codons, which resolves a 1/3-codon
-    step at the top and spans the longest locus at the bottom.
-    """
-    half = dims // 2
-    freqs = torch.exp(-math.log(10000.0)
-                      * torch.arange(half, device=coord.device, dtype=coord.dtype) / half)
-    ang = coord.unsqueeze(-1) * freqs
-    return torch.cat([ang.sin(), ang.cos()], dim=-1)
-
-
-def _select_variants(occ, k):
-    """Occupancy mask (B, L) -> the first `k` occupied columns per isolate.
-
-    Returns ``(idx, valid, n_occ)``: ``idx`` (B, k) long — occupied columns in
-    ASCENDING position, padded out with unoccupied ones; ``valid`` (B, k) bool
-    marking which of those are real; ``n_occ`` (B,) the true count before the
-    cap, which is what the [WT] token reports and what the uncovered-locus test
-    reads.
-
-    The ranking trick: score an occupied column ``L+1-p`` and an unoccupied one
-    ``-p``. Every occupied score exceeds every unoccupied one, and within each
-    group the score decreases with position, so a single ``topk`` yields exactly
-    "occupied first, then in positional order".
-    """
-    B, L = occ.shape
-    n_occ = occ.sum(1)
-    k = max(1, min(int(k), L))
-    ar = torch.arange(L, device=occ.device, dtype=torch.float32)
-    score = occ.to(torch.float32) * (L + 1) - ar
-    idx = score.topk(k, dim=1).indices                     # (B, k)
-    return idx, occ.gather(1, idx), n_occ
+# Modalities that arrive as symbol ids, (B, 1, L). Biophysical is the exception
+# and arrives as its 3 property channels; see the module docstring.
+ID_MODALITIES = ("dna", "protein", "regulatory")
+N_BIO = 3
 
 
 class LocusFusionNet(nn.Module):
@@ -196,11 +156,10 @@ class LocusFusionNet(nn.Module):
     Pipeline, per isolate::
 
         per locus L, per coordinate stream (nt / aa / reg):
-            delta block (B, C, len)  --occupancy--> the columns that differ
-                                     --gather-->    <= max_variants tokens
-        token = tok_proj(feature slots + flags)
-              + pos_proj(sinusoid(coord))
-              + locus_emb[L]  (+ FiLM adapter[L])
+            symbol ids (B, 1, len)  --alt != ref-->  the columns that differ
+                                    --gather-->      <= max_variants tokens
+        token  = alt_emb + ref_emb + phase_emb + pos_proj(sinusoid(coord))
+               + locus_emb  (+ bio_proj(properties))  (+ uncovered_emb)
         [WT]_L = wt_emb[L] + wt_proj(variant count, coverage, uncovered)
 
         stage 1:  TransformerEncoder over {[WT]_L, variants of L}   -> z_L = out[[WT]]
@@ -209,17 +168,19 @@ class LocusFusionNet(nn.Module):
 
     Same ``forward(xs)`` contract as every other arch — a list of (B, C_i, L_i)
     block tensors in ``branch_specs`` order — so the existing trainers drive it
-    unchanged. ``block_keys`` are ``(modality, locus)`` pairs; ``from_blocks``
-    takes them straight off the loader's FeatureBlocks.
+    unchanged. ``block_keys`` are ``(modality, locus)`` pairs and ``column_meta``
+    is the per-block ``{coord, phase, ref_id}`` the loader attached;
+    ``from_blocks`` takes all three straight off the loader's FeatureBlocks.
     """
 
     bio_input = "blocks"        # forward takes the list of block tensors as-is
 
-    def __init__(self, block_keys, branch_specs, n_drugs=1, drug_names=None,
+    def __init__(self, block_keys, branch_specs, column_meta=None,
+                 n_drugs=1, drug_names=None,
                  d_model=128, nhead=4, dropout=0.1,
                  enc_layers=2, enc_dim_ff=256,
                  fusion_layers=2, fusion_dim_ff=256,
-                 max_variants=16, pos_dims=64, uncovered_frac=0.5,
+                 max_variants=16, pos_dims=32, uncovered_frac=0.5,
                  locus_encoder="adapter", summary_norm="keyed", carry_variants=0,
                  hidden=256, head_dropout=0.0, per_drug_hidden=0, out_bias=None):
         super().__init__()
@@ -242,10 +203,23 @@ class LocusFusionNet(nn.Module):
             n_drugs = len(drug_names)
 
         block_keys = [(m, l or NO_LOCUS) for m, l in block_keys]
-        unknown = sorted({m for m, _ in block_keys} - set(SLOTS))
+        unknown = sorted({m for m, _ in block_keys} - set(STREAMS))
         if unknown:
-            raise ValueError(f"LocusFusionNet has no feature slot for modalities "
-                             f"{unknown}; known: {sorted(SLOTS)}")
+            raise ValueError(f"LocusFusionNet has no coordinate stream for "
+                             f"modalities {unknown}; known: {sorted(STREAMS)}")
+        column_meta = list(column_meta) if column_meta else [None] * len(block_keys)
+        if len(column_meta) != len(block_keys):
+            raise ValueError("column_meta must match block_keys length "
+                             f"({len(column_meta)} vs {len(block_keys)})")
+        for (modality, _l), (channels, _len) in zip(block_keys, branch_specs):
+            want = 1 if modality in ID_MODALITIES else N_BIO
+            if channels != want:
+                raise ValueError(
+                    f"LocusFusionNet expects {want} channel(s) for a "
+                    f"{modality!r} block and got {channels}. The symbol-id "
+                    f"layout is what this architecture reads — load with "
+                    f"variant_tokens=True (both runners set it from "
+                    f"--arch locusfusion).")
 
         # --- group the flat block list into loci, and each locus into the
         # coordinate streams its blocks share -------------------------------
@@ -274,6 +248,41 @@ class LocusFusionNet(nn.Module):
             plan.append([(s, members, length)
                          for s, (members, length) in streams.items()])
         self._plan = plan
+
+        # --- the per-column constants, as buffers ----------------------------
+        # coord / phase / ref_id are identical for every isolate, so they belong
+        # to the model, not to the batch. One entry per (locus, stream), keyed by
+        # a flat name because ModuleDict/BufferDict keys cannot contain dots.
+        self._meta_keys = {}
+        for li, streams in enumerate(plan):
+            for si, (stream, members, length) in enumerate(streams):
+                meta = self._pick_meta(column_meta, members)
+                key = f"m{li}_{si}"
+                if meta is None:
+                    # No reference available (a fixture without an H37Rv row, or
+                    # a biophysical-only amino-acid stream). Residue index IS the
+                    # codon coordinate, and with no reference symbol the stream
+                    # falls back to "any non-zero property" occupancy.
+                    coord = torch.arange(length, dtype=torch.float32)
+                    phase = torch.full((length,), tok.PHASE_NA, dtype=torch.long)
+                    ref = torch.full((length,), tok.AA_UNK if stream == "aa"
+                                     else tok.PAD, dtype=torch.long)
+                else:
+                    coord = torch.as_tensor(meta["coord"], dtype=torch.float32)
+                    phase = torch.as_tensor(meta["phase"], dtype=torch.long)
+                    ref = torch.as_tensor(meta["ref_id"], dtype=torch.long)
+                # PERSISTENT on purpose. The reference symbols and the codon
+                # coordinate are part of what the trained model means, not a
+                # property of whatever dataset is loaded next: a checkpoint
+                # rebuilt through training/checkpoint.py gets its keys and specs
+                # from the config and would otherwise come back with the
+                # fallback map, quietly moving every token. They cost a few
+                # hundred KB and make a checkpoint self-contained.
+                self.register_buffer(f"coord_{key}", coord)
+                self.register_buffer(f"phase_{key}", phase)
+                self.register_buffer(f"ref_{key}", ref)
+                self._meta_keys[(li, si)] = key
+
         # every locus contributes [WT] + max_variants per stream; the token axis
         # is padded to the widest locus so all loci run through stage 1 in ONE
         # batched call instead of a python loop over 19 transformers.
@@ -284,19 +293,29 @@ class LocusFusionNet(nn.Module):
 
         # --- token embedding -------------------------------------------------
         n_loci = len(self.loci)
-        self.tok_proj = nn.Linear(C_TOK, d_model)
+        self.alt_emb = nn.Embedding(tok.N_SYMBOLS, d_model, padding_idx=tok.PAD)
+        self.ref_emb = nn.Embedding(tok.N_SYMBOLS, d_model, padding_idx=tok.PAD)
+        self.phase_emb = nn.Embedding(tok.N_PHASES, d_model)
         self.pos_proj = nn.Linear(pos_dims, d_model)
-        self.wt_proj = nn.Linear(3, d_model)         # count / coverage / uncovered
         self.locus_emb = nn.Embedding(n_loci, d_model)
         self.wt_emb = nn.Embedding(n_loci, d_model)
-        # the constant part of the nt->codon offset: where the CDS starts inside
-        # the aligned record. Learned rather than read off `datasets.cds`, which
-        # would mean plumbing a column offset through FeatureBlock for a number
-        # the model can fit from 19 scalars.
-        self.coord_offset = nn.Parameter(torch.zeros(n_loci))
+        self.wt_proj = nn.Linear(3, d_model)         # count / coverage / uncovered
+        # An all-gap record differs from the reference at EVERY column, so
+        # without this a locus that simply failed to assemble reads as the
+        # most-mutated isolate in the cohort. 14-91 isolates per locus are in
+        # that state (README census); they are not wild type and must not look
+        # it. One learned vector, added to every token of an uncovered locus —
+        # the old layout spent a whole feature slot broadcasting one bit.
+        self.uncovered_emb = nn.Parameter(torch.zeros(d_model))
+        self.has_bio = any(m == "biophysical" for m, _ in block_keys)
+        self.bio_proj = nn.Linear(N_BIO, d_model) if self.has_bio else None
         self.tok_norm = nn.LayerNorm(d_model)
-        nn.init.trunc_normal_(self.locus_emb.weight, std=0.02)
-        nn.init.trunc_normal_(self.wt_emb.weight, std=0.02)
+        for emb in (self.alt_emb, self.ref_emb, self.phase_emb,
+                    self.locus_emb, self.wt_emb):
+            nn.init.trunc_normal_(emb.weight, std=0.02)
+        with torch.no_grad():                        # padding_idx rows stay zero
+            self.alt_emb.weight[tok.PAD].zero_()
+            self.ref_emb.weight[tok.PAD].zero_()
         self.pos_dims = int(pos_dims)
 
         # --- stage 1: within one locus ---------------------------------------
@@ -355,73 +374,90 @@ class LocusFusionNet(nn.Module):
         self.d_model = d_model
         self._occupancy_checked = False
 
+    @staticmethod
+    def _pick_meta(column_meta, members):
+        """The metadata for a stream: whichever member block carries it.
+
+        Only the symbol-id modalities attach one, so an amino-acid stream with
+        protein loaded takes protein's (which has the reference residues) and
+        one with only biophysical loaded gets None.
+        """
+        for i, modality in members:
+            if modality in ID_MODALITIES and column_meta[i] is not None:
+                return column_meta[i]
+        return None
+
     @classmethod
     def from_blocks(cls, blocks, **kwargs):
         """Build straight from loader FeatureBlocks (``data.blocks``)."""
         return cls([parse_block_key(b.name) for b in blocks],
-                   [b.spec() for b in blocks], **kwargs)
+                   [b.spec() for b in blocks],
+                   column_meta=[b.column_meta for b in blocks], **kwargs)
 
     # -- tokenization --------------------------------------------------------
 
-    def _stream_tokens(self, xs, li, stream, members, length):
-        """One coordinate stream of one locus -> (features, coord, valid, n_occ).
+    def _stream_tokens(self, xs, li, si, stream, members, length):
+        """One coordinate stream of one locus -> the tokens it contributes.
 
         `members` may hold several blocks (protein + biophysical are co-indexed
         by construction — same translate path, same k_max), in which case the
-        occupancy is their UNION and each block writes into its own feature
-        slot at the same selected columns. That is the gene-level fusion: one
-        token per changed residue carrying every modality's view of it.
+        symbol comes from the id block and the properties ride along at the same
+        selected columns. That is the gene-level fusion: one token per changed
+        residue carrying every modality's view of it.
+
+        Occupancy is ``alt != ref`` wherever a reference is known, which is what
+        makes an unresolved base call visible: ``N`` against a reference ``C``
+        is a difference, where under the old all-zero-column encoding it was
+        indistinguishable from a match.
         """
-        blocks = [xs[i] for i, _ in members]
-        B = blocks[0].shape[0]
-        occ = torch.zeros(B, length, dtype=torch.bool, device=blocks[0].device)
-        for x in blocks:
-            occ |= x.abs().sum(1) > 0
-        idx, valid, n_occ = _select_variants(occ, self.max_variants)
-        k = idx.shape[1]
+        key = self._meta_keys[(li, si)]
+        coord_map = getattr(self, f"coord_{key}")
+        phase_map = getattr(self, f"phase_{key}")
+        ref_map = getattr(self, f"ref_{key}")
 
-        feat = blocks[0].new_zeros(B, k, C_TOK)
-        gather = idx.unsqueeze(-1)
-        for x, (_i, modality) in zip(blocks, members):
-            lo, hi = SLOTS[modality]
-            feat[:, :, lo:hi] = x.transpose(1, 2).gather(
-                1, gather.expand(-1, -1, x.shape[1]))
-
-        pos = idx.to(feat.dtype)
-        if stream == "aa":
-            feat[:, :, F_IS_AA] = 1.0
-            coord = pos
-        else:
-            flag = F_IS_NT if stream == "nt" else F_IS_REG
-            feat[:, :, flag] = 1.0
-            # the '-' channel of the nucleotide one-hot: an alignment gap where
-            # the reference has a base, i.e. a deletion or a coverage hole. The
-            # model needs to be able to tell those from substitutions.
-            lo, _hi = SLOTS["dna" if stream == "nt" else "regulatory"]
-            feat[:, :, F_GAP] = feat[:, :, lo + GAP_CHANNEL]
-            feat[:, :, F_PHASE:F_PHASE + 3] = F.one_hot(
-                (idx % 3), num_classes=3).to(feat.dtype)
-            coord = pos / 3.0
-            if stream == "nt":
-                coord = coord - self.coord_offset[li]
+        ids = bio = None
+        for i, modality in members:
+            if modality in ID_MODALITIES:
+                ids = xs[i][:, 0].to(torch.long)               # (B, len)
             else:
-                coord = coord - length / 3.0          # upstream: negative codons
-        feat = feat * valid.unsqueeze(-1).to(feat.dtype)
-        coord = coord * valid.to(coord.dtype)
-        return feat, coord, valid, n_occ, length
+                bio = xs[i]                                    # (B, 3, len)
+
+        if ids is not None:
+            occ = ids != ref_map.unsqueeze(0)
+            # padding past a block's real extent is not a variant
+            occ &= ids != tok.PAD
+        else:
+            # biophysical-only stream: no symbol to compare, so fall back to the
+            # delta encoding's own signal — a residue whose properties moved.
+            occ = bio.abs().sum(1) > 0
+        idx, valid, n_occ = select_variants(occ, self.max_variants)
+
+        alt = ids.gather(1, idx) if ids is not None else torch.full_like(
+            idx, tok.AA_UNK if stream == "aa" else tok.PAD)
+        ref = ref_map[idx]
+        phase = phase_map[idx]
+        coord = coord_map[idx]
+        props = (bio.transpose(1, 2).gather(1, idx.unsqueeze(-1).expand(-1, -1, N_BIO))
+                 if bio is not None else None)
+        return idx, alt, ref, phase, coord, props, valid, n_occ, length
 
     def _locus_tokens(self, xs):
-        """-> (feat, coord, valid) each shaped (B, n_loci, tokens_per_locus, ...).
+        """-> per-locus token fields, each shaped (B, n_loci, tokens_per_locus, ...).
 
         Slot 0 of every locus is its [WT] sentinel and is always valid, so no
         stage-1 attention row is ever fully masked.
         """
         B = xs[0].shape[0]
-        dev, dt = xs[0].device, xs[0].dtype
+        dev = xs[0].device
+        dt = torch.float32
         T = self.tokens_per_locus
         n_loci = len(self.loci)
-        feat = torch.zeros(B, n_loci, T, C_TOK, device=dev, dtype=dt)
+        alt = torch.full((B, n_loci, T), tok.PAD, dtype=torch.long, device=dev)
+        ref = torch.full((B, n_loci, T), tok.PAD, dtype=torch.long, device=dev)
+        phase = torch.full((B, n_loci, T), tok.PHASE_NA, dtype=torch.long, device=dev)
         coord = torch.zeros(B, n_loci, T, device=dev, dtype=dt)
+        props = (torch.zeros(B, n_loci, T, N_BIO, device=dev, dtype=dt)
+                 if self.has_bio else None)
         valid = torch.zeros(B, n_loci, T, dtype=torch.bool, device=dev)
         stats = torch.zeros(B, n_loci, 3, device=dev, dtype=dt)
 
@@ -429,72 +465,91 @@ class LocusFusionNet(nn.Module):
             cursor = 1
             n_var = torch.zeros(B, device=dev, dtype=dt)
             frac = torch.zeros(B, device=dev, dtype=dt)
-            for stream, members, length in streams:
-                f, c, v, n_occ, length = self._stream_tokens(xs, li, stream, members, length)
-                k = f.shape[1]
-                feat[:, li, cursor:cursor + k] = f
-                coord[:, li, cursor:cursor + k] = c
-                valid[:, li, cursor:cursor + k] = v
+            for si, (stream, members, length) in enumerate(streams):
+                _idx, a, r, p, c, pr, v, n_occ, length = self._stream_tokens(
+                    xs, li, si, stream, members, length)
+                k = a.shape[1]
+                sl = slice(cursor, cursor + k)
+                alt[:, li, sl] = a
+                ref[:, li, sl] = r
+                phase[:, li, sl] = p
+                coord[:, li, sl] = c
+                if props is not None and pr is not None:
+                    props[:, li, sl] = pr
+                valid[:, li, sl] = v
                 cursor += k
                 n_var = n_var + n_occ.to(dt)
                 frac = torch.maximum(frac, n_occ.to(dt) / length)
             uncovered = (frac > self.uncovered_frac).to(dt)
-            # An all-gap record differs from the reference at EVERY column, so
-            # without this flag a locus that simply failed to assemble reads as
-            # a hypervariant one. 14-91 isolates per locus are in that state
-            # (README census); they are not wild type and must not look it.
-            feat[:, li, :, F_UNCOVERED] = uncovered.unsqueeze(-1)
-            stats[:, li, 0] = torch.log1p(n_var)
+            stats[:, li, 0] = torch.log1p(n_var)   # true count, BEFORE the cap
             stats[:, li, 1] = frac
             stats[:, li, 2] = uncovered
             valid[:, li, 0] = True
-            feat[:, li, 0, F_IS_WT] = 1.0
-        return feat, coord, valid, stats
+            alt[:, li, 0] = tok.WT
+            ref[:, li, 0] = tok.WT
+        return alt, ref, phase, coord, props, valid, stats
+
+    def _embed(self, alt, ref, phase, coord, props, valid, stats, li):
+        """The token vector: four lookups, one projection, and a coordinate.
+
+        Every term here is information the token actually carries. The layout
+        this replaced spent 42 float slots to say the same thing, nine of them
+        on flags derivable from the rest (see datasets/tokens.py) and the widest
+        two on nucleotide and promoter one-hots that can never both be set,
+        because a token belongs to exactly one coordinate stream.
+        """
+        tokens = (self.alt_emb(alt) + self.ref_emb(ref) + self.phase_emb(phase)
+                  + self.pos_proj(sinusoid(coord, self.pos_dims))
+                  + self.locus_emb(li).unsqueeze(0).unsqueeze(2))
+        if props is not None:
+            tokens = tokens + self.bio_proj(props)
+        tokens = tokens + (stats[:, :, 2:3] * self.uncovered_emb).unsqueeze(2)
+        tokens[:, :, 0] = tokens[:, :, 0] + self.wt_emb(li).unsqueeze(0) \
+            + self.wt_proj(stats)
+        if self.film_scale is not None:
+            tokens = tokens * (1.0 + self.film_scale[li].unsqueeze(0).unsqueeze(2)) \
+                + self.film_shift[li].unsqueeze(0).unsqueeze(2)
+        return self.tok_norm(tokens) * valid.unsqueeze(-1).to(tokens.dtype)
 
     def _check_occupancy(self, valid):
-        """Warn once if the input does not look delta-encoded.
+        """Warn once if nearly every slot is a variant.
 
-        A dense one-hot occupies every column, the cap then keeps the first
-        `max_variants` of them, and the model silently becomes "read the head of
-        each block" — a failure that produces plausible numbers, so it is worth
+        With symbol-id blocks this should be impossible on real data — the
+        census puts the median isolate at 0-3 differences per locus — so a full
+        token set means the reference metadata did not load and every column is
+        reading as a difference. That produces plausible numbers, which is worth
         a loud warning rather than a docstring."""
         self._occupancy_checked = True
         filled = valid[:, :, 1:].to(torch.float32).mean().item()
         if filled > 0.9:
             warnings.warn(
                 f"LocusFusionNet: {100 * filled:.0f}% of variant slots are occupied. "
-                "This architecture expects reference-difference input (--delta); "
-                "on a plain one-hot every column differs from nothing and the "
-                "tokenizer just keeps the first max_variants columns of each "
-                "block. Re-run with --delta.", stacklevel=3)
+                "Every column is reading as different from the reference, which "
+                "on a clonal cohort means the per-column reference ids did not "
+                "load (no H37Rv row in the alignment?). Check that the loader "
+                "ran with variant_tokens=True and that column_meta reached "
+                "from_blocks.", stacklevel=3)
 
     # -- forward -------------------------------------------------------------
 
     def forward(self, xs, return_attn=False):
-        """xs: list of (B, C_i, L_i) delta-encoded block tensors."""
+        """xs: list of (B, C_i, L_i) block tensors, symbol ids except biophysical."""
         if len(xs) != len(self.block_keys):
             raise ValueError(f"expected {len(self.block_keys)} blocks, got {len(xs)}")
-        feat, coord, valid, stats = self._locus_tokens(xs)
+        alt, ref, phase, coord, props, valid, stats = self._locus_tokens(xs)
         if not self._occupancy_checked:
             self._check_occupancy(valid)
-        B, n_loci, T, _ = feat.shape
-        li = torch.arange(n_loci, device=feat.device)
-
-        tok = self.tok_proj(feat) + self.pos_proj(_sinusoid(coord, self.pos_dims))
-        tok = tok + self.locus_emb(li).unsqueeze(0).unsqueeze(2)
-        tok[:, :, 0] = tok[:, :, 0] + self.wt_emb(li).unsqueeze(0) + self.wt_proj(stats)
-        if self.film_scale is not None:
-            tok = tok * (1.0 + self.film_scale[li].unsqueeze(0).unsqueeze(2)) \
-                + self.film_shift[li].unsqueeze(0).unsqueeze(2)
-        tok = self.tok_norm(tok) * valid.unsqueeze(-1).to(tok.dtype)
+        B, n_loci, T = alt.shape
+        li = torch.arange(n_loci, device=alt.device)
+        tokens = self._embed(alt, ref, phase, coord, props, valid, stats, li)
 
         # --- stage 1: within-locus ------------------------------------------
         pad = ~valid
         if self.locus_encoder == "per_locus":
-            z = torch.stack([enc(tok[:, i], src_key_padding_mask=pad[:, i])
+            z = torch.stack([enc(tokens[:, i], src_key_padding_mask=pad[:, i])
                              for i, enc in enumerate(self.encoders)], dim=1)
         else:
-            z = self.encoders[0](tok.reshape(B * n_loci, T, self.d_model),
+            z = self.encoders[0](tokens.reshape(B * n_loci, T, self.d_model),
                                  src_key_padding_mask=pad.reshape(B * n_loci, T))
             z = z.reshape(B, n_loci, T, self.d_model)
 
@@ -528,24 +583,27 @@ class LocusFusionNet(nn.Module):
     def variant_report(self, xs):
         """What the tokenizer actually saw, per locus, for one batch.
 
-        ``[{locus, stream, modalities, columns (B, k), valid (B, k),
-        n_variants (B,), uncovered (B,)}]`` — the token set spelled out, so an
-        attention map from ``forward(..., return_attn=True)`` can be read as
-        "drug j attended to katG alignment column 944" rather than to token 7.
+        ``[{locus, stream, modalities, columns, coord, ref, alt, valid,
+        n_variants, uncovered}]`` — the token set spelled out, so an attention
+        map from ``forward(..., return_attn=True)`` reads as "drug j attended to
+        katG codon 314, Ser->Thr" rather than to token 7. ``coord`` is the H37Rv
+        codon number, which is the coordinate the WHO catalogue names a mutation
+        by, so ``datasets/who_catalogue.py`` can be joined against it directly.
         """
+        names = tok.symbol_names()
         out = []
         for li, streams in enumerate(self._plan):
-            for stream, members, length in streams:
-                blocks = [xs[i] for i, _ in members]
-                occ = torch.zeros(blocks[0].shape[0], length, dtype=torch.bool,
-                                  device=blocks[0].device)
-                for x in blocks:
-                    occ |= x.abs().sum(1) > 0
-                idx, valid, n_occ = _select_variants(occ, self.max_variants)
+            for si, (stream, members, length) in enumerate(streams):
+                idx, alt, ref, phase, coord, _props, valid, n_occ, length = \
+                    self._stream_tokens(xs, li, si, stream, members, length)
                 out.append({
                     "locus": self.loci[li], "stream": stream,
                     "modalities": [m for _, m in members],
-                    "columns": idx, "valid": valid, "n_variants": n_occ,
+                    "columns": idx, "coord": coord, "phase": phase,
+                    "ref": ref, "alt": alt,
+                    "ref_name": [[names[i] for i in row] for row in ref.tolist()],
+                    "alt_name": [[names[i] for i in row] for row in alt.tolist()],
+                    "valid": valid, "n_variants": n_occ,
                     "uncovered": (n_occ.float() / length) > self.uncovered_frac,
                 })
         return out

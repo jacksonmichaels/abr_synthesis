@@ -42,7 +42,8 @@ from datasets import (ALL_DRUGS, MODALITIES, loci_on_disk,  # noqa: E402
 from datasets.fixtures import build_fixture_dataset  # noqa: E402
 from models import (ARCHITECTURES, DELTA_ARCHS, ENCODERS,  # noqa: E402
                     EXPERIMENTAL_MODELS, LOCUS_ENCODERS,
-                    PER_LOCUS_ARCHS, SUMMARY_NORMS)
+                    PER_LOCUS_ARCHS, SUMMARY_NORMS,
+                    VARIANT_TOKEN_ARCHS)
 from training.curves import save_curves  # noqa: E402
 from training.multidrug import run_multidrug_cv  # noqa: E402
 
@@ -460,6 +461,13 @@ def main():
     delta = args.delta or args.arch in DELTA_ARCHS
     if args.arch in DELTA_ARCHS and not args.delta:
         print(f"--arch {args.arch}: reference-difference input encoding (--delta, implied)")
+    # ...and locusfusion goes further: its blocks are one SYMBOL ID per column
+    # plus the per-column H37Rv reference, coordinate and codon phase
+    # (datasets/tokens.py). Implied, never a flag — the model rejects a one-hot
+    # block outright rather than silently reading the head of it.
+    variant_tokens = args.arch in VARIANT_TOKEN_ARCHS
+    if variant_tokens:
+        print(f"--arch {args.arch}: symbol-id variant tokens (implied)")
     run_name = args.run_name or time.strftime("multidrug_%Y%m%d_%H%M%S")
     run_dir = RESULTS_DIR / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -511,7 +519,8 @@ def main():
                                       regulatory_dir=reg, loci=loci,
                                       per_modality_branch=not per_locus,
                                       all_regulatory=args.all_regulatory,
-                                      delta=delta)
+                                      delta=delta,
+                                      variant_tokens=variant_tokens)
         result = run_multidrug_cv(data, epochs=epochs, n_splits=args.n_splits,
                                   batch_size=args.batch_size, device=args.device,
                                   tb_dir=tb_dir, seed=args.seed,
@@ -543,6 +552,8 @@ def main():
                                       "per_modality_branch": not per_locus,
                                       "all_regulatory": args.all_regulatory,
                                       "extra_loci": args.extra_loci,
+                                      "delta": args.delta,
+                                      "variant_tokens": variant_tokens,
                                       "per_drug_loci": args.per_drug_loci,
                                       # the resolved region list is recoverable
                                       # from the 'regulatory:*' block names

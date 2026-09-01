@@ -143,7 +143,7 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
                            regulatory_dir=None, loci=None, regulatory_loci=None,
                            per_modality_branch=True, dna_per_locus=True,
                            extra_loci=False, all_regulatory=False, delta=False,
-                           verbose=True):
+                           variant_tokens=False, verbose=True):
     """Build a MultiDrugData bundle predicting ``drugs`` (default: all) from the
     union of their loci.
 
@@ -190,6 +190,10 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
     mods = [MODALITIES[m]() for m in modalities]
     for m in mods:
         m.delta = delta
+        # see load_dataset: symbol-id blocks for the variant-token archs, and
+        # never for biophysical, which has no id form by design.
+        if hasattr(m, "variant_tokens"):
+            m.variant_tokens = variant_tokens
         if m.name == "dna":
             # one DNA branch (concatenated) when per_modality_branch; else honor
             # dna_per_locus for the per-locus layout.

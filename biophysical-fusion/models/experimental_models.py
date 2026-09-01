@@ -83,9 +83,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .locusfusion import (C_TOK, F_GAP, F_IS_AA, F_IS_NT, F_IS_REG, F_PHASE,
-                          F_UNCOVERED, GAP_CHANNEL, NO_LOCUS, SLOTS, STREAMS,
-                          _select_variants, _sinusoid, parse_block_key)
+from .net import NO_LOCUS, parse_block_key
+# The LEGACY 42-float token layout, and the original sinusoid band. Both are
+# pinned in models/variant_tokens.py precisely so this file's measured runs
+# (results/experiments/variant_aggregators_*) stay reproducible while
+# locusfusion moved to the discrete layout. See that module's docstring.
+from .variant_tokens import (C_TOK, F_GAP, F_IS_AA, F_IS_NT, F_IS_REG, F_PHASE,
+                             F_UNCOVERED, GAP_CHANNEL, SLOTS, STREAMS)
+from .variant_tokens import select_variants as _select_variants
+from .variant_tokens import sinusoid_legacy as _sinusoid
 
 # Shared across every model here. Model-specific knobs live in each class's
 # ``KNOBS`` and are rejected by the factory if you pass one to a model that does

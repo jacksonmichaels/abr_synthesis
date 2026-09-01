@@ -133,7 +133,8 @@ def _resolve(modalities):
 def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                  regulatory_dir=None, loci=None, regulatory_loci=None,
                  per_modality_branch=True, dna_per_locus=True,
-                 extra_loci=False, all_regulatory=False, delta=False, verbose=True):
+                 extra_loci=False, all_regulatory=False, delta=False,
+                 variant_tokens=False, verbose=True):
     """Build a DrugData bundle for one drug over the requested modalities.
 
     loci                : which gene loci to load for dna/protein/biophysical.
@@ -168,6 +169,12 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                           is identical in every isolate and therefore carries no
                           discriminative signal. Default False (it changes the
                           input, so it is not comparable to an existing run).
+    variant_tokens      : emit one SYMBOL ID per column instead of a one-hot, with
+                          the H37Rv reference id, the exact reference-codon
+                          coordinate and the codon phase attached to the block as
+                          per-column constants (datasets/tokens.py). What the
+                          variant-token architectures read. Biophysical is
+                          deliberately excluded — see the note at the call site.
     dna_per_locus       : only when per_modality_branch=False — emit one DNA block
                           per locus instead of one concatenated DNA block. Mirrors
                           load_multidrug_dataset. Needed by the mdcnn architecture,
@@ -196,6 +203,12 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
         if hasattr(m, "per_locus"):
             m.per_locus = (not per_modality_branch) and dna_per_locus
         m.delta = delta
+        # symbol-id blocks for the variant-token architectures. Biophysical has
+        # no id form on purpose: it is the modality whose whole claim is that
+        # three properties stand in for the residue identity, so handing it that
+        # identity would answer its own ablation.
+        if hasattr(m, "variant_tokens"):
+            m.variant_tokens = variant_tokens
     needs_genes = any(m.uses_genes for m in mods)
 
     df_phenos = load_phenotype(phenotype_csv)

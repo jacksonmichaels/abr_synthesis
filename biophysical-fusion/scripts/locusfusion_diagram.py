@@ -49,8 +49,7 @@ NAMES = {"slide": "locusfusion_shapes", "full": "locusfusion_architecture"}
 import sys                                                       # noqa: E402
 sys.path.insert(0, str(PROJECT))
 from models.locusfusion import (                                 # noqa: E402
-    LOCUSFUSION_DEFAULTS, C_TOK, SLOTS, LocusFusionNet,
-    F_IS_NT, F_IS_WT, F_GAP, F_UNCOVERED, F_PHASE,
+    LOCUSFUSION_DEFAULTS, LocusFusionNet,
 )
 
 # The 19 curated loci, and one representative block spec per modality. Only the

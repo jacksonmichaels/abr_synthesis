@@ -22,6 +22,9 @@ drug has no available region the modality yields nothing and the loader drops it
 """
 from typing import List
 
+import numpy as np
+
+from . import tokens
 from . import who_catalogue as who
 from .base import FeatureBlock, LoadContext, Modality
 from .sequences import (NT_CHANNELS, delta_one_hot_nt, load_sequence_df,
@@ -101,6 +104,10 @@ class RegulatoryModality(Modality):
     # 8 distinct forms across 2,868 isolates), so this is where it bites hardest.
     delta = False
 
+    # One symbol id per column instead of the 5-channel one-hot; see
+    # datasets/tokens.py and DNAModality.variant_tokens.
+    variant_tokens = False
+
     def build(self, ctx: LoadContext) -> List[FeatureBlock]:
         regions = ctx.regulatory_loci
         if not regions:
@@ -110,6 +117,23 @@ class RegulatoryModality(Modality):
             return []
         df = df.reindex(ctx.isolates).fillna("")
         blocks = []
+
+        if self.variant_tokens:
+            for region in found:
+                length = max(len(df.at[iso, region]) for iso in ctx.isolates) or 1
+                ids = np.stack([tokens.nt_symbol_ids(df.at[iso, region], "reg", length)
+                                for iso in ctx.isolates])[:, None, :]
+                blocks.append(FeatureBlock(
+                    name=f"regulatory:{region}",
+                    modality=self.name,
+                    array=ids,
+                    channel_names=["symbol_id"],
+                    note=_region_note(region) + " [symbol ids vs H37Rv]",
+                    column_meta=tokens.region_column_meta(
+                        ctx.regulatory_dir, region, length),
+                ))
+            return blocks
+
         for region in found:
             ref = reference_row(ctx.regulatory_dir, region) if self.delta else None
             if self.delta and not ref:

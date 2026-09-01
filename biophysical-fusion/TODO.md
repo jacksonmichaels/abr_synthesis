@@ -37,17 +37,33 @@ High-level on purpose: file layout is in flux, so this names *components* and
   from SLURM logs; see `results/experiments/alllocus_run/README.md` for what is
   and is not recoverable.
 
-- **`locusfusion` built (2026-08-25), not yet trained.** A variant-token,
-  two-stage transformer: one token per column that differs from H37Rv rather
-  than one per patch of sequence, modalities fused within a locus and then
-  across loci, with a learned `[WT]` sentinel per locus so a susceptible isolate
-  is the empty set. It is the design that follows from taking findings 3 and 4
-  in the README seriously at the same time — attribution mis-ranks value, and
-  setfusion failed on the signal-to-constant ratio rather than on width. Wired
-  into both runners and both engines, `tests/test_locusfusion.py` 25/25, design
-  and the variant census in `results/experiments/CODE_CHANGES_20260825.md`.
-  **Zero training runs**, so it has no number attached to it and should not be
-  quoted as if it did.
+- **`locusfusion`** — a variant-token, two-stage transformer: one token per
+  column that differs from H37Rv rather than one per patch of sequence,
+  modalities fused within a locus and then across loci, with a learned `[WT]`
+  sentinel per locus so a susceptible isolate is the empty set. It is the design
+  that follows from taking findings 3 and 4 in the README seriously at the same
+  time — attribution mis-ranks value, and setfusion failed on the
+  signal-to-constant ratio rather than on width. Design and the variant census
+  in `results/experiments/CODE_CHANGES_20260825.md`.
+
+  - **First run, `newmodels_full` (2026-08-26): macro CV 0.8920** on the
+    single-drug per-drug-loci grid, against `mdcnn` 0.9086. It lost.
+  - **Its tokenizer was broken, and the break is measured**
+    (`results/experiments/CODE_CHANGES_20260901.md`). A nucleotide token landed
+    at `column/3` minus a *learned* per-locus scalar, but the aligned FASTAs are
+    not bare CDS and the reference row has gaps inside the CDS window, so katG
+    S315's DNA token sat 43 codons from its own protein token (rpoB S450: 53;
+    pncA S65: 63) — and the scalar read `[-0.0107, +0.0081]` off the trained
+    ISONIAZID checkpoint, i.e. it never moved off its zero init. The codon phase
+    was wrong for the same reason, and an N call was indistinguishable from a
+    match. **So `newmodels_full`'s locusfusion cells measure a mis-registered
+    model, not the design.**
+  - **`locusfusion_v2` (submitted 2026-09-01, 55 jobs)** is the rerun with the
+    coordinate computed from the CDS annotation and the H37Rv gap pattern, and
+    the token reduced to `alt`/`ref`/`phase`/`coord` over a 35-symbol
+    vocabulary. Same protocol, same seed, same loci — the only difference is the
+    tokenizer. `results/experiments/locusfusion_v2/`, `compare.py` there reads
+    it against both controls.
 
 ## Open questions
 
@@ -93,7 +109,7 @@ the joint runs use every curated locus (below).
   out by one attention query per drug. Block count and order stop mattering.
 - **`cisfusion`** — promoter ⊕ CDS concatenated per locus into a cis-unit, with
   a segment channel marking which columns are which, then per-branch encoders.
-- **`locusfusion`** (2026-08-25, built and tested, **never trained**) — one token
+- **`locusfusion`** — one token
   per **variant** rather than per patch: runs on reference-difference input and
   emits a token only where the isolate deviates from H37Rv, so a token varies
   with the genotype by construction. Stage 1 fuses all of a locus's modalities
@@ -155,15 +171,14 @@ so it cannot express compensation; `additive` forbids epistasis by construction.
 
 ### locusfusion — next steps
 
-**0. Run it.** Nothing here means anything until it has trained once. The
-matched control is `full_run_v2` (per-drug loci) and `alllocus_run_v2` (19
-loci); same 300 epochs / patience 30 / `--min-epochs 50` / `--save-weights best`
-/ same seed, so the only difference is `--arch`:
+**0. Run it — done twice, and only the second one counts.** `newmodels_full`
+(2026-08-26) put it at macro CV 0.8920 against `mdcnn`'s 0.9086, but its
+tokenizer mis-registered the nucleotide stream against the protein stream by
+43-63 codons, so that number is about the bug, not the design.
+`locusfusion_v2` (2026-09-01, 55 jobs) is the rerun:
 
 ```bash
-python scripts/run_experiment.py --modalities dna protein biophysical regulatory \
-    --drugs all --arch locusfusion --epochs 300 --patience 30 --min-epochs 50 \
-    --device cuda --run-name locusfusion_v1
+bash results/experiments/locusfusion_v2/submit.sh
 ```
 
 Judge it on **three** things, not one — the claim is mechanistic, so hold it to

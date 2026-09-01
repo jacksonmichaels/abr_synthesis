@@ -114,12 +114,18 @@ def main():
                     counts[(r["locus"], r["stream"], round(float(coord[b, k]), 2),
                             sym[int(ref[b, k])], sym[int(alt[b, k])])] += 1
     print(f"\nmost common variant tokens over {len(idx)} isolates")
-    print("  residue is 1-BASED (WHO / catalogue numbering); the model's own "
-          "coord is 0-based.\n  the fraction is the codon phase: .33 = 2nd base "
-          "of the codon, .67 = 3rd.")
-    print(f"  {'locus':8} {'stream':6} {'residue':>10}  {'ref':>7} -> {'alt':<7} count")
+    print("  nt/aa: residue is 1-BASED (WHO / catalogue numbering); the model's\n"
+          "  own coord is 0-based. The fraction is the codon phase: .33 = 2nd\n"
+          "  base of the codon, .67 = 3rd.\n"
+          "  reg: printed RAW. A promoter coordinate is codons upstream of the\n"
+          "  extracted window's 3' end, not of the transcription start, because\n"
+          "  the window carries a 30 bp flank whose orientation is not recorded\n"
+          "  (datasets/tokens.py). So it is NOT the catalogue's c-15 numbering\n"
+          "  and must not be read as if it were.")
+    print(f"  {'locus':8} {'stream':6} {'position':>10}  {'ref':>7} -> {'alt':<7} count")
     for (locus, stream, coord, r, a), n in counts.most_common(args.top):
-        print(f"  {locus:8} {stream:6} {coord + 1:10.2f}  {r:>7} -> {a:<7} {n}")
+        shown = coord + 1 if stream in ("nt", "aa") else coord
+        print(f"  {locus:8} {stream:6} {shown:10.2f}  {r:>7} -> {a:<7} {n}")
 
 
 if __name__ == "__main__":

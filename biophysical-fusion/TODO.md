@@ -58,12 +58,20 @@ High-level on purpose: file layout is in flux, so this names *components* and
     was wrong for the same reason, and an N call was indistinguishable from a
     match. **So `newmodels_full`'s locusfusion cells measure a mis-registered
     model, not the design.**
-  - **`locusfusion_v2` (submitted 2026-09-01, 55 jobs)** is the rerun with the
-    coordinate computed from the CDS annotation and the H37Rv gap pattern, and
-    the token reduced to `alt`/`ref`/`phase`/`coord` over a 35-symbol
-    vocabulary. Same protocol, same seed, same loci — the only difference is the
-    tokenizer. `results/experiments/locusfusion_v2/`, `compare.py` there reads
-    it against both controls.
+  - **`locusfusion_v2` (2026-09-01, 55 jobs) — DONE, and it closes the gap.**
+    The rerun with the coordinate computed from the CDS annotation and the H37Rv
+    gap pattern, and the token reduced to `alt`/`ref`/`phase`/`coord` over a
+    35-symbol vocabulary. Same protocol, same seed, same loci; the only
+    difference is the tokenizer, and the parameter count barely moves.
+    **Macro over the five modality sets 0.9036 vs the old tokenizer's 0.8863
+    (+0.0173) and `mdcnn`'s 0.8995 (+0.0041).** `all_modalities` goes 0.8920 →
+    0.9089 against `mdcnn` 0.9086, i.e. from losing by 0.0166 to a tie. **All 55
+    cells improved**, by a near-uniform +0.017 — the shape of a fixed input
+    representation, not a lucky seed. Read it with
+    `results/experiments/locusfusion_v2/README.md`, which also says what the run
+    does NOT establish: the 19-locus and joint arms were not rerun and their
+    `newmodels_full` numbers still measure the bug, and the coordinate fix and
+    the embedding rewrite are not separately attributed.
 
 ## Open questions
 

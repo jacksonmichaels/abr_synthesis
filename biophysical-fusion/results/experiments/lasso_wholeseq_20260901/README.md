@@ -108,6 +108,18 @@ python results/experiments/lasso_wholeseq_20260901/lasso_wholeseq.py \
     --out results/experiments/lasso_wholeseq_20260901/onehot_all
 ```
 
+## Scale, measured
+
+The 19 curated loci are 39,646 aligned nt, of which 16,283 columns vary at all
+across the cohort. The `onehot`/`all` cell is therefore **33,218 columns x
+17,436 isolates at 16,130 nonzeros per isolate** — 281 M nonzeros, 11.3 GB peak
+RSS, 23 s per `liblinear` fit. That is the worst cell in the grid; the
+`perdrug` cells are two orders of magnitude smaller (LEVOFLOXACIN: 94 columns).
+
+`_locus_block` is verified against the repo's own `one_hot_nt` and
+`delta_one_hot_nt` on real `rpsL` data: identical values on every retained
+column, and every dropped column confirmed constant across the cohort.
+
 ## Findings
 
 <!-- filled in once the grid lands -->

@@ -9,10 +9,11 @@
 # and the job dies on `ModuleNotFoundError: numpy` three seconds in. Same reason
 # the sparse baseline's launcher is a file.
 #
-# CPU-only by construction — there is no network here. The memory is for the
-# `onehot`/`all` arm, whose design matrix is ~40 k columns x 17.9 k isolates at
-# ~16 k nonzeros per isolate; every other arm is far smaller and simply does not
-# use the allocation.
+# CPU-only by construction — there is no network here. The allocation is sized
+# against the measured worst cell, ISONIAZID / onehot / all 19 loci: 17,436
+# isolates x 33,218 columns at 16,130 nonzeros per isolate, 11.3 GB peak RSS and
+# 23 s per liblinear fit, so 40 fits (8 C values x 5 folds) plus the ~60 s build
+# sits well inside 12 h. Every other cell is smaller and does not use the room.
 #SBATCH -c 4
 #SBATCH --mem=64G
 #SBATCH -p cpu
@@ -25,7 +26,10 @@ RUN=results/experiments/lasso_wholeseq_20260901
 
 source ~/.bashrc
 conda activate abr_env
-cd "${SLURM_SUBMIT_DIR:-.}"
+# No cd: submit.sh passes --chdir=<project root>, and a hand-submitted job
+# inherits the submission directory, which is the project root by convention.
+# A `cd "$SLURM_SUBMIT_DIR"` here would actively UNDO --chdir and send the job
+# back to whichever directory the grid happened to be launched from.
 
 echo "lasso whole-sequence: $DRUG enc=$ENC loci=$LOCI (host $(hostname))"
 python -u "${RUN}/lasso_wholeseq.py" \

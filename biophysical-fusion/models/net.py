@@ -111,6 +111,223 @@ class DenseHead(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Learn-to-Branch head.
+#
+# Port of the branching mechanism in Luo et al., "Dynamic clustering via
+# branched deep learning enhances personalization of stress prediction from
+# mobile sensor data", Sci Rep 14:6631 (2024) -- Branched CALM-Net -- with
+# SUBJECT replaced by DRUG.
+#
+# Why it belongs here rather than as a new --arch: our joint models sit at one
+# extreme of a sharing spectrum and our single-drug models at the other.
+# DenseHead with out_dim=11 reads every drug off ONE 256-d vector through one
+# shared linear layer (total sharing); a single-drug run trains 11 disjoint
+# models (no sharing). Neither is obviously right, because the drugs do not
+# share uniformly: KAN/AMK/CAP all target rrs, LFX/MOXI share gyrA/gyrB,
+# INH/ETO share the fabG1-inhA promoter, and rpoB informs only RIF.
+#
+# The measurement that motivates it, from the existing runs (multi-drug minus
+# single-drug-at-19-loci, paired over the 15 modality x model cells that exist
+# on both sides): macro +0.0012, but a per-drug SPREAD of 0.028 --
+# LEVOFLOXACIN +0.0165 and ETHIONAMIDE +0.0139 against KANAMYCIN -0.0119 and
+# PYRAZINAMIDE -0.0065, with rho(gain, n_isolates) = -0.47. Uniform sharing
+# helps the small drugs, dilutes the large ones, and cancels to nothing in the
+# macro. That cancellation -- not an absence of transfer -- is what this head
+# targets.
+#
+# Structure (Fig. 1 of the paper):
+#
+#     fused features -> shared -> G group nodes ---(theta, Gumbel-softmax)---> per-drug MLP -> logit
+#                                     |
+#                                     +--------------------------------------> generic head
+#
+# Each drug j learns a categorical distribution theta[j] over the G group
+# nodes. During training the mixture weights are sampled with Gumbel-softmax at
+# temperature tau, annealed high -> low so the distribution collapses toward
+# one-hot; drugs that end on the same group node ARE the discovered cluster.
+# The generic head is trained on every drug's labels at once and is what a drug
+# with no per-drug parameters (a cold-start drug) predicts from.
+#
+# Two controls this must beat, and they are not the same:
+#   * DenseHead                       -- the joint baseline, total sharing
+#   * DenseHead(per_drug_hidden=k)    -- same per-drug capacity, no routing
+# The second is the one that isolates BRANCHING from CAPACITY. joint_capacity's
+# b2_perdrug64 arm already measured it at -0.001 against full_run, so a
+# branched gain has to clear that bar, not the plain-DenseHead bar.
+# ---------------------------------------------------------------------------
+
+BRANCHED_DEFAULTS = {
+    "n_groups": 4,          # G group nodes; 1 == DenseHead-with-per-drug-heads
+    "per_drug_hidden": 64,  # width of each drug's own MLP off its group node
+    "tau_start": 5.0,       # Gumbel-softmax temperature at epoch 0
+    "tau_end": 0.5,         # ...and at the last epoch (linear anneal)
+    "generic_weight": 0.3,  # lambda on the generic head's loss
+    "group_dropout": 0.0,   # dropout inside each group node
+    "hard": True,           # straight-through one-hot routing (see below)
+    "theta_init_std": 0.1,  # symmetry-breaking noise on theta at init
+    "theta_lr_mult": 10.0,  # LR multiplier on theta (build_optimizer reads it)
+}
+
+# Why `hard=True` is the default, measured rather than assumed.
+#
+# With a SOFT mixture every group node receives gradient from every drug, so the
+# nodes never specialize, the loss is flat in theta, and theta stays where it
+# started. Probed on a synthetic task with known ground truth (8 drugs, 4 loci,
+# drugs 0-3 driven by locus 0 and 4-7 by locus 1, so the true grouping is a 4/4
+# split): soft routing left softmax(theta) at 0.44/0.56 after 60 epochs with
+# mean |grad theta| ~ 5e-4, and recovered an arbitrary 1/7 split. That is the
+# same "mechanism present but inert" failure `token_signal` diagnosed in
+# setfusion -- and it would have shown up as "branching does nothing" after
+# three GPU-hours instead of ninety seconds.
+#
+# Straight-through routing (`F.gumbel_softmax(..., hard=True)`) sends the
+# one-hot forward and the soft gradient backward, so a group node is only
+# updated by the drugs currently routed to it. That is what breaks the symmetry
+# and gives theta something to descend. `theta_init_std` breaks the tie at
+# init, and `theta_lr_mult` compensates for theta's gradient being orders of
+# magnitude smaller than the weights' (the standard treatment for architecture
+# parameters, as in DARTS).
+
+
+class BranchedHead(nn.Module):
+    """Learn-to-Branch head: shared trunk -> G group nodes -> per-drug MLP.
+
+    Drop-in for ``DenseHead`` on any net that ends in one (MultiModalNet,
+    MDCNNNet, CisFusionNet): same ``(B, in_features) -> (B, n_drugs)`` contract.
+    Two things the plain head does not have, and both need trainer support:
+
+    * ``set_tau(tau)`` -- the Gumbel-softmax temperature, annealed once per
+      epoch by ``training.core.anneal_branch_temperature``. Without the anneal
+      theta never sharpens and the head stays a soft mixture of all G groups,
+      which is strictly more parameters doing the same job as DenseHead.
+    * ``aux_logits`` -- the generic head's output, cached on the module by
+      ``forward``. ``training.core.branch_aux_loss`` picks it up and adds
+      ``generic_weight * masked_weighted_bce`` to the objective. Skipping it
+      leaves the generic head untrained, so cold-start prediction is noise.
+
+    ``n_groups=1`` collapses to one group node shared by every drug, which is
+    DenseHead(per_drug_hidden=k) plus one extra hidden layer -- useful as the
+    routing-free control inside the same code path.
+    """
+
+    def __init__(self, in_features, drug_names, hidden=256, out_bias=None,
+                 dropout=0.0, n_groups=4, per_drug_hidden=64, tau_start=5.0,
+                 tau_end=0.5, generic_weight=0.3, group_dropout=0.0,
+                 hard=True, theta_init_std=0.1, theta_lr_mult=10.0):
+        super().__init__()
+        self.drug_names = list(drug_names)
+        n_drugs = len(self.drug_names)
+        if n_drugs < 2:
+            raise ValueError("BranchedHead is a multi-task head; it needs >= 2 drugs")
+        if n_groups < 1:
+            raise ValueError("n_groups must be >= 1")
+        self.n_drugs, self.n_groups = n_drugs, int(n_groups)
+        self.generic_weight = float(generic_weight)
+        self.tau_start, self.tau_end = float(tau_start), float(tau_end)
+        self.hard = bool(hard)
+        self.theta_lr_mult = float(theta_lr_mult)
+
+        self.drop = nn.Dropout(float(dropout)) if dropout else nn.Identity()
+        self.fc1 = nn.Linear(in_features, hidden)
+        self.groups = nn.ModuleList(
+            nn.Sequential(nn.Linear(hidden, hidden), nn.ReLU(),
+                          nn.Dropout(float(group_dropout)) if group_dropout
+                          else nn.Identity())
+            for _ in range(self.n_groups))
+        # The paper initialises theta uniformly. Exactly uniform is a saddle:
+        # every group node is then an identical function of h, so the gradient
+        # that would separate two drugs is identical for both. `theta_init_std`
+        # is small symmetry-breaking noise; the Gumbel noise on top is what
+        # keeps low-likelihood branches from saturating before they are used.
+        self.theta = nn.Parameter(
+            torch.randn(n_drugs, self.n_groups) * float(theta_init_std)
+            if theta_init_std else torch.zeros(n_drugs, self.n_groups))
+        k = int(per_drug_hidden)
+        self.per_drug_hidden = k
+        self.drug_hidden = nn.ModuleList(nn.Linear(hidden, k) for _ in range(n_drugs))
+        self.drug_out = nn.ModuleList(nn.Linear(k, 1) for _ in range(n_drugs))
+        # The cold-start path: one linear read-out of the SHARED features for
+        # every drug, never routed. Trained by the auxiliary loss.
+        self.generic = nn.Linear(hidden, n_drugs)
+        self.register_buffer("tau", torch.tensor(float(tau_start)), persistent=False)
+        self.aux_logits = None
+        if out_bias is not None:
+            with torch.no_grad():
+                for layer in self.drug_out:
+                    layer.bias.fill_(float(out_bias))
+                self.generic.bias.fill_(float(out_bias))
+
+    # -- temperature -------------------------------------------------------
+    def set_tau(self, tau):
+        self.tau.fill_(max(float(tau), 1e-3))
+
+    def anneal(self, epoch, total_epochs):
+        """Linear tau_start -> tau_end over the run, as in the paper."""
+        if total_epochs <= 1:
+            return self.set_tau(self.tau_end)
+        f = min(max(epoch / (total_epochs - 1), 0.0), 1.0)
+        self.set_tau(self.tau_start + f * (self.tau_end - self.tau_start))
+
+    # -- routing -----------------------------------------------------------
+    def branch_weights(self):
+        """(n_drugs, n_groups) mixture weights over the group nodes.
+
+        Gumbel-softmax while training, deterministic softmax(theta/tau) at eval.
+        The eval path drops the noise but keeps the temperature, so it tracks
+        the training distribution and sharpens toward the same one-hot as tau
+        decays -- a hard argmax at eval would disagree with the soft training
+        mixture for most of the run and make the early val metric meaningless.
+        """
+        tau = float(self.tau)
+        if self.training:
+            return F.gumbel_softmax(self.theta, tau=tau, hard=self.hard, dim=-1)
+        if self.hard:
+            # match the training forward: one group per drug, no noise
+            return F.one_hot(self.theta.argmax(-1), self.n_groups).to(self.theta.dtype)
+        return F.softmax(self.theta / tau, dim=-1)
+
+    @torch.no_grad()
+    def assignments(self):
+        """Discovered clusters: {group index: [drug names]} by argmax theta."""
+        pick = self.theta.argmax(dim=-1).tolist()
+        out = {}
+        for name, g in zip(self.drug_names, pick):
+            out.setdefault(int(g), []).append(name)
+        return dict(sorted(out.items()))
+
+    # -- forward -----------------------------------------------------------
+    def forward(self, x):
+        h = self.drop(F.relu(self.fc1(x)))                     # (B, hidden)
+        g = torch.stack([grp(h) for grp in self.groups], dim=1)  # (B, G, hidden)
+        w = self.branch_weights()                              # (n_drugs, G)
+        # per drug: the theta-weighted mixture of the group nodes' outputs
+        mixed = torch.einsum("jg,bgh->bjh", w, g)              # (B, n_drugs, hidden)
+        logits = torch.cat(
+            [out(F.relu(hid(mixed[:, j])))
+             for j, (hid, out) in enumerate(zip(self.drug_hidden, self.drug_out))],
+            dim=1)                                             # (B, n_drugs)
+        # cached for training.core.branch_aux_loss; cleared on the eval path so
+        # a stale tensor can never be picked up outside the step that made it
+        self.aux_logits = self.generic(h) if self.training else None
+        return logits
+
+
+def make_head(in_features, out_dim=1, drug_names=None, branched=None, **kw):
+    """DenseHead, or BranchedHead when ``branched`` config is supplied.
+
+    ``branched`` is a dict of BRANCHED_DEFAULTS overrides (or None for the
+    plain head). Single-output models ignore it -- there is nothing to route
+    with one task -- so ``--head branched`` on a single-drug run is a no-op
+    rather than an error, which keeps one runner able to drive both scopes."""
+    if not branched or out_dim < 2:
+        return DenseHead(in_features, out_dim=out_dim, **kw)
+    cfg = {**BRANCHED_DEFAULTS, **branched}
+    names = list(drug_names) if drug_names else [f"task{i}" for i in range(out_dim)]
+    kw.pop("per_drug_hidden", None)      # BranchedHead carries its own
+    return BranchedHead(in_features, names, **{**cfg, **kw})
+
+
+# ---------------------------------------------------------------------------
 # Per-branch encoders. Each maps one (B, C, L) block to a flat (B, F) feature
 # vector and exposes `out_features`. The registry lets each modality pick its
 # own architecture (see MultiModalNet / training.multimodal / scripts.run_experiment).
@@ -209,7 +426,8 @@ class MultiModalNet(nn.Module):
     bio_input = "blocks"  # forward takes the list of block tensors as-is
 
     def __init__(self, branch_specs, encoder_types=None, n_drugs=1, out_bias=None,
-                 hidden=256, dropout=0.0, per_drug_hidden=0, transformer=None):
+                 hidden=256, dropout=0.0, per_drug_hidden=0, transformer=None,
+                 branched=None, drug_names=None):
         super().__init__()
         if not branch_specs:
             raise ValueError("MultiModalNet needs at least one branch spec")
@@ -226,7 +444,8 @@ class MultiModalNet(nn.Module):
         self.encoder_types = list(encoder_types)
         self.transformer = dict(transformer) if transformer else None
         total = sum(e.out_features for e in self.encoders)
-        self.head = DenseHead(total, out_dim=n_drugs, out_bias=out_bias,
+        self.head = make_head(total, out_dim=n_drugs, drug_names=drug_names,
+                              branched=branched, out_bias=out_bias,
                               hidden=hidden, dropout=dropout,
                               per_drug_hidden=per_drug_hidden)
 
@@ -260,13 +479,15 @@ class MultiDrugNet(MultiModalNet):
     the BIG-TB MD-CNN's ``Dense(n_drugs, sigmoid)`` head."""
 
     def __init__(self, branch_specs, drug_names, encoder_types=None, out_bias=None,
-                 hidden=256, dropout=0.0, per_drug_hidden=0, transformer=None):
+                 hidden=256, dropout=0.0, per_drug_hidden=0, transformer=None,
+                 branched=None):
         if not drug_names:
             raise ValueError("MultiDrugNet needs at least one drug name")
         super().__init__(branch_specs, encoder_types,
                          n_drugs=len(drug_names), out_bias=out_bias,
                          hidden=hidden, dropout=dropout,
                          per_drug_hidden=per_drug_hidden,
+                         branched=branched, drug_names=drug_names,
                          transformer=transformer)
         self.drug_names = list(drug_names)
 
@@ -408,7 +629,8 @@ class MDCNNNet(nn.Module):
 
     def __init__(self, branch_specs, n_drugs=1, out_bias=None, filter_size=12,
                  drug_names=None, block_modalities=None, hidden=256,
-                 dropout=0.0, per_drug_hidden=0, encoder="cnn", transformer=None):
+                 dropout=0.0, per_drug_hidden=0, encoder="cnn", transformer=None,
+                 branched=None):
         super().__init__()
         if not branch_specs:
             raise ValueError("MDCNNNet needs at least one branch spec")
@@ -445,7 +667,8 @@ class MDCNNNet(nn.Module):
                 MDCNNTrunk(len(idxs), branch_specs[idxs[0]][0], length, filter_size)
                 for idxs, length in zip(self.group_idx, self.group_len))
         total = sum(t.out_features for t in self.trunks)
-        self.head = DenseHead(total, out_dim=n_drugs, out_bias=out_bias,
+        self.head = make_head(total, out_dim=n_drugs, drug_names=drug_names,
+                              branched=branched, out_bias=out_bias,
                               hidden=hidden, dropout=dropout,
                               per_drug_hidden=per_drug_hidden)
         self.drug_names = list(drug_names) if drug_names else None
@@ -948,7 +1171,7 @@ class CisFusionNet(nn.Module):
     def __init__(self, block_keys, branch_specs, n_drugs=1, drug_names=None,
                  branch_models=None, default_encoder="cnn", spacer=0,
                  out_bias=None, hidden=256, dropout=0.0, per_drug_hidden=0,
-                 transformer=None):
+                 transformer=None, branched=None):
         super().__init__()
         if not branch_specs:
             raise ValueError("CisFusionNet needs at least one branch spec")
@@ -1031,8 +1254,9 @@ class CisFusionNet(nn.Module):
             for t, (c, l) in zip(encoder_types, specs))
         self.encoder_types = encoder_types
         self.transformer = dict(transformer) if transformer else None
-        self.head = DenseHead(sum(e.out_features for e in self.encoders),
-                              out_dim=n_drugs, out_bias=out_bias, hidden=hidden,
+        self.head = make_head(sum(e.out_features for e in self.encoders),
+                              out_dim=n_drugs, drug_names=drug_names,
+                              branched=branched, out_bias=out_bias, hidden=hidden,
                               dropout=dropout, per_drug_hidden=per_drug_hidden)
         self.drug_names = list(drug_names) if drug_names else None
         self.n_drugs = n_drugs

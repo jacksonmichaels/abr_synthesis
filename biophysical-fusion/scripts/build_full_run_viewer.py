@@ -223,100 +223,17 @@ def is_degenerate(arch, modset):
         return "single modality — nothing to pair"
     return ""
 
-# --- BIG-TB SD-CNN, leak-corrected (single-drug baseline) -------------------
-# The published test AUC comes
-# from an `assess` script that re-splits with the same seed but a different
-# `stratify` than the script that TRAINED the saved model, so ~80% of its "test"
-# isolates were in training. These are THEIR saved best model re-scored on the
-# truly held-out split (h1_repro/eval_leak_all.py).
-#            drug : (clean_test_AUC, clean_CV_mean, published_leaky_test)
-SDCNN_CLEAN = {
-    "AMIKACIN":     (0.885, 0.859, 0.885),
-    "CAPREOMYCIN":  (0.815, 0.847, 0.873),
-    "ETHAMBUTOL":   (0.925, 0.926, 0.931),
-    "ETHIONAMIDE":  (0.644, 0.622, 0.670),
-    "ISONIAZID":    (0.917, 0.912, 0.917),
-    "KANAMYCIN":    (0.855, 0.867, 0.849),
-    "LEVOFLOXACIN": (0.885, 0.850, 0.839),
-    "MOXIFLOXACIN": (0.825, 0.819, 0.886),
-    "PYRAZINAMIDE": (0.922, 0.913, 0.930),
-    "RIFAMPICIN":   (0.980, 0.972, 0.977),
-    "STREPTOMYCIN": (0.924, 0.913, 0.911),
-}
-# Fold-to-fold spread of the SD-CNN's own 5-fold CV (Tasmin et al., Table 14).
-# ETHIONAMIDE deliberately absent: its Table-14 row contradicts the authors'
-# auc.csv, so no SD is trusted for it.
-SDCNN_CV_SD = {
-    "AMIKACIN": 0.0195, "CAPREOMYCIN": 0.0242, "ETHAMBUTOL": 0.0032,
-    "ISONIAZID": 0.0119, "KANAMYCIN": 0.0294, "LEVOFLOXACIN": 0.0661,
-    "MOXIFLOXACIN": 0.0272, "PYRAZINAMIDE": 0.0154, "RIFAMPICIN": 0.0014,
-    "STREPTOMYCIN": 0.0120,
-}
-
-# --- BIG-TB MD-CNN (multi-drug baseline) ------------------------------------
-# Read from the authors' OWN RUN OUTPUT, not transcribed from the paper:
-#   cv mean / SD : auc.csv                     (5 folds x 13 drugs)
-#   test AUC     : test_set_auc_cv_4_best.csv
-# This is the run mdcnn_eval/README.md names as the comparison target -- same
-# params as ours (filter_size 12, N_epochs 150, random_seed 1, test_size 0.2).
-#
-# Why not Tasmin et al. Table 14, which this used to hardcode: that table does
-# not reproduce from any MD-CNN run on the volume. Only AMIKACIN matches it on
-# both mean and SD; ETHIONAMIDE's tabled 0.9161 appears nowhere, at any fold of
-# any run, while this log says 0.7955; CAP / KAN / MOXI / PZA are off by
-# 0.02-0.04 in BOTH directions. Table 4's test AUCs fare much better (8/11
-# reproduce to within 0.002) but are taken from the log too, so the whole row
-# has a single provenance.
-#
-# Protocol, unchanged: their crossval is a non-stratified 80/20 seed 42 +
-# KFold(5) -- the SAME as run_multidrug_cv, so CV-vs-CV is the matched
-# comparison. Their `assess` trains on a predefined cohort and tests on every
-# other isolate, so test-vs-test stays indicative only. Judge on CV.
-MDCNN_RUN_DIR = Path(
-    "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
-    "/benchmarking/MTB-CNN/training_output"
-    "/results_ccp_filter12_epoch150_sbatch_18_Nov")
-
-
-def load_mdcnn_baseline(run_dir=MDCNN_RUN_DIR, drugs=None):
-    """drug -> (test_AUC, cv_mean, cv_std), straight from the MD-CNN run output.
-
-    `drugs` restricts the result to the drugs we score (auc.csv also carries
-    CIPROFLOXACIN and OFLOXACIN, which are not in our 11)."""
-    cv_path, test_path = run_dir / "auc.csv", run_dir / "test_set_auc_cv_4_best.csv"
-    for p in (cv_path, test_path):
-        if not p.is_file():
-            raise FileNotFoundError(
-                f"MD-CNN baseline log missing: {p}\n"
-                "These are the BIG-TB authors' own outputs on the pi_annagreen "
-                "volume -- this notebook needs cluster access to read them.")
-    folds = pd.read_csv(cv_path).groupby("Drug")["AUC"]
-    mean, sd, n = folds.mean(), folds.std(), folds.size()   # sd is ddof=1
-    test = pd.read_csv(test_path).set_index("Drug")["AUC"]
-    keys = sorted(set(mean.index) & set(test.index)
-                  & (set(drugs) if drugs is not None else set(mean.index)))
-    if drugs is not None and len(keys) < len(set(drugs)):
-        raise KeyError(f"MD-CNN log is missing {sorted(set(drugs) - set(keys))}")
-    print(f"MD-CNN baseline <- {run_dir.name}/auc.csv "
-          f"({len(keys)} drugs, {int(n[keys].min())}-{int(n[keys].max())} folds)")
-    return {d: (round(float(test[d]), 4), round(float(mean[d]), 4),
-                round(float(sd[d]), 4)) for d in keys}
-
-
-#                     drug : (test_AUC, cv_mean, cv_std)
-BIGTB_MDCNN = load_mdcnn_baseline(drugs=SDCNN_CLEAN)
-
-# Nothing is flagged any more. The CV column above IS the authors' auc.csv, so
-# the table-vs-log contradiction that justified excluding ETHIONAMIDE is gone.
-# Kept as an empty set so the "excl (warn)" plumbing downstream still resolves;
-# those columns now equal the plain delta.
-MDCNN_CV_SUSPECT = set()
-ALL_DRUGS = sorted(SDCNN_CLEAN)
-
-SD_BASE_CV   = pd.Series({d: v[1] for d, v in SDCNN_CLEAN.items()})
-SD_BASE_TEST = pd.Series({d: v[0] for d, v in SDCNN_CLEAN.items()})
-MD_BASE_CV   = pd.Series({d: v[1] for d, v in BIGTB_MDCNN.items()})
-MD_BASE_TEST = pd.Series({d: v[0] for d, v in BIGTB_MDCNN.items()})
+# --- BIG-TB baselines -------------------------------------------------------
+# Both tables (leak-corrected SD-CNN, and MD-CNN read from the authors' own run
+# output) live in <project>/bigtb_baselines.py, which is their single source of
+# truth. Do not paste a second copy into a notebook -- the 2026-08-13 cleanup
+# deleted one that had drifted.
+import sys
+if str(PROJECT) not in sys.path:
+    sys.path.insert(0, str(PROJECT))
+from bigtb_baselines import (           # noqa: E402
+    SDCNN_CLEAN, SDCNN_CV_SD, BIGTB_MDCNN, MDCNN_CV_SUSPECT, ALL_DRUGS,
+    SD_BASE_CV, SD_BASE_TEST, MD_BASE_CV, MD_BASE_TEST)
 
 # --- style (colourblind-safe Okabe-Ito palette) -----------------------------
 OUTDIR = PROJECT / "results/figures/@@RUN_NAME@@"  # None to display without saving
@@ -1875,11 +1792,18 @@ md(r"""---
 3. **`cisfusion` only earns its keep jointly.** Single-drug it tracks
    `late_fusion` to within 0.002; jointly it is the best cell in the sweep. Its
    promoter⊕CDS pairing needs the full locus set to have something to pair.
-4. **`setfusion` has not actually been evaluated yet.** Its numbers are an
-   early-stopping artifact — flat loss for ~12 epochs from a degenerate init, val
-   AUC peaking inside that plateau, patience firing before the network escapes.
-   The warmup rerun is already recovering ~+0.017 per drug-run. Judge it then, not
-   now. Note it does this at **0.5M parameters against late_fusion's 46M**.
+4. **`setfusion` was mis-evaluated, and is still last once fixed.** The
+   early-stopping artifact was real — flat loss for ~12 epochs from a degenerate
+   init, val AUC peaking inside that plateau, patience firing before the network
+   escapes — and the `--min-epochs 50` rerun recovers **+0.005 to +0.021**
+   single-drug and **+0.000 to +0.039** joint. But it does not change the verdict:
+   its best single-drug cell reaches 0.8846 against 0.9105 for the best
+   non-setfusion cell, and jointly it is still **0.78–0.83 against 0.91–0.92**,
+   i.e. 0.09–0.15 *behind* MD-CNN. The warmup recovered roughly a fifth of the
+   joint gap; the rest is the architecture. Locus-keyed transformer fusion is not
+   competitive here as built — though note it does this at **0.5M parameters
+   against late_fusion's 46M**, so the interesting question is efficiency, not
+   accuracy.
 
 ### On the modalities
 
@@ -1899,13 +1823,29 @@ md(r"""---
    promoter-mediated resistance is mild noise (PZA −0.02 to −0.04 under
    mdcnn/late_fusion).
 
+### Resolved by the follow-up runs
+
+8. **"Joint beats single" survives the confound, but only about two thirds of it
+   is multi-task learning.** Giving the single-drug models the same 19 loci
+   (`alllocus_run/`) splits the +0.0189 mean gain into **+0.0069 from the larger
+   locus set** and **+0.0120 from joint training** across the 12 complete
+   non-setfusion cells. It is strongly architecture-dependent: for `late_fusion`
+   almost all of it is multi-task (+0.031 to +0.053, with the locus term often
+   *negative*), while for `mdcnn` it is almost all the bigger input (+0.010 to
+   +0.018 from loci, ~0.000 from joint training). Only 6 of 12 cells have the
+   multi-task term larger. So "one joint model beats 11 single-drug models" is
+   true on average and for late_fusion specifically — but for mdcnn it is mostly
+   just "more input".
+
 ### What is still open
 
-8. **"Joint beats single" is confounded** — the joint models also see all 19 loci
-   per drug where the single-drug models see only that drug's. `alllocus_run/`
-   settles it.
 9. **ETHIONAMIDE decides the joint verdict.** Parity-vs-behind against MD-CNN
-   turns on one published baseline number that contradicts its own paper.""")
+   turns on one published baseline number that contradicts its own paper.
+10. **`alllocus_run/` is a log reconstruction, not original output.** The run
+   folder was lost and rebuilt from archived SLURM logs on 2026-08-18 (210 of 220
+   results, no per-epoch histories, no weights). Its `summary.csv` numbers are the
+   run's own printed values and are exact for `cv_auc_mean`/`cv_auc_std`; see that
+   folder's README before quoting anything else from it.""")
 
 # ---------------------------------------------------------------- appendix
 md(r"""---

@@ -59,8 +59,10 @@ from pathlib import Path
 import torch
 
 from bigtb_ref import MODEL_WEIGHTS_DIR
-from models import (SETFUSION_DEFAULTS, CisFusionNet, MDCNNNet, MultiDrugNet,
-                    MultiModalNet, SetFusionNet)
+from models import (EXPERIMENTAL_DEFAULTS, EXPERIMENTAL_MODELS,
+                    LOCUSFUSION_DEFAULTS, SETFUSION_DEFAULTS, CisFusionNet,
+                    LocusFusionNet, MDCNNNet, MultiDrugNet,
+                    MultiModalNet, SetFusionNet, make_experimental)
 from models.net import parse_block_key
 
 SCHEMA_VERSION = 1
@@ -121,17 +123,19 @@ def block_records(blocks):
 def model_config(*, arch, blocks, encoder_types, drug_names, out_bias, head,
                  mdcnn_trunk_per_modality=False, branch_models=None,
                  default_encoder="cnn", n_params=None, setfusion=None,
-                 transformer=None):
+                 transformer=None, locusfusion=None, experimental=None):
     """The `model` section — sufficient on its own for build_model_from_config.
 
-    ``setfusion`` and ``transformer`` record only the capacity knobs that DIFFER
-    from their defaults, so a config written before those knobs existed (key
-    absent) rebuilds to exactly the model it always did — which is what keeps
-    the full_run / full_run_v2 checkpoints loadable."""
+    ``setfusion``, ``transformer`` and ``locusfusion`` record only the capacity
+    knobs that DIFFER from their defaults, so a config written before those knobs
+    existed (key absent) rebuilds to exactly the model it always did — which is
+    what keeps the full_run / full_run_v2 checkpoints loadable."""
     return {
         "arch": arch,
         "setfusion": dict(setfusion or {}),
         "transformer": dict(transformer or {}),
+        "locusfusion": dict(locusfusion or {}),
+        "experimental": dict(experimental or {}),
         "drug_names": list(drug_names),          # logits[:, i] == drug_names[i]
         "n_drugs": len(drug_names),
         "branch_specs": [[int(c), int(l)] for c, l in (b.spec() for b in blocks)],
@@ -186,6 +190,20 @@ def build_model_from_config(cfg):
                             head_dropout=m["dropout"],
                             per_drug_hidden=m["per_drug_hidden"],
                             **{**SETFUSION_DEFAULTS, **(m.get("setfusion") or {})})
+    if arch in EXPERIMENTAL_MODELS:
+        return make_experimental(
+            arch, keys, specs, n_drugs=len(drugs),
+            drug_names=drugs if joint else None, out_bias=out_bias,
+            hidden=m["hidden"],
+            **{**EXPERIMENTAL_DEFAULTS, **(m.get("experimental") or {})})
+    if arch == "locusfusion":
+        return LocusFusionNet(keys, specs, n_drugs=len(drugs),
+                              drug_names=drugs if joint else None,
+                              out_bias=out_bias, hidden=m["hidden"],
+                              head_dropout=m["dropout"],
+                              per_drug_hidden=m["per_drug_hidden"],
+                              **{**LOCUSFUSION_DEFAULTS,
+                                 **(m.get("locusfusion") or {})})
     if arch == "cisfusion":
         return CisFusionNet(keys, specs, n_drugs=len(drugs),
                             drug_names=drugs if joint else None,

@@ -40,7 +40,9 @@ from training.checkpoint import SAVE_CHOICES, write_pointer  # noqa: E402
 from datasets import (ALL_DRUGS, MODALITIES, loci_on_disk,  # noqa: E402
                       load_multidrug_dataset, union_loci, union_regulatory)
 from datasets.fixtures import build_fixture_dataset  # noqa: E402
-from models import ARCHITECTURES, ENCODERS  # noqa: E402
+from models import (ARCHITECTURES, DELTA_ARCHS, ENCODERS,  # noqa: E402
+                    EXPERIMENTAL_MODELS, LOCUS_ENCODERS,
+                    PER_LOCUS_ARCHS, SUMMARY_NORMS)
 from training.curves import save_curves  # noqa: E402
 from training.multidrug import run_multidrug_cv  # noqa: E402
 
@@ -164,6 +166,32 @@ def main():
                          "the shared trunk instead of one shared output linear "
                          "(default: 0 = off). The joint models have no per-drug "
                          "capacity at all without this.")
+    # --- Learn-to-Branch head (late_fusion / mdcnn / cisfusion) ---------------
+    # Luo et al. 2024 (Sci Rep 14:6631), subject -> drug. The joint head shares
+    # everything between the 11 drugs and the single-drug grid shares nothing;
+    # this learns WHICH drugs share, via G group nodes the drugs route to with
+    # an annealed Gumbel-softmax. See models.BranchedHead.
+    br = ap.add_argument_group("branched head (Learn-to-Branch)")
+    br.add_argument("--head", choices=("dense", "branched"), default="dense",
+                    help="read-out head (default: dense = the current joint head)")
+    br.add_argument("--branch-groups", type=int, default=None,
+                    help="G, the number of group nodes drugs can route to "
+                         "(default: 4). G=1 is the routing-free control.")
+    br.add_argument("--branch-per-drug-hidden", type=int, default=None,
+                    help="width of each drug's own MLP off its group node "
+                         "(default: 64). Match --per-drug-hidden to compare "
+                         "against the capacity control.")
+    br.add_argument("--branch-tau-start", type=float, default=None,
+                    help="Gumbel-softmax temperature at epoch 0 (default: 5.0)")
+    br.add_argument("--branch-tau-end", type=float, default=None,
+                    help="...and at the final epoch (default: 0.5). Annealed "
+                         "linearly; low tau drives theta toward one-hot.")
+    br.add_argument("--branch-generic-weight", type=float, default=None,
+                    help="lambda on the generic head's loss (default: 0.3). The "
+                         "generic head is the cold-start path; 0 disables it.")
+    br.add_argument("--branch-group-dropout", type=float, default=None,
+                    help="dropout inside each group node (default: 0)")
+
     # --- setfusion capacity (ignored by every other arch) ---------------------
     # --- transformer encoder capacity ----------------------------------------
     # Applies wherever a transformer is actually selected: per-branch under
@@ -224,6 +252,99 @@ def main():
                          "This is the token's information bottleneck: a 3.4 kb "
                          "locus is squeezed to 2*out_channels*bins numbers before "
                          "the transformer ever sees it.")
+    # --- locusfusion capacity (--arch locusfusion only) -----------------------
+    # Its defaults are LOCUSFUSION_DEFAULTS. Unlike the other archs, size was
+    # never the binding constraint here (setfusion_scaling swept four width axes
+    # across 62 arms and closed nothing) — the tokenizer knobs below matter more
+    # than the width ones.
+    lf = ap.add_argument_group("locusfusion capacity (--arch locusfusion only)")
+    lf.add_argument("--lf-d-model", type=int, default=None,
+                    help="token width, shared by both stages and the read-out "
+                         "(default: 128). Must be divisible by --lf-nhead.")
+    lf.add_argument("--lf-nhead", type=int, default=None,
+                    help="attention heads in both stages and the pooling (default: 4)")
+    lf.add_argument("--lf-enc-layers", type=int, default=None,
+                    help="stage-1 layers, WITHIN one locus (default: 2)")
+    lf.add_argument("--lf-enc-dim-ff", type=int, default=None,
+                    help="stage-1 feed-forward width (default: 256)")
+    lf.add_argument("--lf-fusion-layers", type=int, default=None,
+                    help="stage-2 layers, ACROSS loci (default: 2)")
+    lf.add_argument("--lf-fusion-dim-ff", type=int, default=None,
+                    help="stage-2 feed-forward width (default: 256)")
+    lf.add_argument("--lf-dropout", type=float, default=None,
+                    help="dropout inside both transformers and the pooling "
+                         "attention (default: 0.1). Distinct from --dropout, "
+                         "which is the read-out MLP's.")
+    lf.add_argument("--lf-max-variants", type=int, default=None,
+                    help="token cap per (locus, coordinate stream) (default: 16). "
+                         "The variant census puts the 99th percentile at <=7 "
+                         "columns per locus for 17 of 19 loci and 26 for rrs/rrl, "
+                         "so 16 covers >99%% of (isolate, locus) pairs; overflow "
+                         "keeps the FIRST 16 in positional order.")
+    lf.add_argument("--lf-pos-dims", type=int, default=None,
+                    help="sinusoidal position-encoding width (default: 64)")
+    lf.add_argument("--lf-uncovered-frac", type=float, default=None,
+                    help="fraction of a locus differing from the reference above "
+                         "which it is flagged UNCOVERED rather than hypervariant "
+                         "(default: 0.5). 14-91 isolates per locus are all-gap.")
+    lf.add_argument("--lf-locus-encoder", default=None, choices=list(LOCUS_ENCODERS),
+                    help="stage-1 weight sharing: 'shared' (one encoder, identity "
+                         "from locus_emb only), 'adapter' (default: shared encoder "
+                         "+ a per-locus FiLM, 2*d_model params per locus), or "
+                         "'per_locus' (a separate encoder per locus; 19x the "
+                         "stage-1 weights and the loci can no longer be batched).")
+    lf.add_argument("--lf-summary-norm", default=None, choices=list(SUMMARY_NORMS),
+                    help="standardise each locus summary across the batch with "
+                         "per-locus statistics before stage 2 (default: keyed). "
+                         "Measured motivation: the summary is read off the [WT] "
+                         "slot, whose input is identical in every isolate, so "
+                         "only ~1.6%% of it varies with the genotype at init — "
+                         "the same failure token_signal diagnosed in setfusion. "
+                         "'none' turns it off.")
+    lf.add_argument("--lf-carry-variants", type=int, default=None,
+                    help="how many of each locus's own variant tokens are handed "
+                         "up to stage 2 alongside its summary (default: 0). >0 "
+                         "lets cross-locus attention see individual variants "
+                         "(rpoB+rpoC compensatory pairs) at a larger token set.")
+    # --- experimental variant-set aggregators (models/experimental_models.py) --
+    # Same tokenizer as locusfusion; these six differ only in how the variant set
+    # is aggregated. Knobs are checked against the SELECTED member -- passing
+    # --xm-fm-rank to --arch deepsets is an error, not a silent no-op.
+    xm = ap.add_argument_group(
+        "experimental aggregators (--arch catalogue|additive|noisyor|"
+        "gatedpool|deepsets|fm)")
+    xm.add_argument("--xm-d-model", type=int, default=None,
+                    help="variant embedding width (default: 128). Ignored by "
+                         "--arch catalogue, which has no embedding at all.")
+    xm.add_argument("--xm-max-variants", type=int, default=None,
+                    help="token cap per block (default: 16). The variant census "
+                         "puts the 99th percentile at <=7 columns per locus for "
+                         "17 of 19 loci and 26 for rrs/rrl.")
+    xm.add_argument("--xm-pos-dims", type=int, default=None,
+                    help="sinusoidal position-encoding width (default: 64)")
+    xm.add_argument("--xm-uncovered-frac", type=float, default=None,
+                    help="fraction of a block differing from the reference above "
+                         "which it is flagged UNCOVERED rather than hypervariant "
+                         "(default: 0.5)")
+    xm.add_argument("--xm-dropout", type=float, default=None,
+                    help="dropout on the variant embedding (default: 0.1)")
+    xm.add_argument("--xm-fm-rank", type=int, default=None,
+                    help="--arch fm only: factorization rank, i.e. how many "
+                         "dimensions the pairwise-interaction term gets "
+                         "(default: 8). All pairs cost O(T*rank), not O(T^2).")
+    xm.add_argument("--xm-residual-catalogue", action="store_true",
+                    help="--arch additive only: add the exact-identity weight "
+                         "table on top of the featurised one, so the model "
+                         "memorises variants it has seen and featurises the ones "
+                         "it has not. Off by default so the clean measurement "
+                         "(featurisation alone vs --arch catalogue) comes first.")
+    # --- input encoding (all archs) -------------------------------------------
+    ap.add_argument("--delta", action="store_true",
+                    help="reference-difference input encoding: zero every column "
+                         "matching the H37Rv reference, in every modality. Shape "
+                         "and alphabet unchanged; what goes is the ~99.9%% of each "
+                         "sequence identical across a clonal cohort, which carries "
+                         "no discriminative signal but dominates the CNN's input.")
     # --- LR schedule (all archs) ----------------------------------------------
     ap.add_argument("--lr-schedule", default="none", choices=["none", "cosine"],
                     help="per-epoch LR schedule: 'none' (flat, what every "
@@ -286,6 +407,44 @@ def main():
         "enc_width": args.enc_width, "enc_out_channels": args.enc_out_channels,
         "enc_depth": args.enc_depth, "bins": args.enc_bins,
     }.items() if v is not None}
+    locusfusion = {k: v for k, v in {
+        "d_model": args.lf_d_model, "nhead": args.lf_nhead,
+        "enc_layers": args.lf_enc_layers, "enc_dim_ff": args.lf_enc_dim_ff,
+        "fusion_layers": args.lf_fusion_layers, "fusion_dim_ff": args.lf_fusion_dim_ff,
+        "dropout": args.lf_dropout, "max_variants": args.lf_max_variants,
+        "pos_dims": args.lf_pos_dims, "uncovered_frac": args.lf_uncovered_frac,
+        "locus_encoder": args.lf_locus_encoder,
+        "summary_norm": args.lf_summary_norm,
+        "carry_variants": args.lf_carry_variants,
+    }.items() if v is not None}
+    experimental = {k: v for k, v in {
+        "d_model": args.xm_d_model, "max_variants": args.xm_max_variants,
+        "pos_dims": args.xm_pos_dims, "uncovered_frac": args.xm_uncovered_frac,
+        "dropout": args.xm_dropout, "fm_rank": args.xm_fm_rank,
+        "residual_catalogue": args.xm_residual_catalogue or None,
+    }.items() if v is not None}
+    if experimental and args.arch not in EXPERIMENTAL_MODELS:
+        ap.error(f"experimental aggregator flags "
+                 f"{sorted('--xm-' + k.replace('_', '-') for k in experimental)} "
+                 f"require one of --arch {'|'.join(sorted(EXPERIMENTAL_MODELS))} "
+                 f"(got --arch {args.arch})")
+
+    if locusfusion and args.arch != "locusfusion":
+        ap.error(f"locusfusion capacity flags {sorted('--lf-' + k.replace('_', '-') for k in locusfusion)} "
+                 f"require --arch locusfusion (got --arch {args.arch})")
+
+    branched = {k: v for k, v in {
+        "n_groups": args.branch_groups,
+        "per_drug_hidden": args.branch_per_drug_hidden,
+        "tau_start": args.branch_tau_start, "tau_end": args.branch_tau_end,
+        "generic_weight": args.branch_generic_weight,
+        "group_dropout": args.branch_group_dropout,
+    }.items() if v is not None}
+    if branched and args.head != "branched":
+        ap.error(f"branch flags {sorted('--branch-' + k.replace('_', '-') for k in branched)} "
+                 "require --head branched")
+    branched = (branched or {}) if args.head == "branched" else None
+
     if setfusion and args.arch != "setfusion":
         # silently ignoring them would make a sweep arm look like it ran when it
         # was really the control with a different folder name
@@ -293,9 +452,14 @@ def main():
                  f"--arch setfusion (got --arch {args.arch})")
     epochs = args.epochs if args.epochs is not None else (60 if args.real else 5)
     # mdcnn stacks LOCI as channels -> needs one block per locus (see above)
-    per_locus = args.per_locus_branches or args.arch in ("mdcnn", "setfusion", "cisfusion")
-    if args.arch in ("mdcnn", "setfusion", "cisfusion") and not args.per_locus_branches:
+    per_locus = args.per_locus_branches or args.arch in PER_LOCUS_ARCHS
+    if args.arch in PER_LOCUS_ARCHS and not args.per_locus_branches:
         print(f"--arch {args.arch}: loading per-locus branches (implied)")
+    # see scripts/run_experiment.py: locusfusion tokenizes the columns that
+    # DIFFER from H37Rv, so a plain one-hot degenerates it silently.
+    delta = args.delta or args.arch in DELTA_ARCHS
+    if args.arch in DELTA_ARCHS and not args.delta:
+        print(f"--arch {args.arch}: reference-difference input encoding (--delta, implied)")
     run_name = args.run_name or time.strftime("multidrug_%Y%m%d_%H%M%S")
     run_dir = RESULTS_DIR / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -346,7 +510,8 @@ def main():
         data = load_multidrug_dataset(drugs, modalities, geno, pheno,
                                       regulatory_dir=reg, loci=loci,
                                       per_modality_branch=not per_locus,
-                                      all_regulatory=args.all_regulatory)
+                                      all_regulatory=args.all_regulatory,
+                                      delta=delta)
         result = run_multidrug_cv(data, epochs=epochs, n_splits=args.n_splits,
                                   batch_size=args.batch_size, device=args.device,
                                   tb_dir=tb_dir, seed=args.seed,
@@ -361,7 +526,10 @@ def main():
                                   mdcnn_trunk_per_modality=args.mdcnn_trunk_per_modality,
                                   monitor_min_n=args.monitor_min_n,
                                   setfusion=setfusion,
+                                  branched=branched,
                                   transformer=transformer,
+                                  locusfusion=locusfusion,
+                                  experimental=experimental,
                                   lr_schedule=args.lr_schedule,
                                   warmup_epochs=args.warmup_epochs,
                                   run_name=run_name, save_weights=args.save_weights,

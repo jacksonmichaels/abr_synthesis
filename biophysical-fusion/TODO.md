@@ -10,13 +10,14 @@ High-level on purpose: file layout is in flux, so this names *components* and
   drug) + 20 joint jobs, landing in `results/experiments/full_run/`. That
   folder's README describes the grid; `full_run_viewer.ipynb` beside it reads
   whatever has finished and compares against both BIG-TB baselines.
-- **MD-CNN reproduction** — folds 0–3 done and matching: macro CV **0.9205** vs
-  the authors' **0.9212** over the same four folds and our 11 shared drugs,
-  **−0.0007**, largest per-drug gap AMIKACIN −0.0069. Job `62593892` was then
-  killed by its 16 h wall clock 48 epochs into fold 4 (the ~5 h the authors
-  logged does not transfer: ~45 min to load plus 3h31m per fold here), so it
-  never wrote the aggregate `auc.csv` and never reached stage 2. Fold 4 + merge +
-  eval resubmitted 2026-08-18 as `63188024` (`-t 12:00:00`) via
+- **MD-CNN reproduction — DONE (2026-08-18).** All 5 folds plus stage 2:
+  macro CV **0.9212** vs the authors' **0.9222** over our 11 shared drugs
+  (**−0.0010**), test macro **0.8857** vs their **0.8840**. Outputs in
+  `mdcnn_eval/training_output/repro_filter12_epoch150/` (`auc.csv`,
+  `test_set_auc.csv`). Getting there took two jobs: `62593892` was killed by its
+  16 h wall clock 48 epochs into fold 4 (the ~5 h the authors logged does not
+  transfer — ~45 min to load plus 3h31m per fold here), so fold 4 + merge + eval
+  were resubmitted as `63188024` (`-t 12:00:00`) via
   `mdcnn_eval/scripts/_sbatch_mdcnn_fold4_eval.sh`. CPU-only by design — the
   authors' own published run never got a GPU (cuDNN 9 vs TF 2.14's
   `libcudnn.so.8`), so matching that keeps the numbers comparable.
@@ -35,6 +36,18 @@ High-level on purpose: file layout is in flux, so this names *components* and
   +0.031 on the clean cells). Its results folder was lost and has been rebuilt
   from SLURM logs; see `results/experiments/alllocus_run/README.md` for what is
   and is not recoverable.
+
+- **`locusfusion` built (2026-08-25), not yet trained.** A variant-token,
+  two-stage transformer: one token per column that differs from H37Rv rather
+  than one per patch of sequence, modalities fused within a locus and then
+  across loci, with a learned `[WT]` sentinel per locus so a susceptible isolate
+  is the empty set. It is the design that follows from taking findings 3 and 4
+  in the README seriously at the same time — attribution mis-ranks value, and
+  setfusion failed on the signal-to-constant ratio rather than on width. Wired
+  into both runners and both engines, `tests/test_locusfusion.py` 25/25, design
+  and the variant census in `results/experiments/CODE_CHANGES_20260825.md`.
+  **Zero training runs**, so it has no number attached to it and should not be
+  quoted as if it did.
 
 ## Open questions
 
@@ -80,11 +93,183 @@ the joint runs use every curated locus (below).
   out by one attention query per drug. Block count and order stop mattering.
 - **`cisfusion`** — promoter ⊕ CDS concatenated per locus into a cis-unit, with
   a segment channel marking which columns are which, then per-branch encoders.
+- **`locusfusion`** (2026-08-25, built and tested, **never trained**) — one token
+  per **variant** rather than per patch: runs on reference-difference input and
+  emits a token only where the isolate deviates from H37Rv, so a token varies
+  with the genotype by construction. Stage 1 fuses all of a locus's modalities
+  into one locus representation, stage 2 fuses the loci; each locus carries a
+  learned `[WT]` sentinel, so a susceptible isolate is the empty set. The input
+  is O(variants) — median 14 tokens per isolate over 19 loci — rather than
+  O(sequence length). Design + the variant census in
+  `results/experiments/CODE_CHANGES_20260825.md`; the run it wants is in §7 there.
 
-The last three need per-locus blocks and the runners imply that. Verified
-identical to the references and not worth re-litigating: LR `exp(-9)`, batch
-128, Adam, masked weighted BCE, per-drug inverse-frequency alpha on the train
-split, R=0/S=1 encoding, 5-fold shuffled KFold, `256→256→sigmoid` head.
+The last four need per-locus blocks and the runners imply that; `locusfusion`
+also implies `--delta`.
+
+Verified identical to the references and not worth re-litigating: LR `exp(-9)`,
+batch 128, Adam, masked weighted BCE, per-drug inverse-frequency alpha on the
+train split, R=0/S=1 encoding, 5-fold shuffled KFold, `256→256→sigmoid` head.
+
+### The experimental aggregators (`models/experimental_models.py`, 2026-08-25)
+
+Six more `--arch` values — `catalogue`, `additive`, `noisyor`, `gatedpool`,
+`deepsets`, `fm` — that share locusfusion's variant tokenizer and differ **only**
+in `aggregate()`. Built and tested (25/25), **none trained**.
+
+The premise, and it is a measured one rather than a hunch: once the variants are
+tokenized there is no long sequence left to encode, so the remaining question is
+how to combine ~14 sparse pieces of evidence — and **softmax normalises, which
+makes it a relative selector.** With one informative token among thirteen neutral
+ones the weights must sum to 1, so attention has to spend mass on the neutral
+tokens. That is the mechanism behind the flat 1/8 attention `token_signal`
+measured; it is a property of the operator, not a training failure.
+
+They are a controlled comparison, so they want **one grid, not six runs**. Three
+readings are what the grid is for:
+
+1. `catalogue` vs `additive` — what does featurising a variant buy on
+   substitutions absent from training? `catalogue`'s zero-initialised
+   per-identity table scores an unseen variant at exactly zero; `additive` scores
+   it from position + substitution + biophysical change. This is the *pncA* /
+   PYRAZINAMIDE mechanism isolated into a single measurement.
+2. `deepsets` vs `gatedpool` vs `locusfusion` — was attention, or specifically
+   its normalisation, ever the problem? If `gatedpool` closes a gap `deepsets`
+   does not, normalisation was it. If `deepsets` matches both, the selection
+   machinery was never earning its parameters.
+3. `additive` vs `fm` — is epistasis worth anything? An FM prices all pairwise
+   interactions at O(T*rank), so this is cheap to ask.
+
+**Run the sparse baseline before any of them.** `variant_design_matrix()` exports
+the isolate x variant matrix with readable column names (`dna:katG@944=2`); an
+L1-logistic and a LightGBM on it cost an afternoon and no GPU. There is no
+sparse-linear or tree baseline anywhere in this project, and for TB AMR from a
+variant matrix those are the canonical strong methods — `token_signal` already
+found plain logistic regression on setfusion's own representations beating the
+trained model by 0.011. If it reaches ~0.92 that reframes the project, and it is
+the cheapest possible way to find out.
+
+Known restrictions, each stated in its class docstring: `catalogue` cannot
+generalise to unseen variants (that is its job); `noisyor` is monotone in
+evidence so it cannot learn a protective variant, and assumes independent causes
+so it cannot express compensation; `additive` forbids epistasis by construction.
+
+### locusfusion — next steps
+
+**0. Run it.** Nothing here means anything until it has trained once. The
+matched control is `full_run_v2` (per-drug loci) and `alllocus_run_v2` (19
+loci); same 300 epochs / patience 30 / `--min-epochs 50` / `--save-weights best`
+/ same seed, so the only difference is `--arch`:
+
+```bash
+python scripts/run_experiment.py --modalities dna protein biophysical regulatory \
+    --drugs all --arch locusfusion --epochs 300 --patience 30 --min-epochs 50 \
+    --device cuda --run-name locusfusion_v1
+```
+
+Judge it on **three** things, not one — the claim is mechanistic, so hold it to
+the discipline `token_signal` held itself to:
+
+- `cv_auc_mean` against the same cell in `full_run_v2`. The bar that matters is
+  `all_modalities__mdcnn` at 0.9086 (per-drug loci) / 0.9246 (19 loci).
+- **Read-out attention must stop being uniform.** Flat 1/n_loci means the locus
+  summaries are still collinear and the architecture did not do its job — the
+  same test that caught setfusion.
+- **The attended tokens must be the right ones.** `variant_report()` names the
+  locus and alignment column behind every token; for ISONIAZID the top-attended
+  token should be katG codon 315 or the fabG1–inhA promoter `c-15t`. An arm that
+  raises AUC while attending to neither has improved for some other reason and
+  the mechanistic claim is still unsupported.
+
+Then the knobs, in the order the evidence ranks them: `--lf-summary-norm` (the
+signal ratio), `--lf-carry-variants 2` (cross-locus epistasis — rpoB+rpoC
+compensatory pairs), `--lf-locus-encoder per_locus`, and only then
+`--lf-d-model`. Width is last on purpose: `setfusion_scaling` swept four width
+axes across 62 arms and closed nothing.
+
+**Refinements, for the second run rather than the first:**
+
+1. **Signed Δproperty for the biophysical modality.** Under `--delta`,
+   `datasets/biophysical.py` keeps *the new residue's* z-scored properties at
+   changed positions, not `new − reference`. For "does this substitution break
+   the protein" — the mechanism behind the *pncA* / PYRAZINAMIDE result, the
+   strongest biophysical finding in the project — the signed difference is the
+   quantity that generalizes to unseen substitutions, and the current encoding
+   makes the model recover it from position. It is a few lines in
+   `biophysical.py`, but it changes an existing modality's semantics under
+   `--delta` and so needs its own flag and its own matched control (it would
+   move `token_signal/a2_delta` too).
+2. **The 'N' hole in the uncovered flag.** `one_hot_nt` leaves unknown bases
+   all-zero, so an N-filled record is invisible to the occupancy test while a
+   gap-filled one is caught. The real records are overwhelmingly `-`, but a
+   coverage channel from the loader would close it properly.
+3. **Lineage confounding gets more direct, not less.** Neutral lineage markers
+   become first-class tokens here. Worth checking whether attention concentrates
+   on WHO-catalogue positions or on lineage-defining ones — `variant_report()`
+   makes that a one-liner, and it is a sharper version of the standing lineage
+   question below.
+
+## Next steps — 2026-08-26
+
+Ordered. Each one is blocked by the one above it, and the top two are cheap.
+
+**1. `noisyor` rerun — IN FLIGHT.** Jobs `63647994`–`63648007`, manifest
+`slurm_logs/manifests/submitted_20260826_170414_428834.json`. Its first run
+scored macro CV **0.4956** (below chance): the model is monotone in its evidence
+and was pointed at P(resistant), while this project encodes **R=0/S=1**, so a
+variant pushed every isolate toward the wrong class. It never escaped its init
+either (train loss 0.3152 → 0.3023 over 99 epochs, against `additive`'s
+0.2246 → 0.0875 on the identical cell). Fixed in
+`models/experimental_models.py` — the product is P(susceptible), and the
+saturating `-4.0` init is now `-2.0`; the test asserts the DIRECTION now, not
+just the monotonicity. Broken results archived with a write-up at
+`results/archive/noisyor_polarity_bug_20260825/`.
+
+*When it lands:* it should join the 0.889–0.891 band the other five sit in. Above
+that band means the saturating/monotone prior buys something real; still near 0.5
+means the polarity was not the whole story and `-2.0` is still too deep for
+`lr = exp(-9)`. Then rebuild the overview:
+
+```bash
+python scripts/build_overview.py && jupyter nbconvert --to notebook \
+    --execute --inplace notebooks/overview.ipynb
+```
+
+**2. `variant_aggregators_alllocus` — SUBMITTED 2026-08-26.** 66 GPU jobs
+(`63648459`–`63648524`) + 11 CPU (`63648525`–`63648535`); manifest
+`slurm_logs/manifests/submitted_20260826_172334_485603.json`. Its README's hold
+on step 1 was overridden deliberately — wall-clock, not compute, is the binding
+constraint, and both `noisyor` arms read the already-fixed code, so the only risk
+taken is that the polarity fix proves insufficient.
+
+This is the run that decides whether the experimental family survives. The six
+aggregators have only ever run at **per-drug loci** (2 genes for INH), where the
+entire variant-token family loses — and where `locusfusion` and all six are
+**indistinguishable** (0.8892–0.8920, spread 0.0028). `locusfusion` gained
+**+0.032 from the locus count alone**. So "the aggregators are worse" is
+currently a statement about 2 genes, not about the models.
+
+Read two things first, and neither is the macro: **`sparse_baseline` at 19 loci**
+(if an L1-logistic with no GPU tracks the networks to ~0.92, the architectures
+are the footnote and that is the finding), and **`catalogue` vs `additive`**
+(+0.022 at per-drug loci; the vocabulary is ~10x larger at 19 loci so the gap
+should widen — if it narrows, the featurisation story is weaker than claimed).
+
+**3. Retire what has answered its question.** Only after 2 is written up.
+`deepsets`, `gatedpool` and `fm` exist to establish that the aggregator is not
+the lever; five members within 0.0014 already says so. Move them to
+`models/legacy.py` (*importable, not in the training path*) rather than deleting
+— `alllocus_run` is in the README precisely because results were thrown away
+before the finding was recorded. Keep `additive` + `catalogue` (only meaningful
+as a pair, and `additive`'s contributions sum to the logit, so it is the one
+model in the project whose attribution is exact and free — see finding 3, where
+SHAP mis-ranked predictive value and is unconverged below `NSAMPLES` ~128) and
+`variant_design_matrix` (deleting the module deletes the sparse baseline).
+
+**4. Still open from before, unchanged in priority by any of the above:**
+`build_full_run_viewer.py`'s prose is `full_run`-era and overstates the modality
+gains 3–4x; `--token-norm keyed` has only ever run on two drugs in one cell; and
+single seed everywhere — multi-seeding the headline cells is a prerequisite for
+reporting any of this, including `locusfusion`'s 19-locus parity.
 
 ## Loci and regulatory regions
 

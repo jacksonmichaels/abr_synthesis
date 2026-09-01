@@ -48,6 +48,7 @@ import shap  # noqa: E402
 
 from bigtb_ref import tb  # noqa: E402
 from datasets import load_dataset  # noqa: E402
+from models import DELTA_ARCHS  # noqa: E402
 from training.checkpoint import load_model, run_weights_dir  # noqa: E402
 
 RESULTS_DIR = PROJECT_DIR / "results" / "experiments"
@@ -84,14 +85,23 @@ def rebuild_inputs(cfg, weights_dir, n_background, rng):
     """Reload this checkpoint's inputs, sliced to its own stored held-out split.
 
     Mirrors scripts/run_experiment.py -> load_dataset, then
-    training.multimodal.run_modal_cv's `keep = y != -1` filter."""
+    training.multimodal.run_modal_cv's `keep = y != -1` filter.
+
+    `delta` is RESOLVED, not read: the config records `args.delta`, the raw
+    flag, while run_experiment.py loads with `args.delta or arch in
+    DELTA_ARCHS`. Every variant-token run therefore has `"delta": false` in its
+    config and was trained on delta input anyway, so trusting the key rebuilds
+    a locusfusion checkpoint on dense one-hot — a different input, a wrong
+    model, and attributions that still look plausible."""
     d = cfg["data"]
+    delta = bool(d.get("delta")) or cfg["model"]["arch"] in DELTA_ARCHS
     data = load_dataset(
         cfg["drug"], d["modalities_requested"],
         d["genotype_dir"], d["phenotype_csv"], regulatory_dir=d["regulatory_dir"],
         loci=d["loci_override"], regulatory_loci=d["regulatory_loci_override"],
         per_modality_branch=d["per_modality_branch"],
-        extra_loci=d["extra_loci"], all_regulatory=d["all_regulatory"], verbose=False)
+        extra_loci=d["extra_loci"], all_regulatory=d["all_regulatory"],
+        delta=delta, verbose=False)
 
     keep = np.nonzero(data.y != -1)[0]
     y = data.y[keep]

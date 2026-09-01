@@ -74,12 +74,30 @@ MODALITY_SETS = {
     "no_regulatory":    ["dna", "protein", "biophysical"],
     "regulatory_only":  ["regulatory"],
 }
-GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion")
+# All five live architectures. `locusfusion` joined 2026-08-25; it implies
+# --delta and per-locus blocks, both of which the runners apply from --arch, so
+# it needs no special case here.
+GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion", "locusfusion")
+
+
+# The experimental variant-set AGGREGATORS (models/experimental_models.py,
+# 2026-08-25). Deliberately NOT folded into GRID_ARCHS: that would cross them
+# with all eight MODALITY_SETS and add 48 entries to a registry whose --experiments
+# default is "all", turning a bare `sbatch_all_runs.py` into ~1,000 jobs. They are
+# a controlled comparison of aggregators, not a modality ablation, so one modality
+# set is the right grid -- `all_modalities`, because that is where the protein and
+# biophysical features `additive` and `fm` read actually exist, and because
+# full_run_v2/all_modalities__* is the matched control.
+AGGREGATOR_ARCHS = ("catalogue", "additive", "noisyor", "gatedpool", "deepsets", "fm")
 
 
 def _build_grid():
-    return {f"{mods}__{arch}": {"modalities": list(names), "arch": arch}
+    grid = {f"{mods}__{arch}": {"modalities": list(names), "arch": arch}
             for mods, names in MODALITY_SETS.items() for arch in GRID_ARCHS}
+    grid.update({f"all_modalities__{arch}":
+                 {"modalities": list(MODALITY_SETS["all_modalities"]), "arch": arch}
+                 for arch in AGGREGATOR_ARCHS})
+    return grid
 
 
 EXPERIMENTS = _build_grid()

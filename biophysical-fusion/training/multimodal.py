@@ -46,9 +46,11 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from bigtb_ref import tb
-from models import (SETFUSION_DEFAULTS, TRANSFORMER_DEFAULTS, CisFusionNet,
+from models import (EXPERIMENTAL_DEFAULTS, EXPERIMENTAL_MODELS,
+                    LOCUSFUSION_DEFAULTS, SETFUSION_DEFAULTS,
+                    TRANSFORMER_DEFAULTS, CisFusionNet, LocusFusionNet,
                     MDCNNNet, MultiModalNet,
-                    SetFusionNet)
+                    SetFusionNet, make_experimental, parse_block_key)
 from .checkpoint import RunCheckpointer, model_config
 from .core import EarlyStopper, masked_weighted_bce
 
@@ -259,7 +261,7 @@ def _new_writer(tb_dir, *parts):
 def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
                  branch_models=None, default_encoder="cnn", head=None,
                  mdcnn_trunk_per_modality=False, setfusion=None,
-                 transformer=None):
+                 transformer=None, locusfusion=None, experimental=None):
     """One model per fold.
 
     late_fusion -> our per-block encoder net; mdcnn -> BIG-TB's
@@ -271,8 +273,17 @@ def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
     ``setfusion`` carries the setfusion-only capacity knobs (SETFUSION_DEFAULTS:
     d_model, nhead, layers, dim_ff, dropout, enc_*, bins). Both default to the
     values that produced full_run, so omitting them reproduces that run
-    exactly."""
+    exactly. ``locusfusion`` carries LOCUSFUSION_DEFAULTS the same way."""
     head = dict(head or {})
+    if arch in EXPERIMENTAL_MODELS:
+        # the variant-set aggregator family: same tokenizer as locusfusion, six
+        # different ways of combining the tokens. `make_experimental` rejects a
+        # knob the chosen member does not use rather than ignoring it.
+        return make_experimental(
+            arch, [parse_block_key(b.name) for b in blocks],
+            [b.spec() for b in blocks], n_drugs=n_drugs, out_bias=out_bias,
+            hidden=head.get("hidden", 256),
+            **{**EXPERIMENTAL_DEFAULTS, **(experimental or {})})
     if arch == "mdcnn":
         # mdcnn groups blocks into trunks by channel height, and a trunk can span
         # modalities (dna and regulatory are both 5-channel), so a PER-MODALITY
@@ -299,6 +310,16 @@ def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
                                         head_dropout=head.get("dropout", 0.0),
                                         per_drug_hidden=head.get("per_drug_hidden", 0),
                                         **{**SETFUSION_DEFAULTS, **(setfusion or {})})
+    if arch == "locusfusion":
+        # same head convention as setfusion: `hidden`/`per_drug_hidden` mean what
+        # they mean in DenseHead, and the runners' --dropout is the READ-OUT
+        # dropout (`dropout` in LOCUSFUSION_DEFAULTS is the transformer's).
+        return LocusFusionNet.from_blocks(
+            blocks, n_drugs=n_drugs, out_bias=out_bias,
+            hidden=head.get("hidden", 256),
+            head_dropout=head.get("dropout", 0.0),
+            per_drug_hidden=head.get("per_drug_hidden", 0),
+            **{**LOCUSFUSION_DEFAULTS, **(locusfusion or {})})
     if arch == "cisfusion":
         return CisFusionNet.from_blocks(blocks, n_drugs=n_drugs, out_bias=out_bias,
                                         branch_models=branch_models,
@@ -316,7 +337,7 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  mdcnn_trunk_per_modality=False, run_name=None,
                  save_weights="best", weights_dir=None, data_config=None,
                  setfusion=None, lr_schedule="none", warmup_epochs=0,
-                 transformer=None):
+                 transformer=None, locusfusion=None, experimental=None):
     """Train/eval a MultiModalNet on a DrugData bundle, following BIG-TB's
     SD-CNN protocol (run_SDCNN_ccp_crossval / _assess). Returns a result dict.
 
@@ -357,6 +378,10 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  if v is not None and SETFUSION_DEFAULTS.get(k) != v}
     transformer = {k: v for k, v in (transformer or {}).items()
                    if v is not None and TRANSFORMER_DEFAULTS.get(k) != v}
+    locusfusion = {k: v for k, v in (locusfusion or {}).items()
+                   if v is not None and LOCUSFUSION_DEFAULTS.get(k) != v}
+    experimental = {k: v for k, v in (experimental or {}).items()
+                    if v is not None and EXPERIMENTAL_DEFAULTS.get(k) != v}
     head = {"hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden}
     drug, tag = data.drug, data.modality_tag()
     ckpt = RunCheckpointer(run_name, f"{drug}__{tag}", mode=save_weights,
@@ -429,7 +454,9 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                              branch_models, default_encoder, head=head,
                              mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
                              setfusion=setfusion,
-                             transformer=transformer).to(device)
+                             transformer=transformer,
+                             locusfusion=locusfusion,
+                             experimental=experimental).to(device)
         if fold == 0:
             n_params = sum(p.numel() for p in model.parameters())
             print(f"[{drug}/{tag}] {arch}: {n_params:,} parameters", flush=True)
@@ -480,7 +507,8 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
             drug_names=[drug], out_bias=out_bias, head=head,
             mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
             branch_models=branch_models, default_encoder=default_encoder,
-            n_params=n_params, setfusion=setfusion, transformer=transformer),
+            n_params=n_params, setfusion=setfusion, transformer=transformer,
+            locusfusion=locusfusion, experimental=experimental),
         "data": {**(data_config or {}),
                  "modalities_used": data.modalities,
                  "modalities_requested": data.requested,
@@ -523,6 +551,10 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "lr": LR if lr is None else float(lr), "weight_decay": float(weight_decay),
         "lr_schedule": lr_schedule, "warmup_epochs": int(warmup_epochs),
         "setfusion": {**SETFUSION_DEFAULTS, **setfusion} if arch == "setfusion" else None,
+        "locusfusion": ({**LOCUSFUSION_DEFAULTS, **locusfusion}
+                        if arch == "locusfusion" else None),
+        "experimental": ({**EXPERIMENTAL_DEFAULTS, **experimental}
+                         if arch in EXPERIMENTAL_MODELS else None),
         # recorded whenever a transformer is actually in the model, so a result
         # row always states the capacity it ran at
         "transformer": ({**TRANSFORMER_DEFAULTS, **transformer}

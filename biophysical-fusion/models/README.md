@@ -137,8 +137,8 @@ the inside: 0.14% of a `setfusion` token varied with the genotype, attention was
 flat at 1/8, and a linear probe on the encoder output beat the trained model.
 
 So this one does not tokenize the sequence. It tokenizes the **difference from
-the reference** — it runs on `--delta` input (implied by `--arch`) and emits one
-token per surviving column. **100% of a token varies with the genotype by
+the reference** — a column becomes a token only where the isolate's symbol
+differs from H37Rv's. **100% of a token varies with the genotype by
 construction.**
 
 ### A susceptible isolate is the empty set
@@ -154,10 +154,11 @@ attention row is ever fully masked.
 
 ```
 per locus L, per coordinate stream (nt / aa / reg):
-    delta block (B, C, len)  --occupancy-->  the columns that differ
-                             --gather-->     <= max_variants tokens
-token   = tok_proj(modality slots + flags) + pos_proj(sinusoid(coord))
-        + locus_emb[L] (+ FiLM adapter[L])
+    symbol ids (B, 1, len)   --alt != ref-->  the columns that differ
+                             --gather-->      <= max_variants tokens
+token   = alt_emb[alt] + ref_emb[ref] + phase_emb[phase]
+        + pos_proj(sinusoid(coord)) + locus_emb[L] (+ FiLM adapter[L])
+        (+ bio_proj(properties))    (+ uncovered_emb)
 [WT]_L  = wt_emb[L] + wt_proj(variant count, coverage, uncovered)
 
 stage 1   TransformerEncoder over {[WT]_L, variants of L}  ->  z_L = out[[WT]]
@@ -224,16 +225,42 @@ here distinguishes those cases at all. The `[WT]` token also carries
 `log1p(true variant count)` *before* the cap, so a frameshift that changes 42
 downstream residues is not silently read as 16.
 
+### What a token is, and where it sits
+
+A variant is a discrete event, so a token is three small integers and one
+coordinate — an `alt` symbol id, the `ref` symbol H37Rv has at the same place, a
+codon `phase`, and a `coord`. One 35-entry vocabulary covers nucleotides, amino
+acids and promoter bases; which range an id falls in implies the stream, so no
+stream flag is needed. Per-token input is **2 numbers** (plus 3 floats where the
+biophysical modality is loaded), against the 43 of the fixed 42-slot float
+vector this replaced — everything dropped was duplicated (the gap flag was a
+literal copy of the one-hot's `-` channel) or derivable, and the reference
+symbol is new.
+
+**The coordinate is the H37Rv codon number**, computed in `datasets/tokens.py`
+from the CDS annotation and the reference gap pattern. It costs zero parameters
+and it is what the WHO catalogue names a mutation by, so `variant_report()`
+joins straight against `datasets/who_catalogue.py`.
+
+Until 2026-09-01 it was `column / 3` minus a *learned* per-locus scalar, and
+both halves were wrong: the aligned FASTAs are not bare CDS (the coding sequence
+starts at column 100-112 in 10 of the 17 coding loci) and the reference row
+carries gaps inside the CDS window (pncA 304, gid 177, rpoB 96, katG 53), so the
+true map is not linear in the column index and no scalar can express it. katG
+S315's DNA token sat at 357.3 against its own protein token's 314; rpoB S450 at
+501.7 against 449. The scalar meant to absorb that read `[-0.0107, +0.0081]` off
+a fully trained checkpoint — it initialises at zero and reaches the loss through
+a sinusoid with a 6.3-codon top wavelength, so it never moved. See
+`results/experiments/CODE_CHANGES_20260901.md`.
+
 ### The approximation, stated plainly
 
 `datasets/protein.py` DEGAPS each isolate before translating, so protein codon
-*k* is the k-th codon of that isolate's own degapped CDS while the DNA block
-stays in shared alignment-column space. The two agree exactly when no indel sits
-upstream — the overwhelming majority of a clonal cohort — and drift by the indel
-length when one does. **So nt and aa tokens are not fused by position.** They
-stay separate tokens that within-locus attention may pair, and the constant part
-of the offset (where the CDS starts inside the aligned record) is a *learned*
-per-locus scalar rather than an assumption.
+*k* is the k-th codon of that isolate's own degapped CDS. It equals reference
+codon *k* only when no indel sits upstream — the overwhelming majority of a
+clonal cohort — and drifts by the indel length when one does. **So nt and aa
+tokens are not fused by position.** They stay separate tokens that within-locus
+attention may pair; they now merely agree about where they are.
 
 ### What it gives up
 
@@ -244,9 +271,14 @@ per-locus scalar rather than an assumption.
 - **The tail.** `max_variants=16` per (locus, stream) covers >99% of (isolate,
   locus) pairs; overflow keeps the first 16 in positional order. The true count
   survives on the `[WT]` token, but which columns they were does not.
-- It **requires `--delta`** and per-locus blocks. On dense input the tokenizer
-  degenerates to "the first 16 columns of each block" while still producing
-  plausible numbers, so `forward` warns on the first batch.
+- It **requires symbol-id blocks** (`load_dataset(variant_tokens=True)`, implied
+  by `--arch`) and per-locus blocks. A one-hot block set is refused outright
+  rather than silently read as "the first 16 columns of each block".
+- **Biophysical has no symbol-id form, deliberately** — it is the modality whose
+  claim is that three properties stand in for the residue identity, so handing
+  it that identity would answer its own ablation. In a `dna+biophysical` cell
+  the amino-acid stream therefore has properties and coordinates but no symbol,
+  and keeps the old blindness to a substitution that does not move them.
 
 ### Interpretability
 

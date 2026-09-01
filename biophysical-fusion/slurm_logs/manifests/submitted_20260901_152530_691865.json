@@ -1,0 +1,445 @@
+{
+  "invocation": "scripts/sbatch_all_runs.py --experiments dna__locusfusion dna_protein__locusfusion dna_biophysical__locusfusion dna_regulatory__locusfusion all_modalities__locusfusion --drugs all --epochs 300 --patience 30 --min-epochs 50 --save-weights best --run-prefix locusfusion_v2/sd_ --mem 64G --cpus 4 --gpus 1 --time 24:00:00 --constraint vram23",
+  "submitted_jobs": [
+    {
+      "job_id": "63877421",
+      "experiment": "dna__locusfusion",
+      "drug": "ISONIAZID",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_ISONIAZID_20260901_152431_job1-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877422",
+      "experiment": "dna__locusfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_RIFAMPICIN_20260901_152432_job2-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877423",
+      "experiment": "dna__locusfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_ETHAMBUTOL_20260901_152433_job3-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877424",
+      "experiment": "dna__locusfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_PYRAZINAMIDE_20260901_152434_job4-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877425",
+      "experiment": "dna__locusfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_STREPTOMYCIN_20260901_152435_job5-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877426",
+      "experiment": "dna__locusfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_KANAMYCIN_20260901_152436_job6-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877427",
+      "experiment": "dna__locusfusion",
+      "drug": "AMIKACIN",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_AMIKACIN_20260901_152437_job7-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877428",
+      "experiment": "dna__locusfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_CAPREOMYCIN_20260901_152438_job8-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877430",
+      "experiment": "dna__locusfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_LEVOFLOXACIN_20260901_152439_job9-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877432",
+      "experiment": "dna__locusfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_MOXIFLOXACIN_20260901_152441_job10-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877433",
+      "experiment": "dna__locusfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "locusfusion_v2/sd_dna__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna__locusfusion_ETHIONAMIDE_20260901_152442_job11-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877434",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "ISONIAZID",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_ISONIAZID_20260901_152443_job12-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877435",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_RIFAMPICIN_20260901_152444_job13-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877436",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_ETHAMBUTOL_20260901_152445_job14-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877437",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_PYRAZINAMIDE_20260901_152446_job15-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877438",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_STREPTOMYCIN_20260901_152447_job16-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877439",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_KANAMYCIN_20260901_152448_job17-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877440",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "AMIKACIN",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_AMIKACIN_20260901_152449_job18-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877441",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_CAPREOMYCIN_20260901_152450_job19-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877442",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_LEVOFLOXACIN_20260901_152452_job20-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877443",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_MOXIFLOXACIN_20260901_152453_job21-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877444",
+      "experiment": "dna_protein__locusfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "locusfusion_v2/sd_dna_protein__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_protein__locusfusion_ETHIONAMIDE_20260901_152454_job22-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_protein__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877445",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "ISONIAZID",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_ISONIAZID_20260901_152456_job23-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877447",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_RIFAMPICIN_20260901_152457_job24-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877448",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_ETHAMBUTOL_20260901_152458_job25-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877449",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_PYRAZINAMIDE_20260901_152459_job26-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877450",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_STREPTOMYCIN_20260901_152500_job27-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877451",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_KANAMYCIN_20260901_152501_job28-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877452",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "AMIKACIN",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_AMIKACIN_20260901_152502_job29-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877453",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_CAPREOMYCIN_20260901_152503_job30-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877454",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_LEVOFLOXACIN_20260901_152504_job31-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877455",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_MOXIFLOXACIN_20260901_152505_job32-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877456",
+      "experiment": "dna_biophysical__locusfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "locusfusion_v2/sd_dna_biophysical__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_biophysical__locusfusion_ETHIONAMIDE_20260901_152506_job33-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna biophysical --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_biophysical__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877458",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "ISONIAZID",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_ISONIAZID_20260901_152507_job34-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877459",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_RIFAMPICIN_20260901_152508_job35-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877461",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_ETHAMBUTOL_20260901_152509_job36-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877462",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_PYRAZINAMIDE_20260901_152510_job37-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877463",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_STREPTOMYCIN_20260901_152511_job38-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877464",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_KANAMYCIN_20260901_152512_job39-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877465",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "AMIKACIN",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_AMIKACIN_20260901_152514_job40-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877466",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_CAPREOMYCIN_20260901_152515_job41-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877468",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_LEVOFLOXACIN_20260901_152516_job42-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877470",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_MOXIFLOXACIN_20260901_152517_job43-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877472",
+      "experiment": "dna_regulatory__locusfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "locusfusion_v2/sd_dna_regulatory__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-dna_regulatory__locusfusion_ETHIONAMIDE_20260901_152518_job44-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna regulatory --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_dna_regulatory__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877475",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "ISONIAZID",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_ISONIAZID_20260901_152519_job45-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ISONIAZID --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877476",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "RIFAMPICIN",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_RIFAMPICIN_20260901_152520_job46-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs RIFAMPICIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877477",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "ETHAMBUTOL",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_ETHAMBUTOL_20260901_152521_job47-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ETHAMBUTOL --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877479",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "PYRAZINAMIDE",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_PYRAZINAMIDE_20260901_152522_job48-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs PYRAZINAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877480",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "STREPTOMYCIN",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_STREPTOMYCIN_20260901_152524_job49-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs STREPTOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877481",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "KANAMYCIN",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_KANAMYCIN_20260901_152525_job50-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs KANAMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877482",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "AMIKACIN",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_AMIKACIN_20260901_152526_job51-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs AMIKACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877483",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "CAPREOMYCIN",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_CAPREOMYCIN_20260901_152527_job52-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs CAPREOMYCIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877484",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "LEVOFLOXACIN",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_LEVOFLOXACIN_20260901_152528_job53-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs LEVOFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877485",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "MOXIFLOXACIN",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_MOXIFLOXACIN_20260901_152529_job54-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs MOXIFLOXACIN --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    },
+    {
+      "job_id": "63877486",
+      "experiment": "all_modalities__locusfusion",
+      "drug": "ETHIONAMIDE",
+      "run_name": "locusfusion_v2/sd_all_modalities__locusfusion",
+      "log": "/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/.claude/worktrees/lf-token-offset-fix/biophysical-fusion/slurm_logs/slurm-all_modalities__locusfusion_ETHIONAMIDE_20260901_152530_job55-%j.out",
+      "command": "python scripts/run_experiment.py --real --device cuda --modalities dna protein biophysical regulatory --drugs ETHIONAMIDE --epochs 300 --batch-size 128 --n-splits 5 --seed 0 --run-name locusfusion_v2/sd_all_modalities__locusfusion --arch locusfusion --patience 30 --min-epochs 50"
+    }
+  ]
+}

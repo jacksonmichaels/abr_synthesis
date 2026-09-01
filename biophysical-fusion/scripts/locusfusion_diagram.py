@@ -51,14 +51,17 @@ sys.path.insert(0, str(PROJECT))
 from models.locusfusion import (                                 # noqa: E402
     LOCUSFUSION_DEFAULTS, LocusFusionNet,
 )
+from datasets.tokens import N_SYMBOLS                             # noqa: E402
 
 # The 19 curated loci, and one representative block spec per modality. Only the
 # SHAPES matter here; nothing is trained.
 LOCI = ["eis", "embA", "embB", "embC", "ethA", "ethR", "fabG1", "gid", "gyrA",
         "gyrB", "inhA", "katG", "pncA", "rpoB", "rpoC", "rpsL", "rrl", "rrs",
         "tlyA"][:args.loci]
-SPEC = {"dna": (5, 2488), "protein": (20, 829),
-        "biophysical": (3, 829), "regulatory": (5, 200)}
+# Symbol-id blocks: one id channel for dna/protein/regulatory, three property
+# channels for biophysical, which has no id form (see models/locusfusion.py).
+SPEC = {"dna": (1, 2488), "protein": (1, 829),
+        "biophysical": (3, 829), "regulatory": (1, 200)}
 keys = [(m, L) for L in LOCI for m in SPEC]
 specs = [SPEC[m] for L in LOCI for m in SPEC]
 net = LocusFusionNet(keys, specs, n_drugs=args.drugs, **LOCUSFUSION_DEFAULTS)
@@ -234,7 +237,7 @@ def draw_slide():
     ax.text(x1 + 9.6, REAL[0][1] + RH + 1.6,
             f"≤ {D['max_variants']} × {N_STREAMS} streams", ha="center",
             va="center", fontsize=6.2, color=INK2, zorder=4)
-    shape(ax, x1 + w1 / 2, 30.5, f"(B, {n_l}, {T}, {C_TOK})")
+    shape(ax, x1 + w1 / 2, 30.5, f"(B, {n_l}, {T})  ids  +  (B, {n_l}, {T})  coord")
     shape(ax, x1 + w1 / 2, 26.4, f"→ embed →  (B, {n_l}, {T}, {d})",
           color=MUTED, fs=7.0)
 
@@ -388,13 +391,18 @@ def draw_full():
 
     box(ax, 8, 55.0, 88, 21.0, fc=SURFACE, ec=RUST, lw=1.2)
     ax.text(10.0, 74.5, f"within one locus  ·  {D['max_variants']} variants max "
-                        f"per stream  ·  0 parameters except the learned nt offset",
+                        f"per stream  ·  a column is a token where alt ≠ ref  ·  "
+                        f"0 parameters",
             ha="left", va="center", fontsize=7.6, color=RUST)
 
     STREAMS_ROWS = [
-        ("nt", "dna", "coord = column / 3  −  offset[ℓ]", [7, 31, 62]),
+        ("nt", "dna",
+         "coord = degapped H37Rv bases from the CDS start / 3   (the WHO codon number)",
+         [7, 31, 62]),
         ("aa", "protein + biophysical\n(co-indexed, same columns)", "coord = codon k", [22, 44]),
-        ("reg", "regulatory", "coord = (q − L) / 3    (negative, upstream)", [12, 55, 78, 90]),
+        ("reg", "regulatory",
+         "coord = degapped bases upstream of the window end / 3   (negative)",
+         [12, 55, 78, 90]),
     ]
     # [WT] first: it is slot 0 of every locus, and putting it last left the `reg`
     # coordinate formula written across it.
@@ -442,10 +450,10 @@ def draw_full():
     ax.text(10.0, 47.6, "every token", ha="left", va="center", fontsize=7.6,
             color=INK, fontweight="bold")
     ax.text(23.0, 47.6,
-            f"tok  =  tok_proj({C_TOK} → {D['d_model']})   +   "
+            f"tok  =  alt_emb[alt]  +  ref_emb[ref]  +  phase_emb[phase]   +   "
             f"pos_proj( sinusoid_{D['pos_dims']}(coord) → {D['d_model']} )   +   "
             f"locus_emb[ℓ]",
-            ha="left", va="center", fontsize=8.0, color=INK)
+            ha="left", va="center", fontsize=7.2, color=INK)
     ax.text(10.0, 44.6, "[WT] only", ha="left", va="center", fontsize=7.6,
             color=RUST, fontweight="bold")
     ax.text(23.0, 44.6, "+  wt_emb[ℓ]   +   wt_proj( [ log1p(n_variants), "
@@ -502,28 +510,27 @@ def draw_full():
             ha="left", va="center", fontsize=7.4, color=RUST)
 
     # ================================================== side: token feature vector
-    sx.text(0, 97.5, f"Token feature vector, {C_TOK} dimensions",
+    sx.text(0, 97.5, "What a token is",
             ha="left", va="center", fontsize=9.4, color=INK, fontweight="bold")
-    segs = ([(lo, hi, m) for m, (lo, hi) in SLOTS.items()]
-            + [(F_IS_NT, F_UNCOVERED + 1, "flags"), (F_PHASE, C_TOK, "codon phase")])
-    FILL = {"dna": PALE_BLUE, "protein": "#e3dcf3", "biophysical": "#d9eee4",
-            "regulatory": "#fbe6c9", "flags": PALE, "codon phase": PALE}
-    for lo, hi, name in segs:
-        x0, w = 100 * lo / C_TOK, 100 * (hi - lo) / C_TOK
-        sx.add_patch(Rectangle((x0, 88.5), w, 4.6, facecolor=FILL[name],
-                               edgecolor=AXIS, linewidth=0.7, zorder=2))
-    for i, (lo, hi, name) in enumerate(segs):
-        y = 85.0 - i * 3.2
-        sx.text(0, y, f"{lo}:{hi}", ha="left", va="center", fontsize=7.2,
-                color=MUTED)
-        sx.add_patch(Rectangle((7.5, y - 0.8), 2.6, 1.6, facecolor=FILL[name],
+    FIELDS = [
+        ("alt", f"symbol id, 0–{N_SYMBOLS - 1}", "what this isolate has", PALE_BLUE),
+        ("ref", f"symbol id, 0–{N_SYMBOLS - 1}", "what H37Rv has", "#e3dcf3"),
+        ("phase", "0 / 1 / 2 / n.a.", "codon position", PALE),
+        ("coord", "float", "H37Rv codon number", "#fbe6c9"),
+        ("props", "3 floats, if loaded", "MW / pI / hydrophobicity", "#d9eee4"),
+    ]
+    for i, (name, kind, meaning, fill) in enumerate(FIELDS):
+        y = 92.0 - i * 4.0
+        sx.add_patch(Rectangle((0, y - 1.0), 3.0, 2.0, facecolor=fill,
                                edgecolor=AXIS, linewidth=0.6, zorder=2))
-        sx.text(11.6, y, name, ha="left", va="center", fontsize=7.6, color=INK)
-    sx.text(38, 85.0 - 4 * 3.2, f"is_nt / is_aa / is_reg / is_wt,\ngap, uncovered",
-            ha="left", va="center", fontsize=6.8, color=INK2, linespacing=1.5)
-    sx.text(0, 85.0 - len(segs) * 3.2 - 1.0,
-            "one fixed layout at every modality set;\n"
-            "an absent modality leaves its slot zero",
+        sx.text(4.4, y, name, ha="left", va="center", fontsize=7.8, color=INK,
+                fontweight="bold")
+        sx.text(19.0, y, kind, ha="left", va="center", fontsize=7.0, color=MUTED)
+        sx.text(48.0, y, meaning, ha="left", va="center", fontsize=7.0, color=INK2)
+    sx.text(0, 92.0 - len(FIELDS) * 4.0 - 0.5,
+            "one 35-symbol vocabulary shared by both\n"
+            "id fields; the coordinate stream is implied\n"
+            "by which range an id falls in",
             ha="left", va="top", fontsize=7.0, color=INK2, linespacing=1.6)
 
     # ================================================== side: parameter budget

@@ -1,0 +1,113 @@
+# `lasso_wholeseq_20260901` — L1-logistic on the whole aligned sequence
+
+## The question
+
+Every linear baseline this project has run so far was fed a *distilled* input.
+`variant_aggregators_20260825/sparse_baseline.py` tokenises each isolate into at
+most 512 differences from H37Rv and fits an L1-logistic on those, reaching macro
+CV **0.878** over the 11 shared drugs. That is a strong number, but it is not
+the comparison the networks deserve: the CNNs are handed the entire alignment,
+every column, and left to find the signal themselves.
+
+**Does a lasso on the raw one-hot alignment — no variant calling, no feature
+engineering, no convolution — reach what the convolutional stack reaches?**
+
+The bar is set by three numbers already in the project:
+
+| reference | macro CV AUC |
+|---|---:|
+| SD-CNN, leak-corrected (published single-drug baseline) | 0.8636 |
+| L1-logistic on the variant design matrix (`sparse_baseline`) | 0.878 |
+| single-drug, all modalities, 19 loci (best cell in the project) | 0.9246 |
+
+## The grid
+
+2 encodings × 2 locus universes × 11 drugs = **44 cells**, DNA only.
+
+| axis | values |
+|---|---|
+| **encoding** | `onehot` — one indicator per (alignment column, base), cohort-constant columns dropped. `delta` — the repo's H37Rv reference coding, nonzero only where the isolate differs. |
+| **locus universe** | `perdrug` — BIG-TB's SD-CNN per-drug map (2–3 loci), the locus-matched arm. `all` — every curated locus on disk (19), what the joint runs see. |
+| **penalty path** | C ∈ {0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3}, reported in full. |
+
+Results land in one folder per arm — `onehot_perdrug/`, `onehot_all/`,
+`delta_perdrug/`, `delta_all/` — each with `{DRUG}__{tag}.json` and a
+`summary.csv` in `run_experiment.py`'s schema, so the notebook builders read
+them like any other run.
+
+## Matched control
+
+The matched control for the `perdrug` arms is **`full_run_v2`'s DNA-only
+single-drug cells** — same drugs, same loci, same 5-fold protocol, same 80/20
+test split at seed 42. The only thing that changes is the model.
+
+For the `all` arms it is **`alllocus_run_v2`'s DNA-only single-drug cells**, on
+the same reasoning. That axis is the one README finding 2 says actually moves
+the number (+0.016 to +0.027 for handing a single-drug model the full 19 loci),
+so the sweep spends half its jobs testing whether a linear model gets the same
+lift from the same loci.
+
+The **`sparse_baseline`** run is the other control, and the one this run is
+really arguing with: same model family, same protocol, distilled input versus
+raw input.
+
+## Why both encodings
+
+They carry the same information and span the same column space — `delta` is
+ordinary dummy coding with H37Rv as the reference level — but **L1 is not
+invariant to reparametrisation**, so they are not the same model. `onehot`
+penalises "has base *b* here", wild-type included; `delta` penalises "differs
+from H37Rv here". The smoke test already shows the gap is real: on
+LEVOFLOXACIN, `perdrug`, `onehot` gets CV 0.934 and `delta` gets 0.892.
+
+## What this run deliberately does not do
+
+- **No other modality.** Protein and biophysical features are deterministic
+  functions of the DNA at the same positions; for a *linear* model they are very
+  nearly collinear with the one-hot columns and would mostly buy penalty, not
+  signal. Regulatory windows are the one arm with a real case for inclusion
+  (ETO +0.089, INH +0.031 for the networks) and are the obvious follow-up, not
+  part of this grid.
+- **No elastic-net, no ridge.** This is a lasso sweep. Ridge is the natural
+  control for "is sparsity doing the work, or just shrinkage?" and is the second
+  obvious follow-up.
+- **No `--fit-vocab-on-train` arm.** The variant baseline needed one because its
+  variant vocabulary was built on the full cohort. This one does not: the only
+  cohort-wide decision here is dropping constant columns, and a constant column
+  is collinear with the unpenalised intercept, so its L1 optimum is exactly zero
+  — within a fold as well as over the cohort. Nothing is fit differently.
+- **No standardisation.** The columns are 0/1 indicators already on a common
+  scale. Standardising divides each by its own √(p(1−p)), which would inflate a
+  singleton variant by two orders of magnitude relative to a common one — the
+  opposite of what a rare-variant penalty should do.
+- **Single seed**, like every other run here. Differences under ~0.01 are
+  unresolved, not small.
+
+## Protocol
+
+Identical to `training/multimodal.run_modal_cv`, step for step: missing
+phenotypes dropped before splitting; held-out test =
+`train_test_split(test_size=0.2, random_state=42, stratify=y)`;
+`StratifiedKFold(5, shuffle=True, random_state=42)` on the training split;
+`class_weight="balanced"` as the linear analogue of the networks'
+inverse-frequency alpha; AUC / AUC-PR (resistant positive) / `tb.get_threshold_val`
+sens-spec through the same helpers; test scored once with the best CV fold's
+model. `cv_auc_mean` is the best C on the grid, and every C's per-fold AUC and
+support size is kept in the JSON so the selection is inspectable rather than
+silently tuned.
+
+## Reproduce
+
+```bash
+# from biophysical-fusion/
+bash results/experiments/lasso_wholeseq_20260901/submit.sh          # all 44 cells
+
+# or one cell, interactively
+python results/experiments/lasso_wholeseq_20260901/lasso_wholeseq.py \
+    --drugs ISONIAZID --encoding onehot --locus-set all \
+    --out results/experiments/lasso_wholeseq_20260901/onehot_all
+```
+
+## Findings
+
+<!-- filled in once the grid lands -->

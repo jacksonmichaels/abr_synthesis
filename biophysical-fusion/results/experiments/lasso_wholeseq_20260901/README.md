@@ -122,4 +122,118 @@ column, and every dropped column confirmed constant across the cohort.
 
 ## Findings
 
-<!-- filled in once the grid lands -->
+All 44 cells completed (SLURM 63877098–63877141, all `COMPLETED`). Macro CV AUC
+over the 11 shared drugs, `compare.py --net-pick best`:
+
+| | macro CV | |
+|---|---:|---|
+| SD-CNN, leak-corrected | 0.8636 | |
+| lasso, `delta`, per-drug loci | 0.8613 | |
+| lasso, `onehot`, per-drug loci | 0.8750 | |
+| L1-logistic on the variant design matrix | 0.8788 | the distilled control |
+| best DNA-only network cell, per-drug loci | 0.8940 | matched control |
+| lasso, `delta`, 19 loci | 0.9152 | |
+| best DNA-only network cell, 19 loci | 0.9184 | matched control |
+| **lasso, `onehot`, 19 loci** | **0.9241** | |
+| project's best cell (all modalities, 19 loci, single-drug) | 0.9246 | |
+
+### 1. A lasso on the raw alignment matches the best cell in the project
+
+**0.9241 against 0.9246** — a difference of 0.0005, which on a single seed is
+no difference at all. The project's best cell is a 46 M-parameter network over
+four modalities. This is L1-logistic regression on a one-hot alignment, DNA
+only, at a mean of **228 nonzero coefficients out of 22,384 columns** — 1.0% of
+the design matrix, and roughly 0.0005% of the network's parameter count.
+
+That is the finding this run was built to test, and it lands on the side that
+costs the project the most to accept.
+
+### 2. Raw alignment beats called variants by +0.045, same model family
+
+0.9241 against the variant-token L1's 0.8788, identical protocol, identical
+solver, identical penalty path. The only difference is the input. Distilling
+each isolate to ≤512 (locus, position, base) tokens against H37Rv was throwing
+away four and a half points of macro AUC.
+
+### 3. Reference coding costs, consistently
+
+`onehot` beats `delta` in **both** locus universes — +0.009 at 19 loci
+(0.9241 vs 0.9152), +0.014 at the per-drug sets (0.8750 vs 0.8613) — and on
+**11 of 11 drugs in both**, without a single exception. The two arms span the
+same column space, so this is
+purely the reparametrisation: L1 applied to "has base *b* here" is not L1
+applied to "differs from H37Rv here", and keeping the wild-type level as its own
+penalised column turns out to be worth about a point.
+
+This is a direct caution for the variant-token architectures, all of which are
+built on `--delta` input by construction.
+
+### 4. Locus universe dominates — more for the lasso than for the networks
+
+Handing the model all 19 loci instead of the drug's own 2–3 is worth **+0.049**
+(`onehot`, 0.8750 → 0.9241) and **+0.054** (`delta`). The same move is worth
+**+0.024** to the networks (0.8940 → 0.9184). README finding 2 said locus
+universe, not multi-task sharing, is what pays; this says so again and louder,
+in a model with no architecture to confound it.
+
+### 5. The networks earn their parameters on small inputs and not on large ones
+
+At the per-drug locus sets the lasso **loses** to the DNA-only networks by
+−0.019 (0.8750 vs 0.8940). At 19 loci it wins by +0.006 (0.9241 vs 0.9184).
+Per drug at 19 loci that is 7 wins and 4 losses, and every margin is inside
+±0.01 — unresolved on one seed — except ETHIONAMIDE (+0.016) and LEVOFLOXACIN
+(+0.050, and LFX is 269 isolates, the noisiest drug here; do not lean on it).
+The four losses are AMIKACIN (−0.002), ISONIAZID (−0.001), KANAMYCIN (−0.008)
+and MOXIFLOXACIN (−0.002) — all of them noise.
+**Parity is the honest reading**, not victory.
+
+### 6. Part of the 19-locus lift is co-resistance, not mechanism
+
+The lasso is readable, which is how this became visible. The largest
+coefficients of the `onehot`/19-loci models are right about the mechanism and
+also full of loci that cannot possibly be causal:
+
+| drug | mechanistically correct picks | picks from other drugs' loci |
+|---|---|---|
+| ISONIAZID | `katG` ×3, `fabG1` ×2 | `ethA:1290`, `rpoB:1418` |
+| PYRAZINAMIDE | `pncA` ×5 | `embB:319`, `embA:403`, `gid:292` |
+| ETHIONAMIDE | `ethR:282`, `ethA` ×2, `fabG1:85` | `embC:1799`, `rpoB:39`, `katG:15`, `pncA:140` |
+
+`rpoB` cannot cause isoniazid resistance and `embB` cannot cause pyrazinamide
+resistance. What those columns carry is **MDR co-occurrence** — a strain
+resistant to one first-line drug is likelier to be resistant to the others — and
+lineage structure. The model is using it because it is there and it predicts.
+
+This matters beyond this run: the +0.049 that finding 4 attributes to the locus
+universe is *partly* co-resistance signal, and **the networks given the same 19
+loci can exploit exactly the same thing**. It does not invalidate finding 4 — the
+lift is real and reproducible — but "more loci help" and "more loci carry
+mechanism" are not the same claim, and only the first is evidenced.
+
+### 7. ETHIONAMIDE, the project's worst drug, moves the most
+
+0.8118 here against 0.7954 for the best DNA-only network at 19 loci, 0.7590 for
+the variant-token L1, and 0.6220 for the leak-corrected SD-CNN. The `fabG1`
+coefficients in its top-8 are the *fabG1–inhA* operon promoter that README
+finding 1 identifies as the dominant ETO mechanism — and this arm reaches it
+from the coding alignment alone, with no regulatory modality loaded.
+
+## What this run does not settle
+
+- **Whether the co-resistance in finding 6 is confounding or legitimate signal.**
+  Deciding that needs a lineage-stratified or held-out-by-lineage split, which
+  no run in this project has. It is the highest-value follow-up here.
+- **Whether the CNNs are redundant.** Parity at 19 loci on DNA is not parity
+  everywhere; the best cell in the project uses four modalities, and this run
+  loaded one.
+- **Ridge.** Without an L2 arm, "sparsity is doing the work" is not established
+  — only that a sparse model suffices.
+- **Single seed**, like everything else here. Margins under ~0.01 are
+  unresolved.
+
+## Reproduce the table
+
+```bash
+python results/experiments/lasso_wholeseq_20260901/compare.py
+python results/experiments/lasso_wholeseq_20260901/compare.py --net-pick mdcnn
+```

@@ -61,6 +61,11 @@ DEGAPPED reference bases from the CDS start; ``coord = n / 3`` and
 coordinate the WHO catalogue names a mutation by — it costs zero parameters, and
 it puts a DNA token and a protein token for the same residue on the same axis.
 
+The coordinate is **0-based** — codon *k* is ``coord == k``, matching residue
+*k* of the protein block — while the WHO catalogue numbers residues from 1. So
+katG S315T sits at ``coord == 314.33`` (the .33 is the codon phase: the second
+base of the codon). Anything reporting to a human should add the 1.
+
 The remaining approximation is unchanged and is stated where it lives: protein
 codon *k* is the k-th codon of the ISOLATE's degapped CDS, so it equals
 reference codon *k* only when no indel sits upstream. That holds for the

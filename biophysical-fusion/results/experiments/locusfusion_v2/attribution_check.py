@@ -13,9 +13,16 @@ pinned at exactly 1/8). Reported as the mean KL from uniform, per drug.
 
 **2. The tokens the model attends to must be real variants at real
 coordinates.** This is what the coordinate fix bought: a token's coordinate is
-now the H37Rv codon number, so the most-attended tokens can be named — "katG
-codon 314, Ser->Thr" — and checked against what is known to cause resistance,
-without SHAP. Before the fix the same read-out would have named codon 357.
+the H37Rv codon index, so the most-attended tokens can be named — "katG residue
+315, Ser->Thr" — and checked against what is known to cause resistance, without
+SHAP. Before the fix the same read-out would have pointed at residue 358.
+
+NOTE the off-by-one, because it is the one way to misread this output: the
+model's `coord` is **0-based** (residue k of the protein block), while the WHO
+catalogue and every paper number residues from 1. This script prints the
+**1-based** residue, so `katG S315T` appears as 315. The fractional part is the
+codon phase and is left on the 0-based coordinate: `.33` is the second base of
+the codon, `.67` the third.
 
 Neither is a pass/fail gate. They are the discipline `token_signal` imposed on
 itself: a mechanistic claim gets a mechanistic measurement, separate from AUC.
@@ -31,8 +38,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
-from bigtb_ref import (REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,  # noqa: E402
-                       REAL_REGULATORY_DIR)
 from datasets import load_dataset  # noqa: E402
 from datasets import tokens as tok  # noqa: E402
 from training.checkpoint import build_model_from_config  # noqa: E402
@@ -61,12 +66,18 @@ def main():
     print(f"{args.drug} / {args.cell}: {fold.name}, "
           f"{sum(p.numel() for p in model.parameters()):,} parameters")
 
-    mods = cfg["model"].get("modalities") or cfg.get("modalities")
-    data = load_dataset(args.drug, mods, REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
-                        regulatory_dir=REAL_REGULATORY_DIR,
-                        loci=cfg.get("data", {}).get("loci_override"),
+    dcfg = cfg["data"]
+    # `delta` in the config records the FLAG, not the resolved value — locusfusion
+    # implies it (models.DELTA_ARCHS), which is the same quirk
+    # scripts/shap_attribution.py documents. Use the resolved value.
+    data = load_dataset(args.drug, dcfg["modalities_requested"],
+                        dcfg["genotype_dir"], dcfg["phenotype_csv"],
+                        regulatory_dir=dcfg["regulatory_dir"],
+                        loci=dcfg.get("loci_override"),
+                        regulatory_loci=dcfg.get("regulatory_loci_override"),
                         per_modality_branch=False, delta=True,
-                        variant_tokens=True, verbose=False)
+                        variant_tokens=dcfg.get("variant_tokens", True),
+                        verbose=False)
     idx = np.arange(min(args.n, data.blocks[0].array.shape[0]))
     xs = [torch.from_numpy(b.array[idx]).float() for b in data.blocks]
     with torch.no_grad():
@@ -102,11 +113,13 @@ def main():
                 if valid[b, k]:
                     counts[(r["locus"], r["stream"], round(float(coord[b, k]), 2),
                             sym[int(ref[b, k])], sym[int(alt[b, k])])] += 1
-    print(f"\nmost common variant tokens over {len(idx)} isolates "
-          f"(coordinate = H37Rv codon number)")
-    print(f"  {'locus':8} {'stream':6} {'codon':>9}  {'ref':>7} -> {'alt':<7} count")
+    print(f"\nmost common variant tokens over {len(idx)} isolates")
+    print("  residue is 1-BASED (WHO / catalogue numbering); the model's own "
+          "coord is 0-based.\n  the fraction is the codon phase: .33 = 2nd base "
+          "of the codon, .67 = 3rd.")
+    print(f"  {'locus':8} {'stream':6} {'residue':>10}  {'ref':>7} -> {'alt':<7} count")
     for (locus, stream, coord, r, a), n in counts.most_common(args.top):
-        print(f"  {locus:8} {stream:6} {coord:9.2f}  {r:>7} -> {a:<7} {n}")
+        print(f"  {locus:8} {stream:6} {coord + 1:10.2f}  {r:>7} -> {a:<7} {n}")
 
 
 if __name__ == "__main__":

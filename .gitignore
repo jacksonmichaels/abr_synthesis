@@ -1,25 +1,73 @@
+# What belongs in this repository: the code that runs an experiment, the tests
+# that pin its behaviour, and the per-run write-ups under
+# biophysical-fusion/results/ that record what each run found. Nothing else.
+#
+# Everything a run *produces* — result JSON, summary/fold CSVs, figures, .npz
+# arrays, saved models, executed notebooks, raw job logs — stays on the
+# filesystem. The output trees below each carry their own .gitignore, written as
+# an ALLOWLIST (`*` then targeted `!` lines) so a new output format cannot leak
+# in by default:
+#
+#   biophysical-fusion/results/     per-run README.md, submit.sh, run scripts
+#   biophysical-fusion/slurm_logs/  nothing — raw job output only
+#   mdcnn_eval/                     the MD-CNN reproduction's code and params
+#   h1_repro/                       the leak-reproduction scripts
+#   regulatory_msa/                 the promoter-MSA generators
+#
+# The one class of generated text that IS tracked: results/**/*.md. A run's
+# write-up is what preserves it. results/experiments/alllocus_run/ — 221 jobs,
+# ~350 GPU-hours — was deleted with no copy anywhere, and only its README
+# survives it.
+
 # --- editor / interpreter noise ---------------------------------------------
 .claude*
 *__pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 
-# --- output trees ------------------------------------------------------------
-# These are NOT ignored wholesale any more. Each carries its own .gitignore that
-# ignores its contents and re-includes only the small text that explains and
-# reproduces a run:
-#
-#   biophysical-fusion/results/     per-run README.md, submit.sh, run scripts
-#   biophysical-fusion/slurm_logs/  the archive-policy README + job manifests
-#   mdcnn_eval/                     the MD-CNN reproduction's code and params
-#   h1_repro/                       the leak-reproduction scripts
-#   regulatory_msa/                 the promoter-MSA generators
-#
-# Numbers, figures, arrays, executed notebooks, saved models and raw job logs
-# all stay untracked. Each of those .gitignore files is an ALLOWLIST (`*` then
-# targeted `!` lines), so a new output format cannot leak in by default.
-#
-# Why this changed: results/experiments/alllocus_run/ — 221 jobs, ~350 GPU-hours
-# — was deleted with no copy anywhere, because a blanket `results/` rule here
-# meant its README and its findings lived in no repository at all. The write-up
-# is what preserves a run; it belongs in git even when its outputs do not.
+# --- another project's repository -------------------------------------------
+# The upstream benchmark, cloned here and only ever read (single point of
+# contact: biophysical-fusion/bigtb_ref.py). It has its own remote, and 129 MB
+# of WHO catalogues and GenBank references do not belong on ours. It was
+# committed as a gitlink with no .gitmodules, so a clone got an empty directory
+# regardless.
+Big-TB-benchmark/
+
+# --- third-party reference material -----------------------------------------
+# Published papers, advisor slides, meeting notes: 15 MB of other people's PDFs,
+# not ours to redistribute.
+reference_docs/
+
+# --- prose ------------------------------------------------------------------
+# One README describes the project. Run write-ups are re-included by
+# biophysical-fusion/results/.gitignore; everything else — TODOs, cleanup
+# reports, paper drafts — is working text that does not need a remote.
+*.md
+!/biophysical-fusion/README.md
+*.tex
+
+# --- machine-readable output -------------------------------------------------
+# Result payloads, job manifests, metrics dumps. Every .json in this tree is
+# written by a script, never by hand.
+*.json
+
+# --- arrays, caches, saved models -------------------------------------------
+*.npz
+*.npy
+*.h5
+*.hdf5
+*.keras
+*.ckpt
+*.pb
+*.pkl
+*.pickle
+*.joblib
+
+# --- executed notebooks ------------------------------------------------------
+# Every notebook is rendered by its scripts/build_<name>.py and carries its
+# outputs inline (results.ipynb alone is 2.1 MB). The builder is the source.
+*.ipynb
+
+# --- rasters of tracked vectors ---------------------------------------------
+# biophysical-fusion/diagrams/ keeps the .svg; the .png beside it is a render.
+*.png

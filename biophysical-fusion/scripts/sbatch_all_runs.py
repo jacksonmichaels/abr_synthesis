@@ -74,12 +74,31 @@ MODALITY_SETS = {
     "no_regulatory":    ["dna", "protein", "biophysical"],
     "regulatory_only":  ["regulatory"],
 }
-GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion")
+# All six live architectures. `locusfusion` joined 2026-08-25 and
+# `locusfusion_v2` 2026-09-17; both imply --delta and per-locus blocks, which the
+# runners apply from --arch, so neither needs a special case here.
+GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion", "locusfusion",
+              "locusfusion_v2")
+
+
+# The experimental variant-set AGGREGATORS (models/experimental_models.py,
+# 2026-08-25). Deliberately NOT folded into GRID_ARCHS: that would cross them
+# with all eight MODALITY_SETS and add 48 entries to a registry whose --experiments
+# default is "all", turning a bare `sbatch_all_runs.py` into ~1,000 jobs. They are
+# a controlled comparison of aggregators, not a modality ablation, so one modality
+# set is the right grid -- `all_modalities`, because that is where the protein and
+# biophysical features `additive` and `fm` read actually exist, and because
+# full_run_v2/all_modalities__* is the matched control.
+AGGREGATOR_ARCHS = ("catalogue", "additive", "noisyor", "gatedpool", "deepsets", "fm")
 
 
 def _build_grid():
-    return {f"{mods}__{arch}": {"modalities": list(names), "arch": arch}
+    grid = {f"{mods}__{arch}": {"modalities": list(names), "arch": arch}
             for mods, names in MODALITY_SETS.items() for arch in GRID_ARCHS}
+    grid.update({f"all_modalities__{arch}":
+                 {"modalities": list(MODALITY_SETS["all_modalities"]), "arch": arch}
+                 for arch in AGGREGATOR_ARCHS})
+    return grid
 
 
 EXPERIMENTS = _build_grid()
@@ -166,6 +185,8 @@ def run_experiment_command(exp_name, cfg, drug, args):
     arch = cfg.get("arch", args.arch)
     if arch != "late_fusion":
         parts += ["--arch", arch]
+    if args.cv_seed != 42:
+        parts += ["--cv-seed", str(args.cv_seed)]
     if cfg.get("extra_loci", args.extra_loci):
         parts += ["--extra-loci"]
     if args.per_locus_branches:
@@ -313,6 +334,9 @@ def parse_args():
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--n-splits", type=int, default=5)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--cv-seed", type=int, default=42,
+                   help="CV partition random_state for single-drug jobs (default 42, "
+                        "emitted only when it differs); not wired for --multidrug")
     p.add_argument("--run-prefix", default="", help="prefix for run-name folders, "
                    "e.g. 'permod_' -> results/experiments/permod_dna (default: none)")
     p.add_argument("--arch", default="late_fusion",
@@ -446,6 +470,9 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.multidrug and args.cv_seed != 42:
+        sys.exit("--cv-seed is wired for single-drug jobs only (run_experiment.py); "
+                 "run_multidrug.py still partitions with KFold(random_state=42)")
     args.logs_dir = args.logs_dir or os.path.join(args.project_dir, "slurm_logs")
     experiments = _resolve(args.experiments, EXPERIMENTS, "experiment")
     # multi-drug: one job per experiment, so the drug loop runs once with None

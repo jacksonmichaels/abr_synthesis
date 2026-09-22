@@ -133,7 +133,8 @@ def _resolve(modalities):
 def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                  regulatory_dir=None, loci=None, regulatory_loci=None,
                  per_modality_branch=True, dna_per_locus=True,
-                 extra_loci=False, all_regulatory=False, delta=False, verbose=True):
+                 extra_loci=False, all_regulatory=False, delta=False,
+                 protein_frame="isolate", verbose=True):
     """Build a DrugData bundle for one drug over the requested modalities.
 
     loci                : which gene loci to load for dna/protein/biophysical.
@@ -161,6 +162,11 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                           keeps only `rrs` and loses the `eis` promoter, because
                           `eis` is not one of its coding loci. Ignored when
                           `regulatory_loci` is given explicitly.
+    protein_frame       : 'isolate' (default — every run before 2026-09-17) or
+                          'reference': protein/biophysical residue k is H37Rv
+                          codon k in every isolate, stops kept as a 21st protein
+                          channel (datasets.protein.locus_residues).
+                          models.locusfusion_v2 requires 'reference'.
     delta               : reference-difference encoding — zero every column that
                           matches the H37Rv reference, in every modality (see
                           datasets/sequences.py). Shape, channels and alphabet are
@@ -196,6 +202,8 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
         if hasattr(m, "per_locus"):
             m.per_locus = (not per_modality_branch) and dna_per_locus
         m.delta = delta
+        if hasattr(m, "frame"):          # protein, biophysical
+            m.frame = protein_frame
     needs_genes = any(m.uses_genes for m in mods)
 
     df_phenos = load_phenotype(phenotype_csv)

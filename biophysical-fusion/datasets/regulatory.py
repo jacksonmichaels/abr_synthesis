@@ -22,6 +22,7 @@ drug has no available region the modality yields nothing and the loader drops it
 """
 from typing import List
 
+from . import cds
 from . import who_catalogue as who
 from .base import FeatureBlock, LoadContext, Modality
 from .sequences import (NT_CHANNELS, delta_one_hot_nt, load_sequence_df,
@@ -117,11 +118,16 @@ class RegulatoryModality(Modality):
                       f"{region} — stays plain one-hot")
             mats = [(delta_one_hot_nt(df.at[iso, region], ref) if self.delta
                      else one_hot_nt(df.at[iso, region])).T for iso in ctx.isolates]
+            array = stack_padded(mats)
             blocks.append(FeatureBlock(
                 name=f"regulatory:{region}",
                 modality=self.name,
-                array=stack_padded(mats),
+                array=array,
                 channel_names=list(NT_CHANNELS),
                 note=_region_note(region) + (" [delta vs H37Rv]" if self.delta else ""),
+                # where this window sits in the genome, so a variant-token model
+                # can place it against the gene record instead of assuming it
+                # abuts the start codon -- it does not (see cds.block_frame).
+                meta=cds.block_frame(ctx.regulatory_dir, region, array.shape[2]),
             ))
         return blocks

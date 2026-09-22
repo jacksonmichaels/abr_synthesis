@@ -7,6 +7,7 @@ from typing import List
 
 import numpy as np
 
+from . import cds
 from .base import FeatureBlock, LoadContext, Modality
 from .sequences import (NT_CHANNELS, delta_one_hot_nt, one_hot_nt,
                         reference_row, stack_padded)
@@ -50,12 +51,15 @@ class DNAModality(Modality):
             blocks = []
             for g in gene_cols:
                 mats = [encode(seqs.at[iso, g], refs.get(g)) for iso in ctx.isolates]
+                array = stack_padded(mats)
                 blocks.append(FeatureBlock(
                     name=f"dna:{g}",
                     modality=self.name,
-                    array=stack_padded(mats),
+                    array=array,
                     channel_names=list(NT_CHANNELS),
                     note=f"locus {g}{suffix}",
+                    meta=cds.block_frame(ctx.genotype_dir, g, array.shape[2],
+                                        translated=True),
                 ))
             return blocks
 
@@ -80,3 +84,4 @@ class DNAModality(Modality):
             channel_names=list(NT_CHANNELS),
             note=f"genes concatenated: {'+'.join(gene_cols)}{suffix}",
         )]
+

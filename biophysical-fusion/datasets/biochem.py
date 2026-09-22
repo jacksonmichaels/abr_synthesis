@@ -19,6 +19,12 @@ from Bio.Seq import Seq
 
 AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
 AA_TO_INDEX = {a: i for i, a in enumerate(AMINO_ACIDS)}
+# The 20 residues plus STOP, for the reference-frame translation below: there a
+# stop codon is a residue like any other (a nonsense mutation at codon k), not
+# the end of the protein, so it needs a channel of its own.
+STOP = "*"
+RESIDUES_WITH_STOP = AMINO_ACIDS + STOP
+RESIDUE_WITH_STOP_TO_INDEX = {a: i for i, a in enumerate(RESIDUES_WITH_STOP)}
 
 # --- RDKit-derived amino-acid properties (paste into datasets/biochem.py) ---
 
@@ -104,6 +110,46 @@ def translate_seq(aligned_nt_seq: str) -> str:
     return str(Seq(whole_codons).translate(to_stop=True))
 
 
+def translate_reference_frame(aligned_nt_seq: str, ref_row: str, window=None) -> str:
+    """
+    Nucleotide (gapped, aligned) -> one residue per REFERENCE codon.
+
+    ``translate_seq`` degaps first, so its residue k is the isolate's own k-th
+    codon: an indel upstream slides every residue after it off the reference
+    numbering, and a frameshift turns the rest of the protein into hundreds of
+    "substitutions" at positions whose bases never changed. This reads the
+    isolate on the H37Rv codon grid instead — codon k is the isolate's bases at
+    the three alignment columns holding reference codon k's bases — so residue k
+    means the same codon in every isolate, and a residue can only differ from the
+    reference where one of its own three columns did.
+
+    Symbols: one of the 20 residues; ``'*'`` for a stop codon (a nonsense
+    mutation is a residue here, not the end of the protein); ``'-'`` for a codon
+    that lost a base to a deletion (the deletion itself is a DNA gap, carried by
+    the nucleotide block); ``'X'`` for an ambiguous codon. Bases the isolate
+    carries at columns where the REFERENCE has a gap — insertions — are not part
+    of any reference codon and are skipped; the nucleotide block carries them.
+
+    ``window`` is ``(start_col, end_col)`` in alignment columns, the CDS as
+    ``datasets.cds.cds_columns`` returns it; None reads the whole record, which
+    is what the rRNA loci (no CDS) fall back to. The terminal stop codon of the
+    reference is included, so a stop-loss is visible too.
+    """
+    ref_row = ref_row.upper()
+    start, end = window if window is not None else (0, len(ref_row))
+    end = min(end, len(ref_row))
+    cols = [c for c in range(start, end) if ref_row[c] != "-"]
+    seq = aligned_nt_seq.upper()
+    out = []
+    for k in range(len(cols) // 3):
+        codon = "".join(seq[c] if c < len(seq) else "-" for c in cols[3 * k:3 * k + 3])
+        if "-" in codon:
+            out.append("-")
+        else:
+            out.append(CODON_TABLE.get(codon, "X"))
+    return "".join(out)
+
+
 def biophysical_matrix(protein_seq: str, pad_to: int = None) -> np.ndarray:
     """
     (3, K) property matrix for one protein sequence, K = pad_to (if given) else
@@ -118,16 +164,22 @@ def biophysical_matrix(protein_seq: str, pad_to: int = None) -> np.ndarray:
     return out
 
 
-def one_hot_aa(protein_seq: str, pad_to: int = None) -> np.ndarray:
+def one_hot_aa(protein_seq: str, pad_to: int = None,
+               with_stop: bool = False) -> np.ndarray:
     """
     (20, K) one-hot amino-acid matrix, K = pad_to (if given) else
     len(protein_seq). Unknown residues / padding are the all-zero column (same
     convention the DNA one-hot uses for unknown bases).
+
+    ``with_stop=True`` adds a 21st channel for ``'*'`` (``RESIDUES_WITH_STOP``
+    order), for residue strings from ``translate_reference_frame``. The default
+    is byte-identical to what every existing run was trained on.
     """
     k = pad_to if pad_to is not None else len(protein_seq)
-    out = np.zeros((len(AMINO_ACIDS), k), dtype=np.float32)
+    alphabet = RESIDUE_WITH_STOP_TO_INDEX if with_stop else AA_TO_INDEX
+    out = np.zeros((len(alphabet), k), dtype=np.float32)
     for i, aa in enumerate(protein_seq[:k]):
-        j = AA_TO_INDEX.get(aa)
+        j = alphabet.get(aa)
         if j is not None:
             out[j, i] = 1.0
     return out

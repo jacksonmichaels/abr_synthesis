@@ -124,7 +124,7 @@ to be told explicitly.
 
 ## What the sweep found
 
-1. **A single fixed configuration beats the leak-corrected SD-CNN on all 11
+1. **A single fixed configuration beats the SD-CNN on all 11
    drugs** — `all_modalities / mdcnn`, mean CV 0.9049 vs 0.8636, Δ +0.0412, with
    no per-drug selection (Fig C1). 16 of the 20 single-drug cells are ahead.
 2. **The extra modalities help three drugs a lot and six drugs not at all**, and
@@ -159,16 +159,30 @@ at zero until the given epoch. Best-weight tracking still runs, so a warmup can
 never return a worse model. Exposed as `--min-epochs` on both entry points and on
 `sbatch_all_runs.py`.
 
-## Follow-up runs (submitted 2026-08-06)
+## Follow-up runs (submitted 2026-08-06) — both now resolved
 
-| folder | jobs | question | how it differs |
-|---|---|---|---|
-| `../setfusion_warmup/` | 55 single-drug + 5 joint | Is setfusion's 0.78 real? | identical grid, `--min-epochs 50` |
-| `../alllocus_run/` | 220 (20 cells × 11 drugs) | Is "joint wins" multi-task sharing or just the bigger input? | single-drug on the **joint 19-locus set**, so the two scopes are locus-matched. setfusion cells also carry `--min-epochs 50` so they stay matched to the warmup joint runs. |
+| folder | question | answer |
+|---|---|---|
+| `../setfusion_warmup/` | Is setfusion's 0.78 real? | **The artifact was real; the verdict stands.** `--min-epochs 50` recovers +0.005–0.021 single-drug and +0.000–0.039 joint, but its best single-drug cell reaches 0.8846 vs 0.9105 for the best non-setfusion cell, and jointly it is still 0.78–0.83 vs 0.91–0.92 — 0.09–0.15 behind MD-CNN. The warmup recovered ~a fifth of the joint gap; the rest is the architecture. |
+| `../alllocus_run/` | Is "joint wins" multi-task sharing or a bigger input? | **Mostly multi-task, but architecture-dependent.** The +0.0189 mean gain splits into **+0.0069 from the larger locus set** and **+0.0120 from joint training** over the 12 complete non-setfusion cells. For `late_fusion` almost all of it is multi-task (locus term often negative); for `mdcnn` almost all of it is the bigger input. Only 6/12 cells have the multi-task term larger. |
 
-Early returns on the warmup: of the first 27 finished drug-runs, **24 improved,
-mean +0.0165 CV-AUC** (LEVO +0.091, MOXI +0.055, ETO +0.032), with folds now
-running 64–106 epochs instead of stopping at 16–46.
+### The setfusion fix
+
+`EarlyStopper(min_epochs=...)` pins the patience counter at zero during a warmup,
+so a network that starts from a degenerate init cannot be stopped before it
+escapes. Best-weight tracking still runs, so a warmup can never return a worse
+model. Exposed as `--min-epochs` on both entry points and `sbatch_all_runs.py`.
+It is a general fix and worth carrying into any future transformer-trunk run —
+the failure mode (flat loss plateau, val metric peaking inside it, patience
+firing early) is not specific to SetFusionNet.
+
+> **`alllocus_run/` is a reconstruction.** The original run folder was lost and
+> rebuilt from archived SLURM logs on 2026-08-18 — 210 of 220 results, no
+> per-epoch histories, no weights, no `{DRUG}__{tag}.json`. `cv_auc_mean` and
+> `cv_auc_std` are the runs' own printed values and are exact; other columns have
+> caveats. Read that folder's README before quoting anything else from it. The
+> viewer reads `summary.csv` for every number it plots, so the decomposition
+> above is unaffected — only `n_params` would come up blank.
 
 ## Viewing the results
 

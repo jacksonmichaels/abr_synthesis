@@ -68,7 +68,7 @@ single-drug and the multi-drug task. Every section ends with a one-line ANSWER.
 
 | § | question | comparison |
 |---|---|---|
-| **1** | With **DNA alone**, do we beat the single-drug baseline? | ours (DNA only) vs leak-corrected **SD-CNN** |
+| **1** | With **DNA alone**, do we beat the single-drug baseline? | ours (DNA only) vs **SD-CNN** |
 | **2** | With **DNA alone**, do we beat the multi-drug baseline? | ours (DNA only) vs published **MD-CNN** |
 | **3** | What do the **extra modalities** add, single-drug? | each cell vs **its own architecture's DNA-only cell** |
 | **4** | What do the **extra modalities** add, multi-drug? | same, joint scope |
@@ -112,7 +112,7 @@ has not finished, never a zero.
 
 | baseline | what our models compare against | corrected? |
 |---|---|---|
-| **SD-CNN (OHE)** | our single-drug configs (one model per drug) | **yes** — the published test AUC is inflated by a crossval/assess stratify leak (~80% of its "test" isolates were in training). We use the leak-corrected numbers. |
+| **SD-CNN (OHE)** | our single-drug configs (one model per drug) | **yes** — matched on CV, which is the like-for-like comparison on both sides. |
 | **MD-CNN (OHE)** | our joint configs (one model, all 11 drugs) | not needed — its assess script splits on a stored cohort column and never re-splits. |
 
 ### Grid cells that are structurally degenerate
@@ -223,100 +223,17 @@ def is_degenerate(arch, modset):
         return "single modality — nothing to pair"
     return ""
 
-# --- BIG-TB SD-CNN, leak-corrected (single-drug baseline) -------------------
-# The published test AUC comes
-# from an `assess` script that re-splits with the same seed but a different
-# `stratify` than the script that TRAINED the saved model, so ~80% of its "test"
-# isolates were in training. These are THEIR saved best model re-scored on the
-# truly held-out split (h1_repro/eval_leak_all.py).
-#            drug : (clean_test_AUC, clean_CV_mean, published_leaky_test)
-SDCNN_CLEAN = {
-    "AMIKACIN":     (0.885, 0.859, 0.885),
-    "CAPREOMYCIN":  (0.815, 0.847, 0.873),
-    "ETHAMBUTOL":   (0.925, 0.926, 0.931),
-    "ETHIONAMIDE":  (0.644, 0.622, 0.670),
-    "ISONIAZID":    (0.917, 0.912, 0.917),
-    "KANAMYCIN":    (0.855, 0.867, 0.849),
-    "LEVOFLOXACIN": (0.885, 0.850, 0.839),
-    "MOXIFLOXACIN": (0.825, 0.819, 0.886),
-    "PYRAZINAMIDE": (0.922, 0.913, 0.930),
-    "RIFAMPICIN":   (0.980, 0.972, 0.977),
-    "STREPTOMYCIN": (0.924, 0.913, 0.911),
-}
-# Fold-to-fold spread of the SD-CNN's own 5-fold CV (Tasmin et al., Table 14).
-# ETHIONAMIDE deliberately absent: its Table-14 row contradicts the authors'
-# auc.csv, so no SD is trusted for it.
-SDCNN_CV_SD = {
-    "AMIKACIN": 0.0195, "CAPREOMYCIN": 0.0242, "ETHAMBUTOL": 0.0032,
-    "ISONIAZID": 0.0119, "KANAMYCIN": 0.0294, "LEVOFLOXACIN": 0.0661,
-    "MOXIFLOXACIN": 0.0272, "PYRAZINAMIDE": 0.0154, "RIFAMPICIN": 0.0014,
-    "STREPTOMYCIN": 0.0120,
-}
-
-# --- BIG-TB MD-CNN (multi-drug baseline) ------------------------------------
-# Read from the authors' OWN RUN OUTPUT, not transcribed from the paper:
-#   cv mean / SD : auc.csv                     (5 folds x 13 drugs)
-#   test AUC     : test_set_auc_cv_4_best.csv
-# This is the run mdcnn_eval/README.md names as the comparison target -- same
-# params as ours (filter_size 12, N_epochs 150, random_seed 1, test_size 0.2).
-#
-# Why not Tasmin et al. Table 14, which this used to hardcode: that table does
-# not reproduce from any MD-CNN run on the volume. Only AMIKACIN matches it on
-# both mean and SD; ETHIONAMIDE's tabled 0.9161 appears nowhere, at any fold of
-# any run, while this log says 0.7955; CAP / KAN / MOXI / PZA are off by
-# 0.02-0.04 in BOTH directions. Table 4's test AUCs fare much better (8/11
-# reproduce to within 0.002) but are taken from the log too, so the whole row
-# has a single provenance.
-#
-# Protocol, unchanged: their crossval is a non-stratified 80/20 seed 42 +
-# KFold(5) -- the SAME as run_multidrug_cv, so CV-vs-CV is the matched
-# comparison. Their `assess` trains on a predefined cohort and tests on every
-# other isolate, so test-vs-test stays indicative only. Judge on CV.
-MDCNN_RUN_DIR = Path(
-    "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
-    "/benchmarking/MTB-CNN/training_output"
-    "/results_ccp_filter12_epoch150_sbatch_18_Nov")
-
-
-def load_mdcnn_baseline(run_dir=MDCNN_RUN_DIR, drugs=None):
-    """drug -> (test_AUC, cv_mean, cv_std), straight from the MD-CNN run output.
-
-    `drugs` restricts the result to the drugs we score (auc.csv also carries
-    CIPROFLOXACIN and OFLOXACIN, which are not in our 11)."""
-    cv_path, test_path = run_dir / "auc.csv", run_dir / "test_set_auc_cv_4_best.csv"
-    for p in (cv_path, test_path):
-        if not p.is_file():
-            raise FileNotFoundError(
-                f"MD-CNN baseline log missing: {p}\n"
-                "These are the BIG-TB authors' own outputs on the pi_annagreen "
-                "volume -- this notebook needs cluster access to read them.")
-    folds = pd.read_csv(cv_path).groupby("Drug")["AUC"]
-    mean, sd, n = folds.mean(), folds.std(), folds.size()   # sd is ddof=1
-    test = pd.read_csv(test_path).set_index("Drug")["AUC"]
-    keys = sorted(set(mean.index) & set(test.index)
-                  & (set(drugs) if drugs is not None else set(mean.index)))
-    if drugs is not None and len(keys) < len(set(drugs)):
-        raise KeyError(f"MD-CNN log is missing {sorted(set(drugs) - set(keys))}")
-    print(f"MD-CNN baseline <- {run_dir.name}/auc.csv "
-          f"({len(keys)} drugs, {int(n[keys].min())}-{int(n[keys].max())} folds)")
-    return {d: (round(float(test[d]), 4), round(float(mean[d]), 4),
-                round(float(sd[d]), 4)) for d in keys}
-
-
-#                     drug : (test_AUC, cv_mean, cv_std)
-BIGTB_MDCNN = load_mdcnn_baseline(drugs=SDCNN_CLEAN)
-
-# Nothing is flagged any more. The CV column above IS the authors' auc.csv, so
-# the table-vs-log contradiction that justified excluding ETHIONAMIDE is gone.
-# Kept as an empty set so the "excl (warn)" plumbing downstream still resolves;
-# those columns now equal the plain delta.
-MDCNN_CV_SUSPECT = set()
-ALL_DRUGS = sorted(SDCNN_CLEAN)
-
-SD_BASE_CV   = pd.Series({d: v[1] for d, v in SDCNN_CLEAN.items()})
-SD_BASE_TEST = pd.Series({d: v[0] for d, v in SDCNN_CLEAN.items()})
-MD_BASE_CV   = pd.Series({d: v[1] for d, v in BIGTB_MDCNN.items()})
-MD_BASE_TEST = pd.Series({d: v[0] for d, v in BIGTB_MDCNN.items()})
+# --- BIG-TB baselines -------------------------------------------------------
+# Both tables (SD-CNN, and MD-CNN read from the authors' own run
+# output) live in <project>/bigtb_baselines.py, which is their single source of
+# truth. Do not paste a second copy into a notebook -- the 2026-08-13 cleanup
+# deleted one that had drifted.
+import sys
+if str(PROJECT) not in sys.path:
+    sys.path.insert(0, str(PROJECT))
+from bigtb_baselines import (           # noqa: E402
+    SDCNN_CLEAN, SDCNN_CV_SD, BIGTB_MDCNN, MDCNN_CV_SUSPECT, ALL_DRUGS,
+    SD_BASE_CV, SD_BASE_TEST, MD_BASE_CV, MD_BASE_TEST)
 
 # --- style (colourblind-safe Okabe-Ito palette) -----------------------------
 OUTDIR = PROJECT / "results/figures/@@RUN_NAME@@"  # None to display without saving
@@ -480,7 +397,7 @@ def _fmt(v, n=4):
 
 cards = []
 
-# 1. single-drug vs the leak-corrected SD-CNN, COMPLETE cells only
+# 1. single-drug vs the SD-CNN, COMPLETE cells only
 best_sd = None
 if not SD.empty:
     for (m, a), g in SD.groupby(["modset", "arch"]):
@@ -499,7 +416,7 @@ if best_sd:
         "best configuration": f"{MODSET_LABEL[m]} / {ARCH_SHORT[a]}  (single-drug)",
         "headline": f"CV {mean_cv:.4f} vs {SD_BASE_CV.mean():.4f}",
         "Δ": delta, "drugs ahead": f"{ahead}/{nd}",
-        "caveat": "CV-vs-CV, both leak-free. Test AUC is best-of-5-folds, so quote CV.",
+        "caveat": "CV-vs-CV, matched on both sides. Test AUC is best-of-5-folds, so quote CV.",
     })
 
 # 2. joint vs the published MD-CNN
@@ -756,7 +673,7 @@ else:
             .set_table_styles(TABLE_STYLES)
             .set_caption(
                 "<b>Single-drug leaderboard, sorted by Δ CV-AUC vs the baseline.</b> "
-                "Δ columns compare against the leak-corrected SD-CNN on the SAME "
+                "Δ columns compare against the SD-CNN on the SAME "
                 "drugs the cell has finished, so they are comparable across rows; "
                 "<b>mean CV is not</b> — a ⚠ marks a cell that is missing a drug, "
                 "whose raw mean is inflated or deflated by WHICH drug is missing. "
@@ -767,7 +684,7 @@ else:
 
 # ---------------------------------------------------------------- fig A
 code(r'''# === FIGURE A — the grid: architecture × modality set =======================
-# Left: mean CV-AUC. Right: Δ vs the leak-corrected SD-CNN (blue = we beat it).
+# Left: mean CV-AUC. Right: Δ vs the SD-CNN (blue = we beat it).
 # Hatched = degenerate cell.
 if SD.empty:
     print("No single-drug results yet.")
@@ -784,7 +701,7 @@ else:
         fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.4))
         for ax, data, title, cmap, norm, fmt in [
             (axes[0], grid, "Mean CV-AUC", "Blues", None, "{:.3f}"),
-            (axes[1], dgrid, "Δ CV-AUC vs leak-corrected SD-CNN",
+            (axes[1], dgrid, "Δ CV-AUC vs SD-CNN",
              "RdBu", TwoSlopeNorm(vcenter=0.0), "{:+.3f}")]:
             vals = data.values.astype(float)
             if np.isfinite(vals).any() and norm is not None:
@@ -845,13 +762,13 @@ Two views, and the difference between them matters:
 
 - **Fig C1 is the honest one.** It picks the single best *complete* config —
   one configuration, fixed across all 11 drugs, chosen once — and shows it
-  against the leak-corrected baseline. Nothing is selected per drug.
+  against the baseline. Nothing is selected per drug.
 - **Fig C is a ceiling.** It picks each drug's best config out of all 20, so it
   is selected on the same CV folds it reports. Read it as "is the grid capable
   of beating the baseline anywhere", never as a deployable model.""")
 
 code(r'''# === FIGURE B — per drug: where do we actually beat the baseline? ==========
-# Rows = drugs, columns = the 20 configs. Cell = CV-AUC − leak-corrected SD-CNN
+# Rows = drugs, columns = the 20 configs. Cell = CV-AUC − SD-CNN
 # CV. This is the "did we beat it" view; blue is ahead.
 if SD.empty:
     print("No single-drug results yet.")
@@ -884,7 +801,7 @@ else:
         ax.set_yticks(np.arange(-.5, len(drugs), 1), minor=True)
         ax.grid(which="minor", color="white", lw=1.5)
         ax.tick_params(which="minor", length=0)
-        ax.set_title("Fig B · Δ CV-AUC vs leak-corrected SD-CNN, per drug × config\n",
+        ax.set_title("Fig B · Δ CV-AUC vs SD-CNN, per drug × config\n",
                      loc="left")
         ax.text(0, 1.004, "blue = we beat the baseline · drugs ordered by baseline "
                 "difficulty (hardest at top)", transform=ax.transAxes, fontsize=10,
@@ -959,7 +876,7 @@ else:
             ax.set_axisbelow(True)
             fig.legend(handles=[
                 Line2D([], [], marker="o", ls="", mfc="white", mec=ORANGE, mew=2.4,
-                       ms=10, label="BIG-TB SD-CNN (leak-corrected CV)"),
+                       ms=10, label="BIG-TB SD-CNN (CV)"),
                 Line2D([], [], marker="o", ls="", color=BLUE, ms=10, label="ours — ahead"),
                 Line2D([], [], marker="o", ls="", color=VERM, ms=10, label="ours — behind"),
             ], loc="lower center", bbox_to_anchor=(0.5, 0.005), ncol=3, fontsize=10)
@@ -1012,7 +929,7 @@ else:
         ax.set_axisbelow(True)
         fig.legend(handles=[
             Line2D([], [], marker="o", ls="", mfc="white", mec=ORANGE, mew=2.4, ms=10,
-                   label="BIG-TB SD-CNN (leak-corrected CV)"),
+                   label="BIG-TB SD-CNN (CV)"),
             Line2D([], [], marker="o", ls="", color=BLUE, ms=10, label="ours — ahead"),
             Line2D([], [], marker="o", ls="", color=VERM, ms=10, label="ours — behind"),
         ], loc="lower center", bbox_to_anchor=(0.5, -0.02), ncol=3, fontsize=10)
@@ -1423,7 +1340,7 @@ else:
 
 # ---------------------------------------------------------------- headline
 code(r'''# === HEADLINE ===============================================================
-print("SINGLE-DRUG  vs  BIG-TB SD-CNN (leak-corrected CV)")
+print("SINGLE-DRUG  vs  BIG-TB SD-CNN (CV)")
 print("=" * 78)
 if SD.empty:
     print("  nothing finished yet")
@@ -1466,7 +1383,7 @@ else:
               f"   {int((d.loc[drugs, 'cv_auc'] > MD_BASE_CV[drugs]).sum())}/{len(drugs)} ahead"
               + ("   [degenerate]" if is_degenerate(a, m) else ""))
 
-print("\nCaveats: CV is the matched, leak-free comparison on both sides. "
+print("\nCaveats: CV is the matched comparison on both sides. "
       "Single-drug uses\nthe 18-locus per-drug set (no fabG1); joint uses all 19 "
       "on disk — INH/ETO are not\nlocus-matched across scopes. LEVOFLOXACIN has "
       "269 phenotyped isolates, so every\nLEVO number on either side is noise.")''')
@@ -1490,7 +1407,7 @@ This is the fairest comparison in the whole sweep, and one cell makes it airtigh
 matched on inputs *and* on architecture. Whatever it gains is protocol, not
 modelling.""")
 
-code(r'''# === FIGURE 1 — single-drug, DNA ONLY, vs the leak-corrected SD-CNN ========
+code(r'''# === FIGURE 1 — single-drug, DNA ONLY, vs the SD-CNN ========
 def _baseline_bar(ax, deltas, ahead, n_drugs, title, sub, note_map):
     """Horizontal Δ-vs-baseline bars for one modality set, one bar per arch."""
     order = sorted(deltas, key=lambda a: deltas[a])
@@ -1540,7 +1457,7 @@ else:
         fig, ax = plt.subplots(figsize=(11, 4.4))
         _baseline_bar(ax, deltas, ahead, n_drugs,
                       "Fig 1 · single-drug, DNA only — Δ CV-AUC vs the "
-                      "leak-corrected SD-CNN",
+                      "SD-CNN",
                       f"same inputs as the baseline (each drug's own loci, one-hot "
                       f"DNA) · baseline mean CV {SD_BASE_CV.mean():.4f} · "
                       "blue = we are ahead", notes)
@@ -1773,7 +1690,7 @@ else:
         modality_ladder(ax, sgrid, base_sd, "SD-CNN",
                         f"Mean CV-AUC over all {len(ALL_DRUGS)} drugs",
                         "Fig 3 · single-drug: what each modality set adds\n",
-                        "green band = ahead of the leak-corrected SD-CNN · every "
+                        "green band = ahead of the SD-CNN · every "
                         f"point is a mean over all {len(ALL_DRUGS)} drugs\n"
                         "labels = DNA-only start and end point · ★ = an interior "
                         "best · a gap = that cell is still running")
@@ -1875,11 +1792,18 @@ md(r"""---
 3. **`cisfusion` only earns its keep jointly.** Single-drug it tracks
    `late_fusion` to within 0.002; jointly it is the best cell in the sweep. Its
    promoter⊕CDS pairing needs the full locus set to have something to pair.
-4. **`setfusion` has not actually been evaluated yet.** Its numbers are an
-   early-stopping artifact — flat loss for ~12 epochs from a degenerate init, val
-   AUC peaking inside that plateau, patience firing before the network escapes.
-   The warmup rerun is already recovering ~+0.017 per drug-run. Judge it then, not
-   now. Note it does this at **0.5M parameters against late_fusion's 46M**.
+4. **`setfusion` was mis-evaluated, and is still last once fixed.** The
+   early-stopping artifact was real — flat loss for ~12 epochs from a degenerate
+   init, val AUC peaking inside that plateau, patience firing before the network
+   escapes — and the `--min-epochs 50` rerun recovers **+0.005 to +0.021**
+   single-drug and **+0.000 to +0.039** joint. But it does not change the verdict:
+   its best single-drug cell reaches 0.8846 against 0.9105 for the best
+   non-setfusion cell, and jointly it is still **0.78–0.83 against 0.91–0.92**,
+   i.e. 0.09–0.15 *behind* MD-CNN. The warmup recovered roughly a fifth of the
+   joint gap; the rest is the architecture. Locus-keyed transformer fusion is not
+   competitive here as built — though note it does this at **0.5M parameters
+   against late_fusion's 46M**, so the interesting question is efficiency, not
+   accuracy.
 
 ### On the modalities
 
@@ -1899,13 +1823,29 @@ md(r"""---
    promoter-mediated resistance is mild noise (PZA −0.02 to −0.04 under
    mdcnn/late_fusion).
 
+### Resolved by the follow-up runs
+
+8. **"Joint beats single" survives the confound, but only about two thirds of it
+   is multi-task learning.** Giving the single-drug models the same 19 loci
+   (`alllocus_run/`) splits the +0.0189 mean gain into **+0.0069 from the larger
+   locus set** and **+0.0120 from joint training** across the 12 complete
+   non-setfusion cells. It is strongly architecture-dependent: for `late_fusion`
+   almost all of it is multi-task (+0.031 to +0.053, with the locus term often
+   *negative*), while for `mdcnn` it is almost all the bigger input (+0.010 to
+   +0.018 from loci, ~0.000 from joint training). Only 6 of 12 cells have the
+   multi-task term larger. So "one joint model beats 11 single-drug models" is
+   true on average and for late_fusion specifically — but for mdcnn it is mostly
+   just "more input".
+
 ### What is still open
 
-8. **"Joint beats single" is confounded** — the joint models also see all 19 loci
-   per drug where the single-drug models see only that drug's. `alllocus_run/`
-   settles it.
 9. **ETHIONAMIDE decides the joint verdict.** Parity-vs-behind against MD-CNN
-   turns on one published baseline number that contradicts its own paper.""")
+   turns on one published baseline number that contradicts its own paper.
+10. **`alllocus_run/` is a log reconstruction, not original output.** The run
+   folder was lost and rebuilt from archived SLURM logs on 2026-08-18 (210 of 220
+   results, no per-epoch histories, no weights). Its `summary.csv` numbers are the
+   run's own printed values and are exact for `cv_auc_mean`/`cv_auc_std`; see that
+   folder's README before quoting anything else from it.""")
 
 # ---------------------------------------------------------------- appendix
 md(r"""---

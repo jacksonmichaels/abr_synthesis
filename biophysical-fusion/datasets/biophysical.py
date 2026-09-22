@@ -9,11 +9,10 @@ instead of a one-hot identity.
 """
 from typing import List
 
-from . import biochem, cds
+from . import biochem
 from .base import FeatureBlock, LoadContext, Modality
-from .sequences import delta_zero_columns, reference_row, stack_padded
-
-_WARNED = set()
+from .protein import locus_residues
+from .sequences import delta_zero_columns, stack_padded
 
 
 class BiophysicalModality(Modality):
@@ -25,40 +24,34 @@ class BiophysicalModality(Modality):
     # residue, zero elsewhere) rather than the absolute property profile.
     delta = False
 
+    # which codon grid residue k is on — see datasets.protein.locus_residues. A
+    # stop codon has no properties, so it is the zero vector here; the protein
+    # block's STOP channel is what carries it.
+    frame = "isolate"
+
     def build(self, ctx: LoadContext) -> List[FeatureBlock]:
         seqs = ctx.gene_seqs
         gene_cols = [g for g in ctx.loci if g in seqs.columns]
         if not gene_cols:
             return []
-        seqs = seqs.fillna("")
         blocks = []
         for g in gene_cols:
-            window = cds.cds_columns(ctx.genotype_dir, g)
-            if window is None and g not in _WARNED:
-                _WARNED.add(g)
-                print(f"  [load] {g}: no CDS found in the reference record — "
-                      f"translating the whole aligned window (rRNA loci have no "
-                      f"protein; this keeps the block shape unchanged)")
-            proteins = [biochem.translate_seq(
-                cds.cds_slice(ctx.genotype_dir, g, seqs.at[iso, g], window))
-                for iso in ctx.isolates]
-            ref_nt = reference_row(ctx.genotype_dir, g) if self.delta else None
-            ref_aa = (biochem.translate_seq(
-                cds.cds_slice(ctx.genotype_dir, g, ref_nt, window)) if ref_nt else None)
+            proteins, ref_aa, width, frame = locus_residues(ctx, g, self.frame, self.delta)
             if self.delta and not ref_aa:
                 print(f"  [load] delta encoding: no usable H37Rv protein for {g} "
                       f"— stays plain properties")
-            k_max = max((len(p) for p in proteins), default=1) or 1
             array = stack_padded([
-                delta_zero_columns(biochem.biophysical_matrix(p, pad_to=k_max), p, ref_aa)
-                if self.delta else biochem.biophysical_matrix(p, pad_to=k_max)
+                delta_zero_columns(biochem.biophysical_matrix(p, pad_to=width), p, ref_aa)
+                if self.delta else biochem.biophysical_matrix(p, pad_to=width)
                 for p in proteins])
             blocks.append(FeatureBlock(
                 name=f"biophysical:{g}",
                 modality=self.name,
                 array=array,
                 channel_names=list(biochem.PROPERTY_NAMES),
-                note=f"gene {g}, CDS window, z-scored per property"
+                note=(f"gene {g}, one residue per H37Rv codon, z-scored per property"
+                      if frame == "reference"
+                      else f"gene {g}, CDS window, z-scored per property")
                      + (" [delta vs H37Rv]" if self.delta else ""),
             ))
         return blocks

@@ -142,7 +142,9 @@ class MultiDrugData:
 def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
                            regulatory_dir=None, loci=None, regulatory_loci=None,
                            per_modality_branch=True, dna_per_locus=True,
-                           extra_loci=False, all_regulatory=False, verbose=True):
+                           extra_loci=False, all_regulatory=False, delta=False,
+                           protein_frame="isolate",
+                           verbose=True):
     """Build a MultiDrugData bundle predicting ``drugs`` (default: all) from the
     union of their loci.
 
@@ -170,7 +172,16 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
                           4 branches for all-modalities). False -> one branch per
                           locus/region (the ~100-branch layout).
     dna_per_locus       : only when per_modality_branch=False — DNA one block per
-                          locus (True) vs one concatenated block (False)."""
+                          locus (True) vs one concatenated block (False).
+    protein_frame       : 'isolate' (default — every run before 2026-09-17) or
+                          'reference': protein/biophysical residue k is H37Rv
+                          codon k in every isolate, stops kept as a 21st protein
+                          channel (datasets.protein.locus_residues).
+                          models.locusfusion_v2 requires 'reference'.
+    delta               : reference-difference encoding — zero every column that
+                          matches the H37Rv reference, in every modality (see
+                          datasets/sequences.py). Same flag, same meaning and the
+                          same per-modality plumbing as load_dataset's."""
     drugs = [d.upper() for d in (drugs if drugs else ALL_DRUGS)]
     modalities = _resolve(modalities)
     regulatory_dir = regulatory_dir or genotype_dir
@@ -184,6 +195,9 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
 
     mods = [MODALITIES[m]() for m in modalities]
     for m in mods:
+        m.delta = delta
+        if hasattr(m, "frame"):          # protein, biophysical
+            m.frame = protein_frame
         if m.name == "dna":
             # one DNA branch (concatenated) when per_modality_branch; else honor
             # dna_per_locus for the per-locus layout.

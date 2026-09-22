@@ -1,18 +1,9 @@
-# Raw job logs are not tracked: 1,200+ .out files, 14 MB, and they are process
-# output rather than anything authored.
+# Nothing in this tree is tracked. The .out files are process output (1,200+ of
+# them, 14 MB) and manifests/ is a machine-written job_id -> command index.
 #
-# Two exceptions, both small:
-#   README.md      the archive policy — including which folder must not be
-#                  pruned, since archive/20260806/ is the only surviving copy of
-#                  alllocus_run.
-#   manifests/     the ONLY job_id -> (run, drug, exact command) mapping there
-#                  is. squeue job names carry no run prefix, so nothing else
-#                  disambiguates a job across full_run / full_run_v2 /
-#                  alllocus_run — and results/experiments/alllocus_run/
-#                  reconstruct_from_logs.py cannot rebuild a lost run without
-#                  them. Provenance, not results. ~1 MB for 89 sweeps.
+# Both still matter locally: archive/20260806/ is the only surviving copy of
+# alllocus_run's job output, and results/experiments/alllocus_run/
+# reconstruct_from_logs.py needs the manifests to rebuild a run from it. Keep
+# them on the filesystem; they are not for the remote.
 *
-!*/
 !.gitignore
-!README.md
-!manifests/*.json

@@ -299,8 +299,10 @@ bigtb_baselines.py        the two BIG-TB baseline tables — SD-CNN and
                           MD-CNN read from the authors' run log. Single source of
                           truth; both notebook builders import it, never copy it.
 TODO.md                   status, next steps, open questions
-PAPER.md                  the write-up plan: the claims, the model roster to
-                          present, suggested sections, and the run -> figure map
+PAPER.md                  the paper's current story, claims, numbers and framing
+                          rules (single source for the write-up; draft is
+                          ../paper/outline.tex)
+SIGNIFICANCE_TESTS.md     the test (Wilcoxon over 55 folds, Holm over 14)
 results/                  run outputs (git-ignored). One folder per run, each with its
                           own README.md + submit.sh; results/archive/ = superseded runs
 slurm_logs/               job logs (git-ignored); slurm_logs/manifests/ = the job_id →

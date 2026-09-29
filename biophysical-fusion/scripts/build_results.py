@@ -57,21 +57,25 @@ isolates, against the two published CNNs of the BIG-TB benchmark.
 
 **The argument, in the paper's order.**
 
-- An **L1-logistic lasso** on the raw alignment lands on `mdcnn` (0.9241 vs
-  0.9246) with 228 nonzero coefficients — not separable from the CNNs (§2).
+- An **L1-logistic lasso** on the raw alignment lands on `mdcnn` at 19 loci
+  (0.9241 vs 0.9246, not significant) with 228 nonzero coefficients; at the
+  drug's own loci it is behind (−0.034, 0/11) (§2).
 - One architecture separates from it: **`locusfusion`**, 0.9343 macro CV AUC at
   19 loci and 0.66M parameters, +0.010 over the lasso and +0.012 over `mdcnn`
-  (§3). Its second tokenizer, **`locusfusion_v2`**, is behind it where complete
-  (§4).
-- What moves accuracy is **input, not capacity**: the locus set first (§5), and
-  that gain is probably not causal (§6); modalities a distant second (§7);
-  parameters above ~1M nothing (§8).
-- Of 24 tested comparisons among the paper's models, **12 are different, 2
-  equivalent, 10 unresolved** (§9).
+  (§3). The tokenizer fix behind it is +0.0095 on its own. Its second
+  tokenizer, **`locusfusion_v2`**, ties it on DNA and protein and trails it
+  wherever the regulatory modality is loaded (§4).
+- What moves accuracy is **input, not capacity**. At 19 loci the locus set is
+  the largest effect (§5), probably not causal (§6); at the drug's own loci the
+  modalities are as large as the locus set (§7); parameter count shows no
+  relationship with accuracy (§8).
+- Of the paper's 14 comparisons, **11 are significant, 3 not** (§9).
 
 **How numbers are judged.** 5-fold CV AUC, macro over the 11 shared drugs,
 single seed. Test AUC is reported only because the papers publish it. Where the
-prose says *different*, *equivalent* or *unresolved*, that is §9's verdict.
+prose says *significant* or *not significant*, that is §9's verdict: exact
+Wilcoxon over the 55 fold differences, Holm over the paper's 14. Comparisons
+outside that family are quoted with an unadjusted p.
 
 | part | sections |
 |---|---|
@@ -103,7 +107,8 @@ from results_frame import load_frame, TASKS, STD_MODSETS
 from bigtb_baselines import SD_BASE_CV, MD_BASE_CV, ALL_DRUGS
 from results_helpers import (SURFACE, INK, INK2, MUTED, AXIS, BLUE, ORANGE, RUST,
                              RUST_LIGHT, AQUA, PALE, TINTS, AQUA_RAMP, FAM_TINT,
-                             MARGIN, NEMENYI_Q05, Comparisons, fold_matrix,
+                             NEMENYI_Q05, WilcoxonComparisons, fold_matrix,
+                             PAPER_GROUPS, paper_family, plot_sig_by_claim,
                              label_points, style_table, tidy, tint)
 
 frame, meta = load_frame()
@@ -112,8 +117,11 @@ frame, meta = load_frame()
 # cell, so only the fixed run is this notebook's locusfusion. Its joint cells
 # exist on the old tokenizer only and stay. Dropped here, not in results_frame,
 # because scripts/bigtb_paired_test.py reads the old run as its own arm.
-frame = frame[~((frame.model == "locusfusion") & (frame.run == "newmodels_full")
-                & (frame.task != "multi-drug"))].reset_index(drop=True)
+_old_lf = ((frame.model == "locusfusion") & (frame.run == "newmodels_full")
+           & (frame.task != "multi-drug"))
+# kept apart, under its own name, for §9's tokenizer comparison only
+frame_lf_old = frame[_old_lf].assign(model="locusfusion_old").reset_index(drop=True)
+frame = frame[~_old_lf].reset_index(drop=True)
 meta["n_rows"] = len(frame)
 
 V1, V2 = "locusfusion", "locusfusion_v2"
@@ -190,23 +198,25 @@ def best_cell(task, fam="established", modset=None):
 _pfmt = lambda v: "—" if pd.isna(v) else ("<0.0001" if v < 1e-4 else f"{v:.4f}")
 
 
-def show_sig(sig, caption):
-    """The significance table, as §4 and §9 display it."""
+def show_sig(sig, caption, adjusted=True):
+    """A WilcoxonComparisons table, as §4 and §9 display it. `adjusted=False`
+    shows the raw p and no verdict, for rows outside the paper's Holm family."""
     t = pd.DataFrame({
-        "§": sig.sec, "comparison": sig.comparison, "paired on": sig.paired,
-        "Δ AUC": sig.delta.map("{:+.4f}".format),
-        "95% CI": [f"[{a:+.4f}, {b:+.4f}]" for a, b in zip(sig.lo, sig.hi)],
-        "p Holm": sig.p_holm, "TOST p Holm": sig.p_eq_holm,
-        "drugs a > b": sig.wins, "drug Wilcoxon p Holm": sig.p_drug_holm,
-        "BIG-TB pooled p": sig.p_bigtb, "verdict": sig.verdict,
+        "claim": sig.group, "comparison": sig.comparison,
+        "macro Δ AUC": sig.delta.map("{:+.4f}".format),
+        "HL Δ": sig.hl.map("{:+.4f}".format),
+        "HL 95% CI": [f"[{a:+.4f}, {b:+.4f}]" for a, b in zip(sig.lo, sig.hi)],
+        "drugs a > b": sig.wins,
     })
-    display(style_table(
-        t.style
-        .format({c: _pfmt for c in ["p Holm", "TOST p Holm", "drug Wilcoxon p Holm",
-                                    "BIG-TB pooled p"]})
-        .map(lambda v: "font-weight:600" if v != "unresolved" else "font-style:italic",
-             subset=["verdict"]),
-        caption=caption))
+    if adjusted:
+        t["Wilcoxon p Holm"], t["verdict"] = sig.p_holm, sig.verdict
+        s = (t.style.format({"Wilcoxon p Holm": _pfmt})
+             .map(lambda v: "font-weight:600" if v == "significant" else "font-style:italic",
+                  subset=["verdict"]))
+    else:
+        t["Wilcoxon p (unadjusted)"] = sig.p
+        s = t.style.format({"Wilcoxon p (unadjusted)": _pfmt})
+    display(style_table(s, caption=caption))
 
 
 SD_BASE, MD_BASE = SD_BASE_CV.mean(), MD_BASE_CV.mean()
@@ -325,9 +335,9 @@ plt.tight_layout(); plt.show()
 md("""
 - **Locus set, not multi-task sharing.** "Joint models win" was confounded:
   joint runs saw 19 loci, single-drug runs 2–3. Matched at 19, joint is +0.001
-  (5 of 11 drugs), **unresolved**.
+  (5 of 11 drugs), not significant (Wilcoxon over drugs, p = 0.83).
 - **The `+tf` trunks lose everywhere** — −0.059 for `mdcnn+tf`, 0 of 11 drugs,
-  **different** (S2 has the reason).
+  p < 0.0001 unadjusted (S2 has the reason).
 - Per drug, the best established cell is ahead of SD-CNN on all 11 (S1).
 """)
 
@@ -391,14 +401,15 @@ tidy(ax); plt.tight_layout(); plt.show()
 
 md("""
 **The lasso lands on the best established cell**: 0.9241 against `mdcnn`'s
-0.9246, **unresolved** rather than proven parity (the CI does not fit inside
-±0.01). One is a 6.7M-parameter CNN over four modalities; the other is 228
-nonzero coefficients out of 22,384 columns, DNA only. Against the published
-MD-CNN it is +0.002 (6 of 11 drugs). It does not reach the best model overall —
-`locusfusion` is +0.010 over it on 10 of 11 drugs, **different** (§3).
+0.9246, **not significant** (−0.0005, 5 of 11 drugs, Holm p = 0.95) — no detected
+difference, not demonstrated parity. One is a 6.7M-parameter CNN over four
+modalities; the other is 228 nonzero coefficients out of 22,384 columns, DNA
+only. Against the published MD-CNN it is +0.002 (6 of 11 drugs). It does not
+reach the best model overall — `locusfusion` is +0.010 over it on 10 of 11
+drugs, **significant** (§3).
 
 - **Networks earn their parameters on narrow inputs.** At per-drug loci the
-  lasso loses by −0.034 (0 of 11, **different**); at 19 loci it draws. The
+  lasso loses by −0.034 (0 of 11, **significant**); at 19 loci it draws. The
   per-drug cells run 94–5,723 columns against 22,384.
 - **The locus universe is worth more to the lasso**: +0.049 (`onehot`) and
   +0.054 (`delta`), against +0.016 for the networks (§5).
@@ -471,8 +482,8 @@ loaded.
 **Right: encoding matters.** `onehot` and `delta` span the same column space and
 differ only in parametrisation, but **L1 is not invariant to that**: keeping the
 reference level as its own penalised column is worth +0.009 at 19 loci and
-+0.014 at per-drug loci, 11 of 11 drugs both times (fold-level **different** at
-per-drug loci, **unresolved** at 19). Every variant-token model is built on
++0.014 at per-drug loci, 11 of 11 drugs both times (**significant** at 19 loci;
+p < 0.0001 unadjusted at per-drug loci). Every variant-token model is built on
 `--delta`, so that choice is not free for a sparsely-penalised model; it does
 not transfer automatically to the networks, which are not L1-penalised.
 """)
@@ -579,20 +590,20 @@ print(f"{chr(10)}locus set: {piv[PD].max():.4f} at per-drug loci -> "
 
 md("""
 1. **Ahead on all five matched cells**, at a tenth of `mdcnn`'s parameters:
-   **different** from `cisfusion` (+0.016), `late_fusion` (+0.028) and the lasso
-   (+0.010), and marginally **different** from `mdcnn` (+0.012, 10 of 11 drugs,
-   Holm p = 0.049; family-dependent, §9).
-2. **DNA alone gets what the established models need four modalities for.**
-   Spread across the five modality sets is 0.003; `all_modalities` − `dna` is
-   **equivalent** within ±0.01. The token already carries the substituted residue
-   and its biophysical consequence — S4's featurisation result as an architecture
-   property.
+   **significant** against the lasso (+0.010, 10/11) and `mdcnn` (+0.012,
+   10/11), and ahead of `cisfusion` (+0.016) and `late_fusion` (+0.028), 11/11
+   each, p < 0.0001 unadjusted.
+2. **DNA alone gets nearly all of it.** Spread across the five modality sets is
+   0.003; `all_modalities` − `dna` is +0.003 (10/11, p = 0.0002 unadjusted) —
+   detectable, but a fifth of what the modalities give the established models.
+   The token already carries the substituted residue and its biophysical
+   consequence — S4's featurisation result as an architecture property.
 3. **The locus count is what moves it**: +0.029 over the matched cells, 11 of 11
-   drugs, **different** — nearly twice what it gives the established models (§5).
+   drugs, **significant** — nearly twice what it gives the established models (§5).
 
-At per-drug loci it is **equivalent** to `mdcnn` (+0.004). Test AUC is 0.9191
-against `mdcnn`'s 0.9109. Joint `locusfusion` cells are the old tokenizer and do
-not describe this model.
+At per-drug loci it is +0.004 over `mdcnn` (8/11, p = 0.0015 unadjusted). Test
+AUC is 0.9191 against `mdcnn`'s 0.9109. Joint `locusfusion` cells are the old
+tokenizer and do not describe this model.
 """)
 
 # ---------------------------------------------------------------- v2
@@ -692,50 +703,41 @@ print(vv.assign(v1=vv.v1.round(4), v2=vv.v2.round(4), delta=vv.delta.round(4))
 ''')
 
 md("""
-Tested on folds as in §9, but as **its own Holm family** — which tokenizer to
-carry forward is a development question, not one of the paper's comparisons, so
-it neither enters nor changes §9's family. A row appears once both sides of it
-have all 11 drugs in every modality set.
+Tested as in §9, one row per modality set, as **its own Holm family** — which
+tokenizer to carry forward is a development question, not one of the paper's
+comparisons. A row appears once both sides have all 11 drugs.
 """)
 
 code('''
-v2cmp, _pending = Comparisons(frame, ALL_DRUGS), []
-for label, a, b in [
-    ("locusfusion_v2 − locusfusion · per-drug loci · 5 modsets",
-     (PD, V2, MODS5), (PD, V1, MODS5)),
-    ("locusfusion_v2 − locusfusion · 19 loci · 5 modsets",
-     (L19, V2, MODS5), (L19, V1, MODS5)),
-    ("locusfusion_v2 − mdcnn · per-drug loci · 5 modsets",
-     (PD, V2, MODS5), (PD, "mdcnn", MODS5)),
-    ("locusfusion_v2 − mdcnn · 19 loci · 5 modsets",
-     (L19, V2, MODS5), (L19, "mdcnn", MODS5)),
-    ("locusfusion_v2 − mdcnn · multi-drug · 5 modsets",
-     (MD, V2, MODS5), (MD, "mdcnn", MODS5)),
-]:
-    try:
-        v2cmp.folds("4", label, a, b)
-    except ValueError:                     # a side is still short of 11 drugs
-        _pending.append(label)
+v2cmp, _pending = WilcoxonComparisons(frame, ALL_DRUGS), []
+# one row per modality set, against v1 and mdcnn, wherever both sides have 11 drugs
+for task, where in [(PD, "per-drug loci"), (L19, "19 loci")]:
+    for ms in MODS5:
+        for ref in (V1, "mdcnn"):
+            label = f"locusfusion_v2 − {ref} · {where} · {ms}"
+            try:
+                v2cmp.folds("v2 tokenizer", label, (task, V2, ms), (task, ref, ms))
+            except ValueError:             # a side is still short of 11 drugs
+                _pending.append(label)
 if v2cmp.rows:
     sig_v2 = v2cmp.table()
-    show_sig(sig_v2, caption=f"{len(sig_v2)} v2 comparisons · Nadeau–Bengio "
-                             "corrected t · Holm within this family only")
+    show_sig(sig_v2, caption=f"{len(sig_v2)} v2 comparisons · Wilcoxon signed-rank "
+                             "over 55 fold differences · Holm within this family only")
 print("pending (grid still running): " + ("; ".join(_pending) or "none"))
 ''')
 
 md("""
-**At per-drug loci, where every cell is complete, v2 is behind v1**: −0.018
-macro over the five modality sets, behind on all 11 drugs and in every modality
-set. The loss is largest on AMIKACIN, LEVOFLOXACIN and MOXIFLOXACIN (about
-−0.03) and smallest on RIFAMPICIN, ISONIAZID and ETHAMBUTOL (−0.004 to −0.005).
-It is also behind `mdcnn` there, where v1 is equivalent to it.
+**v2 ties v1 on DNA and protein, and trails it wherever `regulatory` is
+loaded.** At per-drug loci `dna` is +0.0005 (7/11) and `dna_protein` +0.0000
+(4/11), both not significant; `dna_regulatory` is −0.017 and `all_modalities`
+−0.017, 0/11 each, significant. The first v2 tokenizer (archived, pre-fix)
+scored 0.8920 and 0.8926 in those two regulatory cells; the retokenized v2
+scores 0.8918 and 0.8924, so the fix recovered the DNA and protein cells and left
+the regulatory ones untouched.
 
-At 19 loci the gap narrows but does not close: the one complete cell, `dna`, is
-−0.007 (1 of 11 drugs ahead), and the partial cells run −0.012 to −0.016 on the
-drugs finished so far. Read the printed rows, not this sentence, once the grid
-lands. Nothing here says *which* of the tokenizer changes costs the AUC — the
-token budget (a third of v1's per locus) and the reference-frame translation are
-the obvious candidates, and neither has been ablated.
+Not measured: why. Promoter columns now share a locus's 16-token cap with its
+coding columns, which is one candidate. `dna_biophysical` has 8 of 11 drugs, the
+19-locus grid only `dna` on 5, and no v2 job is running.
 """)
 
 # ==================================================================
@@ -793,9 +795,10 @@ for mdl, task_ms in (("lasso_onehot", "dna"), (V1, A)):
 ''')
 
 md("""
-**The largest single effect in the project.** +0.016 for the established
-models, +0.025 for `locusfusion` (all modalities, 11 of 11) and +0.049 for the
-lasso — **different** for all three; `late_fusion` alone is **unresolved**.
+**The largest effect at 19 loci.** +0.016 for the established models (10/11),
++0.029 for `locusfusion` (11/11) and +0.049 for the lasso (11/11) — all three
+**significant**. Per architecture (unadjusted): `mdcnn` +0.022, `cisfusion`
++0.019, and `late_fusion` +0.006 (9/11, p = 0.0002).
 
 Two rows mislead. **KANAMYCIN gains most** because its per-drug map is the
 single gene *rrs*, so it was also missing the *eis* promoter, its best-known
@@ -874,11 +877,12 @@ print(f"whole genome − 19 loci (onehot): {(_gen - _oh19).mean():+.4f}   "
 
 md("""
 **1. The other 99.1% of the genome buys nothing detectable.** +0.0022 macro, 6 of
-11 drugs, **unresolved** — and not a demonstrated zero either (CI −0.010 to
-+0.015). Returns to more sequence ended well before the genome did: 2–3 loci → 19
-was +0.05 for this model, 19 loci → 4.41 Mb is +0.002. The macro is a
-cancellation: AMIKACIN +0.040 (**unresolved** on its own folds), LEVOFLOXACIN
-−0.030 with 22 nonzero coefficients on 269 isolates.
+11 drugs, **not significant** (Holm p = 0.71; HL CI −0.004 to +0.007) — no
+detected gain, not a demonstrated zero. Returns to more sequence ended well
+before the genome did: 2–3 loci → 19 was +0.05 for this model, 19 loci → 4.41 Mb
+is +0.002. The macro is a cancellation: AMIKACIN +0.040 (five folds, which cannot
+reach significance), LEVOFLOXACIN −0.030 with 22 nonzero coefficients on 269
+isolates.
 
 **2. Most of the weight is outside the WHO catalogue.** Against Table 21 (tier
 1 + 2, flanking intergenic regions counted as inside): **62.4% of |coefficient|
@@ -887,7 +891,8 @@ The model is not ignoring biology — ETHIONAMIDE's single largest coefficient o
 of 127,697 is `1673425:C>T`, the *fabG1–inhA* promoter, found with no curation —
 but the rest lands on *PE_PGRS* / *PPE* / *esx* repeats, the standard lineage
 markers. At 19 loci the lasso's top ISONIAZID coefficients include `rpoB:1418`,
-and its PYRAZINAMIDE picks `embB:319` and `embA:403`.
+and its PYRAZINAMIDE picks `embB:319` and `embA:403` (alignment columns, not
+codons).
 
 **What that licenses.** First-line resistance predicts second-line resistance,
 and lineage correlates with both, so extra loci import correlated signal: §5's
@@ -948,16 +953,18 @@ print(f"macro {g.mean():+.4f}   median {g.median():+.4f}   "
 ''')
 
 md("""
-**Less than the loci, only for some drugs, and where the mechanism predicts.**
-ETHIONAMIDE and ISONIAZID gain from `regulatory` — both are driven by the
-*fabG1–inhA* promoter (`c-15t`), invisible to a CDS one-hot. PYRAZINAMIDE gains
-from `protein`/`biophysical` (*pncA* loss of function). KANAMYCIN and AMIKACIN
-gain nothing, and should not: *rrs* is 16S rRNA, with no protein product.
+**At the drug's own loci, as large as the locus effect; concentrated in a few
+drugs, where the mechanism predicts.** ETHIONAMIDE and ISONIAZID gain from
+`regulatory` — both are driven by the *fabG1–inhA* promoter (`c-15t`), invisible
+to a CDS one-hot. PYRAZINAMIDE gains from `protein`/`biophysical` (*pncA* loss of
+function). KANAMYCIN and AMIKACIN gain nothing, and should not: *rrs* is 16S rRNA,
+with no protein product.
 
-The macro all-modalities gain over DNA, +0.019 on 11 of 11, is **different**.
-Per drug only ETHIONAMIDE's +0.089 survives Holm; ISONIAZID (+0.031) and
-PYRAZINAMIDE (+0.020) are **unresolved** on five folds. At 19 loci the gain
-shrinks, and for `locusfusion` it is **equivalent** to zero (§3).
+The macro all-modalities gain over DNA, +0.019 on 11 of 11, is **significant**
+— against +0.016 for adding loci to the same models. Per drug, five folds cannot
+reach significance under this test (smallest possible p = 0.0625), so
+ETHIONAMIDE +0.089, ISONIAZID +0.031 and PYRAZINAMIDE +0.020 are sizes, not
+verdicts. At 19 loci the gain shrinks; for `locusfusion` it is +0.003 (§3).
 """)
 
 # ---------------------------------------------------------------- parameters
@@ -1002,11 +1009,13 @@ print(f"Spearman(params, CV) over {len(_cells)} complete network cells at 19 loc
 
 md("""
 **Parameter count is uncorrelated with accuracy.** Among the established models
-the two best cells are 9× apart in parameters and 0.0015 apart in AUC; matched
-over five modality sets `mdcnn` − `cisfusion` is +0.004, **unresolved** in both
-directions — "no detectable gain", not "buys nothing". `late_fusion` is second
-largest and clearly worst, with ~90% of its 45.9M parameters in one
-fully-connected layer. The model that does separate is 0.66M. Two capacity
+the two best cells are 9× apart in parameters and 0.0015 apart in AUC. Matched
+over five modality sets, `mdcnn` (5.1M median) − `cisfusion` (47.9M) is +0.004,
+**not significant** (Holm p = 0.056). The two large models are not alike:
+`cisfusion` is +0.012 over `late_fusion` (45.9M) at near-equal size, and `mdcnn`
++0.017 over it, both **significant** — so among the established models fusion
+design moves AUC and size does not. `late_fusion` has ~90% of its parameters in
+one fully-connected layer. The model that does separate is 0.66M. Two capacity
 sweeps agree (`joint_capacity`, `setfusion_scaling`: 62 arms, nothing closed).
 """)
 
@@ -1019,147 +1028,101 @@ md("""
 
 ## 9. Significance tests
 
-Every comparison the prose leans on, on the CV folds that already exist. Cells
-are matched and fixed in advance, never a "best cell" — picking a cell by its CV
-and testing it on the same CV is biased. Method in `SIGNIFICANCE_TESTS.md`.
+The paper's comparisons, fixed before any p was computed, one or more per claim.
+Cells are matched, never a "best cell". Method in `SIGNIFICANCE_TESTS.md`.
 
-- **Pairing.** Every single-drug run uses `StratifiedKFold(5, random_state=42)`
-  on the same cohort, so fold *i* is the same held-out isolates for every model.
-  Joint runs share their own partition; the one joint-vs-single row is paired on
-  drugs alone.
-- **Fold-level test (primary).** Nadeau–Bengio corrected resampled *t* on the
-  macro Δ: each drug's fold-difference variance is inflated by (1/5 + 1/4) for
-  the overlapping training sets, then pooled with Satterthwaite df.
-- **Equivalence.** TOST against ±0.01 on the same SE. A non-significant
-  difference is not evidence of parity; only this is.
-- **Drug-level.** Exact Wilcoxon over the 11 per-drug Δ — whether the sign is
-  consistent, not whether the macro clears fold noise.
-- **Multiple testing.** Holm across all rows, per column. Paper models only; the
-  supplement's aggregators and §4's v2 rows are not in this family.
-- **BIG-TB's method** (Wilcoxon over all 55 fold differences, uncorrected) is
-  shown for comparability; it treats overlapping folds as independent.
-
-Verdict: **different** if Holm-adjusted fold-level p < 0.05, **equivalent** if
-Holm-adjusted TOST p < 0.05, otherwise **unresolved**.
+- **Test.** Two-sided exact Wilcoxon signed-rank over the 55 fold-paired
+  differences (11 drugs × 5 folds), BIG-TB's method. Every single-drug run uses
+  `StratifiedKFold(5, random_state=42)` on the same cohort, so fold *i* is the
+  same held-out isolates for every model.
+- **Interval.** Hodges–Lehmann shift (the median of the Walsh averages) and its
+  exact 95% CI, which inverts the same test. The macro Δ is printed beside it.
+- **Multiple testing.** Holm over the 14 paper comparisons. Verdict:
+  **significant** if Holm p < 0.05, otherwise **not significant**, which is not
+  a claim of equivalence.
+- Everything else the notebook compares is in the second table, unadjusted and
+  without a verdict.
 """)
 
 code('''
-cmp = Comparisons(frame, ALL_DRUGS)
-
-cmp.folds("2", "lasso_onehot − mdcnn all_modalities · 19 loci",
-          (L19, "lasso_onehot", "dna"), (L19, "mdcnn", A))
-cmp.folds("2", "lasso_onehot − mdcnn all_modalities · per-drug loci",
-          (PD, "lasso_onehot", "dna"), (PD, "mdcnn", A))
-cmp.folds("2", "lasso: onehot − delta · 19 loci", (L19, "lasso_onehot", "dna"),
-          (L19, "lasso_delta", "dna"))
-cmp.folds("2", "lasso: onehot − delta · per-drug loci",
-          (PD, "lasso_onehot", "dna"), (PD, "lasso_delta", "dna"))
-cmp.folds("3", "locusfusion − mdcnn · 19 loci · 5 modsets",
-          (L19, V1, MODS5), (L19, "mdcnn", MODS5))
-cmp.folds("3", "locusfusion − cisfusion · 19 loci · 5 modsets",
-          (L19, V1, MODS5), (L19, "cisfusion", MODS5))
-cmp.folds("3", "locusfusion − late_fusion · 19 loci · 5 modsets",
-          (L19, V1, MODS5), (L19, "late_fusion", MODS5))
-cmp.folds("3", "locusfusion all_modalities − lasso_onehot · 19 loci",
-          (L19, V1, A), (L19, "lasso_onehot", "dna"))
-cmp.folds("3", "locusfusion − mdcnn · per-drug loci · 5 modsets",
-          (PD, V1, MODS5), (PD, "mdcnn", MODS5))
-cmp.folds("3", "locusfusion: all_modalities − dna · 19 loci",
-          (L19, V1, A), (L19, V1, "dna"))
-cmp.folds("3", "locusfusion − late_fusion · multi-drug · 5 modsets",
-          (MD, V1, MODS5), (MD, "late_fusion", MODS5))
-cmp.folds("3", "locusfusion − mdcnn · multi-drug · 5 modsets",
-          (MD, V1, MODS5), (MD, "mdcnn", MODS5))
-cmp.folds("5", "established: 19 − per-drug loci · 5 modsets",
-          (L19, EST3, MODS5), (PD, EST3, MODS5))
-cmp.folds("5", "locusfusion: 19 − per-drug loci · 5 modsets",
-          (L19, V1, MODS5), (PD, V1, MODS5))
-cmp.folds("5", "lasso_onehot: 19 − per-drug loci", (L19, "lasso_onehot", "dna"),
-          (PD, "lasso_onehot", "dna"))
-cmp.folds("6", "lasso: whole genome − 19 loci · delta",
-          (WG, "lasso_genome", "dna"), (L19, "lasso_delta", "dna"))
-cmp.folds("6", "AMIKACIN: whole genome − 19 loci · delta",
-          (WG, "lasso_genome", "dna"), (L19, "lasso_delta", "dna"), drugs=["AMIKACIN"])
-cmp.folds("7", "established: all_modalities − dna · per-drug loci",
-          (PD, EST3, A), (PD, EST3, "dna"))
-cmp.folds("7", "ETHIONAMIDE: dna_regulatory − dna · established",
-          (PD, EST3, "dna_regulatory"), (PD, EST3, "dna"), drugs=["ETHIONAMIDE"])
-cmp.folds("7", "ISONIAZID: dna_regulatory − dna · established",
-          (PD, EST3, "dna_regulatory"), (PD, EST3, "dna"), drugs=["ISONIAZID"])
-cmp.folds("7", "PYRAZINAMIDE: dna_protein − dna · established",
-          (PD, EST3, "dna_protein"), (PD, EST3, "dna"), drugs=["PYRAZINAMIDE"])
-cmp.folds("8", "mdcnn − cisfusion · 19 loci · 5 modsets",
-          (L19, "mdcnn", MODS5), (L19, "cisfusion", MODS5))
-cmp.drugs_only("1", "established: multi-drug − single-drug 19 loci · 5 modsets",
-               (MD, EST3, MODS5), (L19, EST3, MODS5))
-cmp.folds("1", "mdcnn+tf − mdcnn · per-drug loci · 5 modsets",
-          (PD, "mdcnn+tf", MODS5), (PD, "mdcnn", MODS5))
-
-sig = cmp.table()
-show_sig(sig, caption=f"{len(sig)} pre-specified comparisons · fold-level p is the "
-                      "Nadeau–Bengio corrected t · Holm across all rows per column")
+frame_sig = pd.concat([frame, frame_lf_old], ignore_index=True)
+G1, G2, G3, G4, G5 = PAPER_GROUPS
+sig = paper_family(frame_sig, ALL_DRUGS, MODS5)          # results_helpers: one definition
+show_sig(sig, caption=f"{len(sig)} paper comparisons · exact Wilcoxon signed-rank over "
+                      "55 fold differences · Holm across the family")
 print(sig.verdict.value_counts().to_string())
-print(f"{chr(10)}significant at 0.05 -- BIG-TB's pooled uncorrected method: "
-      f"{int((sig.p_bigtb < 0.05).sum())}/{len(sig)}   "
-      f"corrected + Holm: {int((sig.p_holm < 0.05).sum())}/{len(sig)}")
 ''')
 
 code('''
-_f = sig.iloc[::-1].reset_index(drop=True)
-y = np.arange(len(_f))
-fig, ax = plt.subplots(figsize=(14, 0.30 * len(_f) + 1.4))
-ax.axvspan(-MARGIN, MARGIN, color=PALE, zorder=0, lw=0)
-ax.axvline(0, color=AXIS, lw=1.0, zorder=1)
-for yi, r in zip(y, _f.itertuples()):
-    ax.plot([r.lo, r.hi], [yi, yi], color=INK2, lw=1.4, zorder=2,
-            solid_capstyle="round")
-    if r.verdict.startswith("different"):
-        ax.scatter([r.delta], [yi], s=44, color=BLUE, zorder=3, edgecolor=SURFACE,
-                   linewidth=1.4)
-    elif r.verdict.startswith("equivalent"):
-        ax.scatter([r.delta], [yi], s=52, marker="D", color=INK2, zorder=3,
-                   edgecolor=SURFACE, linewidth=1.4)
-    else:
-        ax.scatter([r.delta], [yi], s=44, color=SURFACE, zorder=3, edgecolor=BLUE,
-                   linewidth=1.6)
-ax.set_yticks(y)
-ax.set_yticklabels([f"§{s}  {c}" for s, c in zip(_f.sec, _f.comparison)], fontsize=7.6)
-ax.set_xscale("symlog", linthresh=0.02, linscale=2.5)
-_ticks = [-0.02, -0.01, 0, 0.01, 0.02, 0.1]
-ax.set_xticks(_ticks)
-ax.set_xticklabels([f"{v:+.2f}" if v else "0" for v in _ticks])
-ax.xaxis.set_minor_locator(NullLocator())
-ax.set_xlabel("Δ CV AUC, a − b, 95% CI (log scale beyond ±0.02)")
-ax.set_ylim(-0.8, len(_f) - 0.2)
-ax.set_title("Paired Δ CV AUC and 95% CI by comparison", loc="left")
-ax.legend([Line2D([0], [0], marker=mk, lw=0, markerfacecolor=fc, markeredgecolor=ec,
-                  markersize=6.5) for mk, fc, ec in
-           (("o", BLUE, BLUE), ("D", INK2, INK2), ("o", SURFACE, BLUE))]
-          + [plt.Rectangle((0, 0), 1, 1, color=PALE)],
-          ["different", "equivalent", "unresolved", "±0.01 margin"],
-          loc="upper center", ncol=4, bbox_to_anchor=(0.35, -0.9 / len(_f) - 0.02))
-tidy(ax); plt.tight_layout(); plt.show()
+plot_sig_by_claim(sig); plt.show()
 ''')
 
 md("""
-**12 of 24 different, 2 equivalent, 10 unresolved.** BIG-TB's uncorrected method
-would call 17 of 24 significant; the extra ones are |Δ| 0.003–0.009, the range
-architecture wins get reported in.
+**11 of 14 significant.** Not significant: LASSO − `mdcnn` at 19 loci (−0.0005,
+5/11), whole genome − 19 loci (+0.0022, 6/11), and `mdcnn` − `cisfusion`
+(+0.0042, 8/11, Holm p = 0.056). These are "no detected difference", not
+demonstrated parity. The figure omits three tabled rows: the tokenizer fix,
+`onehot` − `delta`, and whole genome.
 
-Settled: `locusfusion` is ahead of `cisfusion`, `late_fusion` and the lasso,
-flat across modality sets, and equivalent to `mdcnn` at per-drug loci; 19 loci
-beat per-drug loci; the lasso loses at per-drug loci; modalities help on the
-macro and on ETHIONAMIDE; the `+tf` trunks lose.
+- **LASSO vs. CNN.** Level at 19 loci; at per-drug loci the LASSO is behind
+  (−0.034, 0/11).
+- **LocusFusion.** Ahead of the LASSO (+0.0103) and of `mdcnn` (+0.0117), and the
+  tokenizer fix alone is +0.0095, 11/11 — about the size of both gaps.
+- **Locus set.** Positive for every model family; the genome beyond the 19 loci
+  adds nothing detected.
+- **Modalities.** +0.0185 macro at per-drug loci, 11/11.
+- **Model size.** `late_fusion` is behind both others; `mdcnn` and `cisfusion`,
+  9× apart, are not distinguished.
 
-Marginal: `locusfusion` − `mdcnn` at 19 loci is **different** at Holm p = 0.049
-(+0.0117, 10/11 drugs). That verdict depends on the family, not the data: p =
-0.060 when this table also held the aggregators (30 rows), p = 0.015 in the
-paper's 10 comparisons.
+HL Δ is a median shift over the 55 fold differences and runs below the macro
+(mean) Δ where a few drugs carry the effect — modalities is +0.0185 macro against
++0.0086 HL, because ETHIONAMIDE and ISONIAZID carry most of it.
+""")
 
-Not settled: lasso vs `mdcnn`, whole genome vs 19 loci, `mdcnn` vs `cisfusion`,
-ISONIAZID's and PYRAZINAMIDE's modality gains, joint vs single-drug. Onehot −
-delta at 19 loci is 11 of 11 drugs (drug-level Holm p = 0.020) but fold-level
-unresolved — consistent in sign, not resolved in size.
+md("""
+**Outside the family.** Every other comparison the notebook cites: same test and
+interval, raw p, no verdict.
+""")
+
+code('''
+ext = WilcoxonComparisons(frame_sig, ALL_DRUGS)
+for g, label, a, b, *dr in [
+    (G1, "lasso: onehot − delta · per-drug loci",
+     (PD, "lasso_onehot", "dna"), (PD, "lasso_delta", "dna")),
+    (G2, "locusfusion − cisfusion · 19 loci · 5 modsets", (L19, V1, MODS5), (L19, "cisfusion", MODS5)),
+    (G2, "locusfusion − late_fusion · 19 loci · 5 modsets", (L19, V1, MODS5), (L19, "late_fusion", MODS5)),
+    (G2, "locusfusion − mdcnn · 19 loci · all_modalities", (L19, V1, A), (L19, "mdcnn", A)),
+    (G2, "locusfusion − mdcnn · 19 loci · dna", (L19, V1, "dna"), (L19, "mdcnn", "dna")),
+    (G2, "locusfusion − mdcnn · per-drug loci · 5 modsets", (PD, V1, MODS5), (PD, "mdcnn", MODS5)),
+    (G2, "locusfusion: fixed − old tokenizer · per-drug loci · 5 modsets",
+     (PD, V1, MODS5), (PD, "locusfusion_old", MODS5)),
+    (G2, "locusfusion: all_modalities − dna · 19 loci", (L19, V1, A), (L19, V1, "dna")),
+    (G2, "locusfusion − late_fusion · multi-drug · 5 modsets", (MD, V1, MODS5), (MD, "late_fusion", MODS5)),
+    (G2, "locusfusion − mdcnn · multi-drug · 5 modsets", (MD, V1, MODS5), (MD, "mdcnn", MODS5)),
+    *[(G3, f"{m}: 19 − per-drug loci · 5 modsets", (L19, m, MODS5), (PD, m, MODS5)) for m in EST3],
+    (G3, "locusfusion: 19 − per-drug loci · all_modalities", (L19, V1, A), (PD, V1, A)),
+    (G4, "ETHIONAMIDE: dna_regulatory − dna · established",
+     (PD, EST3, "dna_regulatory"), (PD, EST3, "dna"), ["ETHIONAMIDE"]),
+    (G4, "ISONIAZID: dna_regulatory − dna · established",
+     (PD, EST3, "dna_regulatory"), (PD, EST3, "dna"), ["ISONIAZID"]),
+    (G4, "PYRAZINAMIDE: dna_protein − dna · established",
+     (PD, EST3, "dna_protein"), (PD, EST3, "dna"), ["PYRAZINAMIDE"]),
+    ("Other", "mdcnn+tf − mdcnn · per-drug loci · 5 modsets", (PD, "mdcnn+tf", MODS5), (PD, "mdcnn", MODS5)),
+]:
+    ext.folds(g, label, a, b, drugs=dr[0] if dr else None)
+ext.folds(G3, "AMIKACIN: lasso_delta whole genome − 19 loci",
+          (WG, "lasso_genome", "dna"), (L19, "lasso_delta", "dna"), drugs=["AMIKACIN"])
+ext.drugs_only("Other", "established: multi-drug − single-drug · 19 loci · 5 modsets",
+               (MD, EST3, MODS5), (L19, EST3, MODS5))
+sig_ext = ext.table()
+show_sig(sig_ext, caption=f"{len(sig_ext)} comparisons outside the paper family · "
+                          "unadjusted, no verdict", adjusted=False)
+''')
+
+md("""
+Single-drug rows have 5 fold differences, and an exact Wilcoxon on 5 cannot go
+below p = 0.0625. So no single drug's effect — ETHIONAMIDE's +0.089 included — can
+be significant under this test. Their interval is the range, at 93.75% coverage.
 """)
 
 md("""
@@ -1218,21 +1181,21 @@ md("""
 
 **On the tests**
 
-- **§9 prices fold noise only** — not initialisation or data order. A 5-seed
-  rerun of `locusfusion` and `mdcnn` at 19 loci (`results/experiments/seeds_19loci`)
-  measured that: seed noise is 0.7% of the test's variance, folds 6–12× noisier
-  than seeds. Its `locusfusion` arm ran the pre-fix tokenizer, so it bounds the
-  noise but does not retest the +0.012.
-- **One CV partition.** Every test here is on `StratifiedKFold` seed 42, and the
-  Nadeau–Bengio formula's price for partition noise is unchecked.
-  `results/experiments/repartition_19loci` reruns `locusfusion_v2` and `mdcnn`
-  on four more partitions to measure it — v2, not v1, so it checks the formula
-  but does not retest §3's headline pair.
-- **Holm depends on the family.** The +0.012 over `mdcnn` at 19 loci is Holm
-  p = 0.049 in §9's 24 rows, 0.060 with the aggregators added, 0.015 in the
-  paper's 10. Treat it as marginal, whichever family is quoted.
-- **Drugs are not independent.** Most isolates carry labels for several drugs, so
-  the 11 cohorts overlap while every test treats them as independent units.
+- **The pooled Wilcoxon treats the 55 fold differences as independent.** They
+  are not: 5-fold training sets share 75% of their isolates, and most isolates
+  carry labels for several drugs. Its p-values are optimistic; this is the
+  convention being matched (BIG-TB's), not a property of the data.
+- **No single drug can be significant.** Five fold differences cannot reach
+  p < 0.0625, so every per-drug effect is a size, not a verdict.
+- **Seed noise is small; partition noise is unmeasured.** A 5-seed rerun of
+  `locusfusion` and `mdcnn` at 19 loci (`seeds_19loci`) put the SD across seeds
+  at 0.0006 macro against 0.004–0.008 across folds, but its `locusfusion` arm
+  ran the pre-fix tokenizer. Every test is on `StratifiedKFold` seed 42;
+  `repartition_19loci` has `mdcnn` on four more partitions and no `locusfusion`
+  arm on the fixed tokenizer.
+- **Holm depends on the family.** §9's is 14 rows (`SIGNIFICANCE_TESTS.md`); the
+  first 12 were fixed before their p-values, the two extra model-size rows after
+  `mdcnn` − `late_fusion` had been seen unadjusted.
 - **The §9 list was written after the prose it tests** — matched cells fixed
   before any p was computed, but not pre-registered before the runs.
 - **A "best cell" is optimistic, unevenly.** It selects on the CV it reports, and
@@ -1256,9 +1219,10 @@ md("""
 - **`single-drug, all loci` cannot be quoted against SD-CNN**, which sees the
   per-drug gene map. It is input-matched to MD-CNN only.
 - **Joint `locusfusion` is the old tokenizer** — no fixed-tokenizer joint run
-  exists. `locusfusion_v2`'s joint arm is in the running grid.
-- **`locusfusion_v2`'s 19-locus and joint cells are interim** until the grid
-  finishes; §4 quotes in prose only the per-drug-loci arm, which is complete.
+  exists.
+- **`locusfusion_v2` is incomplete**: `dna_biophysical` 8 of 11 drugs at
+  per-drug loci, `dna` 5 of 11 at 19 loci, nothing else at 19 loci or joint, and
+  no job running.
 - **Whole genome and 19-locus lassos are not representation matched** (`delta`
   only genome-wide), and SHAP attribution share mis-ranks predictive value (S2).
 - **`setfusion` and the 150-epoch runs are excluded everywhere**: near-collinear
@@ -1319,7 +1283,7 @@ print(f"ahead of SD-CNN on {int((bestpd.cv[order] > SD_BASE_CV[order]).sum())} "
 md("""
 Widest where the baseline had headroom (ETHIONAMIDE starts at 0.69), narrowest
 on RIFAMPICIN (0.976), where the *rpoB* RRDR is a tight positional signal a
-one-hot already captures. The SD-CNN here is the leak-corrected baseline.
+one-hot already captures.
 """)
 
 # ---------------------------------------------------------------- S2
@@ -1585,10 +1549,10 @@ print(f"{'difference':<12}" + "".join(
 ''')
 
 md("""
-**Deleting the gating machinery costs nothing** — Δ +0.0009, fold-corrected CI
-±0.002, well inside ±0.01 (unadjusted; outside §9's family). The contribution is
-the **representation**, not the attention. The price, every complete cell at 19
-loci, both families:
+**Deleting the gating machinery costs nothing detected** — Δ +0.0009, 5/11
+drugs, HL CI −0.0005 to +0.0022, Wilcoxon p = 0.26 unadjusted (outside §9's
+family). The contribution is the **representation**, not the attention. The
+price, every complete cell at 19 loci, both families:
 """)
 
 code('''

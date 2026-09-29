@@ -15,7 +15,23 @@
 #   * protein/biophysical read on the H37Rv codon grid (--protein-frame reference,
 #     implied by the arch): residue k is reference codon k in every isolate, so an
 #     indel no longer slides residues off their codon, and STOP is a residue.
-#   * 38 feature channels, not 42; the per-locus summary token is [NULL].
+#   * 41 feature channels: every one a named quantity. The isolate's base and
+#     residue, its properties, and the CHANGE in them from H37Rv's residue
+#     (isolate - ref), so a substitution states what it did rather than only what
+#     it became. Where a substitution left the residue unchanged the reference
+#     fills the slot, so "still serine" and "no residue here" are different tokens.
+#   * An uncalled base (N) is still the all-zero column, which under --delta is
+#     what a column MATCHING the reference looks like, so it makes no token.
+#     (An earlier 48-channel draft gave N and unreadable codons their own
+#     channels; the grid trained 2026-09-24 did not -- its tok_proj is 128x41.)
+#   * The positional band is fitted to the data: wavelengths 1/3 to 4096 codons in
+#     32 dims, against v1's 2*pi..2*pi*10^4 in 64.
+#   * The per-locus summary token is [NULL].
+#
+# HISTORY. The grid submitted 2026-09-18 ran a v2 WITHOUT the four points above
+# and scored 0.8926 at per-drug loci, level with the pre-fix v1 and 0.016 behind
+# locusfusion_fixed. It is archived under
+# results/archive/locusfusion_v2_pretokenfix_20260918/ with the diagnosis.
 #
 # MATCHED CONTROLS, all already run at exactly this protocol:
 #   sd   results/experiments/locusfusion_fixed/sd_*__locusfusion     macro CV 0.9036

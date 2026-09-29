@@ -12,8 +12,9 @@
 #      not be exercised interactively (the loader alone OOMs a 16 GB session), on
 #      the md allocation.
 #
-# Pass: both logs end in "Done:", each wrote its {DRUG|multidrug}__*.json, and
-# neither printed "no genome span" (every block placed in the genome).
+# Pass: both logs end in "Done:", each wrote its {DRUG|multidrug}__*.json,
+# neither printed "no genome span" (every block placed in the genome), and both
+# report the implied loader option -- protein-frame reference.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 DRY_FLAG=""; [ "${DRY:-0}" = "1" ] && DRY_FLAG="--dry_run"

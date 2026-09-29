@@ -54,6 +54,12 @@ REAL_PHENOTYPE_CSV = (
 REAL_REGULATORY_DIR = (
     "/home/jacksonmicha_umass_edu/abr_workspace/regulatory_msa/aligned"
 )
+# AlphaFold DB models of the H37Rv proteins, C-alpha coordinates re-indexed onto
+# the H37Rv codon grid (one {locus}.npz per coding locus, plus manifest.json).
+# Built by scripts/fetch_af_structures.py; read by datasets/structure.py.
+REAL_STRUCTURE_DIR = (
+    "/home/jacksonmicha_umass_edu/abr_workspace/structures/alphafold"
+)
 # Trained model weights. NOT under results/ — that lives on the workspace
 # filesystem and is git-ignored, and a full grid is tens of GB. This is the
 # lab's shared large-storage volume, so every run's checkpoints and the config

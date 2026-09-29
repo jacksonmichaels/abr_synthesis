@@ -37,11 +37,13 @@ import torch  # noqa: E402
 from bigtb_ref import (MODEL_WEIGHTS_DIR, REAL_GENOTYPE_DIR,  # noqa: E402
                        REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR, tb)
 from training.checkpoint import SAVE_CHOICES, write_pointer  # noqa: E402
-from datasets import (ALL_DRUGS, MODALITIES, loci_on_disk,  # noqa: E402
+from datasets import (ALL_DRUGS, MODALITIES, STATIC_MODALITIES,  # noqa: E402
+                      loci_on_disk,
                       load_multidrug_dataset, union_loci, union_regulatory)
 from datasets.fixtures import build_fixture_dataset  # noqa: E402
 from models import (ARCHITECTURES, DELTA_ARCHS, ENCODERS,  # noqa: E402
                     REFERENCE_FRAME_ARCHS,
+                    STRUCTURE_ARCHS,
                     EXPERIMENTAL_MODELS, LOCUS_ENCODERS, LOCUSFUSION_ARCHS,
                     locusfusion_defaults,
                     PER_LOCUS_ARCHS, SUMMARY_NORMS)
@@ -49,7 +51,9 @@ from training.curves import save_curves  # noqa: E402
 from training.multidrug import run_multidrug_cv  # noqa: E402
 
 RESULTS_DIR = PROJECT_DIR / "results" / "experiments"
-ALL_MODALITIES = list(MODALITIES)
+# `all` is the per-isolate modalities; `structure` (STATIC_MODALITIES) must be
+# named, so every existing grid keeps the modality set it always had
+ALL_MODALITIES = [m for m in MODALITIES if m not in STATIC_MODALITIES]
 
 
 def _resolve_drugs(requested, ap):
@@ -63,12 +67,13 @@ def _resolve_drugs(requested, ap):
 
 
 def _resolve_modalities(requested, ap):
-    if any(x.lower() == "all" for x in requested):
-        return list(ALL_MODALITIES)
     picked = [x.lower() for x in requested]
-    unknown = [x for x in picked if x not in ALL_MODALITIES]
+    if "all" in picked:
+        return list(ALL_MODALITIES) + [m for m in STATIC_MODALITIES if m in picked]
+    unknown = [x for x in picked if x not in ALL_MODALITIES and x not in STATIC_MODALITIES]
     if unknown:
-        ap.error(f"unknown modalit(ies) {unknown}; choose from {ALL_MODALITIES} or 'all'")
+        ap.error(f"unknown modalit(ies) {unknown}; choose from "
+                 f"{ALL_MODALITIES + list(STATIC_MODALITIES)} or 'all'")
     return picked
 
 
@@ -95,7 +100,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--modalities", nargs="+", default=["dna"], metavar="M",
-                    help=f"any subset of {ALL_MODALITIES}, or 'all' (default: dna)")
+                    help=f"any subset of {ALL_MODALITIES}, or 'all' (default: dna); "
+                         f"plus {list(STATIC_MODALITIES)}, which 'all' leaves out and "
+                         "only --arch locusfusion_v2 reads")
     ap.add_argument("--drugs", nargs="+", default=None, metavar="DRUG",
                     help="drugs to predict jointly, or 'all' (default: all 11)")
     ap.add_argument("--loci", nargs="+", default=None, metavar="GENE",
@@ -304,6 +311,10 @@ def main():
                          "only ~1.6%% of it varies with the genotype at init — "
                          "the same failure token_signal diagnosed in setfusion. "
                          "'none' turns it off.")
+    lf.add_argument("--lf-struct-length", type=float, default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: decay "
+                         "length in A of the closeness channels exp(-d/L) "
+                         "(default: 10).")
     lf.add_argument("--lf-carry-variants", type=int, default=None,
                     help="how many of each locus's own variant tokens are handed "
                          "up to stage 2 alongside its summary (default: 0). >0 "
@@ -391,6 +402,14 @@ def main():
 
     drugs = _resolve_drugs(args.drugs, ap)
     modalities = _resolve_modalities(args.modalities, ap)
+    if args.lf_struct_length is not None and "structure" not in modalities:
+        ap.error("--lf-struct-length sets the structure closeness channels; without "
+                 "--modalities structure it would change nothing and the run would "
+                 "be the control under another name")
+    if "structure" in modalities and args.arch not in STRUCTURE_ARCHS:
+        ap.error(f"--modalities structure is read at a variant token's codon and "
+                 f"has no per-isolate channels; it needs --arch "
+                 f"{'|'.join(STRUCTURE_ARCHS)} (got --arch {args.arch})")
     branch_models = {}
 
     for tok in (args.encoders or []):
@@ -425,6 +444,7 @@ def main():
         "locus_encoder": args.lf_locus_encoder,
         "summary_norm": args.lf_summary_norm,
         "carry_variants": args.lf_carry_variants,
+        "struct_length": args.lf_struct_length,
     }.items() if v is not None}
     experimental = {k: v for k, v in {
         "d_model": args.xm_d_model, "max_variants": args.xm_max_variants,
@@ -573,7 +593,7 @@ def main():
                                       "extra_loci": args.extra_loci,
                                       "per_drug_loci": args.per_drug_loci,
                                       "protein_frame": protein_frame,
-                                      # the resolved region list is recoverable
+                                                                            # the resolved region list is recoverable
                                       # from the 'regulatory:*' block names
                                   })
 

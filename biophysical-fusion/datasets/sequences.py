@@ -30,7 +30,13 @@ for _b, _col in BASE_TO_COLUMN.items():
 
 
 def one_hot_nt(seq: str) -> np.ndarray:
-    """(L, 5) one-hot, matching tb.get_one_hot exactly but vectorized."""
+    """(L, 5) one-hot, matching tb.get_one_hot exactly but vectorized.
+
+    An ambiguous base (N, or anything outside A/C/T/G/-) is the all-zero column,
+    as tb.get_one_hot has it. Under delta encoding that is also what a column
+    MATCHING the reference looks like, so an uncalled base makes no variant token
+    -- a limitation of this alphabet, stated in models/locusfusion_v2.py.
+    """
     codes = np.frombuffer(seq.encode("ascii", "replace"), dtype=np.uint8)
     cols = _BASE_LUT[codes]
     oh = np.zeros((len(codes), len(BASE_TO_COLUMN)), dtype=np.float32)

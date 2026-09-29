@@ -102,6 +102,10 @@ DELTA_ARCHS = ("locusfusion", "locusfusion_v2") + tuple(sorted(EXPERIMENTAL_MODE
 # ...and those that read protein/biophysical on the H37Rv codon grid
 # (load_dataset(protein_frame="reference")), which the runners imply the same way.
 REFERENCE_FRAME_ARCHS = ("locusfusion_v2",)
+# ...and those that can read the `structure` modality (datasets/structure.py):
+# a zero-channel block whose fold is looked up at a token's codon. Any other
+# arch would build a branch over nothing, so the runners refuse it there.
+STRUCTURE_ARCHS = ("locusfusion_v2",)
 
 # The variant-token transformer family: arch name -> (class, capacity defaults).
 # Both take the same capacity dict (the runners' --lf-* flags) and the same head

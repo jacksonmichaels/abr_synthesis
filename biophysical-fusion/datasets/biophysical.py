@@ -49,6 +49,10 @@ class BiophysicalModality(Modality):
                 modality=self.name,
                 array=array,
                 channel_names=list(biochem.PROPERTY_NAMES),
+                # see ProteinModality.build -- the reference residue per codon,
+                # which is what `ref_biophysical` and the delta are read from
+                meta=({"ref_residues": ref_aa}
+                      if (frame == "reference" and ref_aa) else {}),
                 note=(f"gene {g}, one residue per H37Rv codon, z-scored per property"
                       if frame == "reference"
                       else f"gene {g}, CDS window, z-scored per property")

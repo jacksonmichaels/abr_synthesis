@@ -39,9 +39,11 @@ block. That makes the fusion positional rather than attentional:
   regulatory context — c-15t reads as upstream of fabG1 in fabG1's locus and of
   inhA in inhA's. The cost is that stage 2 sees that base twice.
 * **A token is one base pair, in every representation it has.** Its slots hold
-  the new base, the residue that codon now translates to (zero when the change
-  was synonymous — the protein block is delta-encoded, so only a CHANGED residue
-  is nonzero), that residue's biophysical properties, and the codon phase. A
+  the new base, the residue that codon now translates to (for a synonymous
+  substitution, the unchanged H37Rv residue, read from the reference because the
+  delta-encoded protein block is zero there), that residue's biophysical
+  properties, the change in those properties from H37Rv's residue, and the codon
+  phase. A
   base with no codon — promoter, flank, an insertion column, or anywhere in the
   rRNA genes *rrs* and *rrl*, which have a start but no reading frame — carries
   its base and position and nothing else.
@@ -66,6 +68,19 @@ reference; H37Rv is the coordinate system the deviations are measured in, not a
 claim about what a susceptible strain looks like. (v1 called this token
 ``[WT]``; the rename is terminology only — the mechanism is the same.)
 
+**Structure (optional, ``--modalities ... structure``).** A token can also say
+where it sits on the H37Rv fold: its row of the locus's slot-aligned C-alpha
+closeness matrix over the (up to 16) variant tokens -- channel j of token i is
+exp(-d / STRUCT_LENGTH) for the distance d from token i to token j, 1 for the
+same residue and 0 where either token has no residue -- from an AlphaFold DB
+model (``datasets/structure.py``). The encoding is tentative. Like
+protein and biophysical it is read at the token's codon and never makes a token;
+unlike them it has no per-isolate channels -- every isolate is placed on the
+reference fold -- so its block is zero channels wide and the coordinates ride on
+the block's meta. Within a locus only: each model is one chain. The channels are
+APPENDED after the fixed C_TOK (see ``c_tok``), so a model without structure is
+unchanged.
+
 What stays from v1: ``--delta`` input, per-locus blocks, that per-locus token
 and its count/coverage statistics, the keyed summary norm, ``carry_variants``,
 the sinusoidal coordinate, the per-locus FiLM adapter, the drug-query read-out.
@@ -82,7 +97,7 @@ residue can only change where one of its own columns did. Measured over all
 reach in the isolate frame (85 counting the 16-token cap), and 2 do on the
 reference grid — both over the cap, neither a frame error
 (``notebooks/tokenization_v2.ipynb`` §5). An indel itself is its gap or insertion token; a codon that lost
-a base reads '-' and carries no residue. And STOP is a residue — the 21st protein
+a base carries no residue. And STOP is a residue — the 21st protein
 channel — so a nonsense mutation (20 katG isolates) no longer looks identical to
 a synonymous change on its token.
 
@@ -91,6 +106,7 @@ tokenizer used to be called ``locusfusion_v2``; it was renamed to
 ``results/experiments/locusfusion_fixed/`` so that this name is free for the
 model. A run write-up from before 2026-09-17 may still use the old name.
 """
+import math
 import warnings
 
 import numpy as np
@@ -98,24 +114,58 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .locusfusion import _select_variants, _sinusoid
+from .locusfusion import _select_variants
 from .net import NO_LOCUS, KeyedTokenNorm, parse_block_key
+from datasets.biochem import AA_PROPERTY, N_PROPERTIES, RESIDUES_WITH_STOP
+from datasets.structure import meta_arrays, pair_distances
 
 # --- the token feature vector ----------------------------------------------
 # One fixed layout whatever subset of modalities a run loads: a modality that is
 # absent simply leaves its slot zero, which is what makes two runs' attention
-# maps comparable. 38 dims against v1's 42 — the five flag channels that said
-# which stream a token came from are gone (see the module docstring), and the
-# protein slot has a 21st channel, STOP.
+# maps comparable. Every channel is a named quantity a human can read off — a
+# base, a residue, a property — which is the point of this model.
+#
+# A token says what the position reads NOW and how that differs from H37Rv:
+# `biophysical` is the isolate's residue's properties and `D_BIO` the change
+# (isolate - H37Rv), so "S -> N, hydrophobicity -1.4" is one subtraction the
+# model does not have to learn.
 SLOTS = {                       # modality -> (start, stop) in the feature vector
     "dna":         (0, 5),      # A C T G -   the new base, at one CDS column
-    "protein":     (5, 26),     # 20 residues + STOP: what that reference codon now reads
-    "biophysical": (26, 29),    # MW / pI / hydrophobicity of that residue (zero for STOP)
+    "protein":     (5, 26),     # 20 residues + STOP: what that reference codon
+                                #   reads in this isolate
+    "biophysical": (26, 29),    # MW / pI / hydrophobicity of that residue
     "regulatory":  (29, 34),    # A C T G -   the new base, at one promoter column
 }
-F_IS_NULL = 34                  # the per-locus [NULL] token (see the module docstring)
-F_PHASE = 35                    # 3 dims: position within the codon (0/1/2)
-C_TOK = 38
+D_BIO = (34, 37)                # those three properties, isolate MINUS H37Rv
+F_IS_NULL = 37                  # the per-locus [NULL] token (see the module docstring)
+F_PHASE = 38                    # 3 dims: position within the codon (0/1/2)
+C_TOK = 41
+
+# --- the structure channels, appended when a `structure` block is loaded -----
+# The locus's C-alpha geometry over its own variant tokens, SLOT-ALIGNED: token i
+# carries row i of the (V x V) matrix, V = max_variants, so channel C_TOK + j of
+# token i is how close it is to token j (entry (3, 5) is token 3 -> token 5, and
+# token 5's channel 3 holds the same number).
+#
+# PROXIMITY, not distance: exp(-d / STRUCT_LENGTH). The same residue reads 1.0,
+# adjacent residues (3.8 A) 0.68, and it decays to 0 across the fold -- so 0 is
+# both "very far" and "no geometry here", and the mask channel the distance form
+# needed (0 A is a REAL distance: two changed bases in one codon) is not needed.
+# One row of V channels per token, never two.
+#
+# Zero for everything without a residue: promoter, flank, insertion and rRNA
+# tokens, the stop codon, padding slots and [NULL] -- and for every other token's
+# entry pointing at them.
+#
+# Appended, not slotted into the fixed layout above, so a model built without
+# structure keeps C_TOK = 41.
+STRUCT_LENGTH = 10.0            # A; the decay length of the proximity channels
+
+
+def c_tok(max_variants, structure):
+    """Token feature width: C_TOK, plus max_variants with structure."""
+    return C_TOK + (int(max_variants) if structure else 0)
+
 
 # The protein block this model reads is on the H37Rv codon grid
 # (load_dataset(protein_frame="reference")): 21 channels, one column per
@@ -123,6 +173,17 @@ C_TOK = 38
 # and left-aligned, and reading it here would misplace every residue after an
 # indel — so construction checks both the channel count and the width.
 PROTEIN_CHANNELS = SLOTS["protein"][1] - SLOTS["protein"][0]
+NT_CHANNELS = SLOTS["dna"][1] - SLOTS["dna"][0]
+GAP_CHANNEL = 4                 # datasets.sequences.NT_CHANNELS == [A, C, T, G, -]
+
+# residue -> its three z-scored properties, on the protein block's channel order.
+# STOP has none, so a nonsense mutation reads as "lost the reference residue's
+# properties" on the delta channels.
+_RES_ORDER = list(RESIDUES_WITH_STOP)
+RESIDUE_PROPERTIES = np.zeros((PROTEIN_CHANNELS, N_PROPERTIES), dtype=np.float32)
+for _i, _r in enumerate(_RES_ORDER):
+    if _r in AA_PROPERTY:
+        RESIDUE_PROPERTIES[_i] = AA_PROPERTY[_r]
 
 # Occupancy is read off these, in this order: the promoter window sits upstream
 # of the coding record, so concatenating them in this order makes the merged
@@ -131,6 +192,9 @@ NT_MODALITIES = ("regulatory", "dna")
 # ...and these are looked up at the codon a DNA token falls in. They never
 # create a token of their own.
 AA_MODALITIES = ("protein", "biophysical")
+# ...and so is this one, but it has no per-isolate channels at all: its block is
+# (N, 0, n_codons) and the fold rides on FeatureBlock.meta (datasets/structure.py).
+STRUCTURE_MODALITIES = ("structure",)
 
 LOCUSFUSION_V2_DEFAULTS = {
     # A  token width, shared by both stages, both embeddings and the readout
@@ -145,7 +209,7 @@ LOCUSFUSION_V2_DEFAULTS = {
     #    <=7 changed columns per locus for 17 of 19 loci and 26 for the two rRNA
     #    genes. Overflow keeps the FIRST 16 in positional order (deterministic;
     #    one-hot columns have no norm to rank by).
-    "max_variants": 16, "pos_dims": 64,
+    "max_variants": 16, "pos_dims": 32,
     # E  per-locus specialization: 'shared' | 'adapter' (FiLM) | 'per_locus'
     "locus_encoder": "adapter",
     # F  standardise each locus summary across the batch, per locus, before
@@ -154,7 +218,29 @@ LOCUSFUSION_V2_DEFAULTS = {
     # G  how many of a locus's own variant tokens are handed up to stage 2
     #    alongside its summary. 0 = summaries only.
     "carry_variants": 0,
+    # H  the decay length (A) of the structure closeness channels,
+    #    exp(-d / struct_length). Read only when a `structure` block is loaded.
+    #    A config that does not record it rebuilds at this default.
+    "struct_length": STRUCT_LENGTH,
 }
+
+def _sinusoid(coord, dims, min_wavelength=1 / 3, max_wavelength=4096.0):
+    """(..., ) coordinate in CODONS -> (..., dims) sinusoidal encoding.
+
+    The band is set to the data, not to the transformer default. Coordinates run
+    to ~1,355 codons for the longest locus and the finest step that means
+    anything is 1/3 of a codon (a DNA column inside its codon), so the band spans
+    exactly that. v1's default (2*pi to 2*pi*10^4 codons) spent its bottom half
+    on wavelengths longer than any locus and never resolved a codon phase at the
+    top, which is why it needed twice the dimensions to say less.
+    """
+    half = dims // 2
+    i = torch.arange(half, device=coord.device, dtype=coord.dtype)
+    ratio = math.log(max_wavelength / min_wavelength)
+    wavelengths = min_wavelength * torch.exp(ratio * i / max(half - 1, 1))
+    ang = coord.unsqueeze(-1) * (2 * math.pi / wavelengths)
+    return torch.cat([ang.sin(), ang.cos()], dim=-1)
+
 
 LOCUS_ENCODERS = ("shared", "adapter", "per_locus")
 SUMMARY_NORMS = ("none", "keyed")
@@ -197,8 +283,9 @@ class LocusFusionV2Net(nn.Module):
                  d_model=128, nhead=4, dropout=0.1,
                  enc_layers=2, enc_dim_ff=256,
                  fusion_layers=2, fusion_dim_ff=256,
-                 max_variants=16, pos_dims=64,
+                 max_variants=16, pos_dims=32,
                  locus_encoder="adapter", summary_norm="keyed", carry_variants=0,
+                 struct_length=STRUCT_LENGTH,
                  block_frames=None,
                  hidden=256, head_dropout=0.0, per_drug_hidden=0, out_bias=None):
         super().__init__()
@@ -215,16 +302,19 @@ class LocusFusionV2Net(nn.Module):
         if summary_norm not in SUMMARY_NORMS:
             raise ValueError(f"unknown summary_norm {summary_norm!r}; "
                              f"choose from {list(SUMMARY_NORMS)}")
+        if not struct_length > 0:
+            raise ValueError(f"struct_length must be > 0 A, got {struct_length}")
         if pos_dims % 2:
             raise ValueError(f"pos_dims must be even, got {pos_dims}")
         if drug_names:
             n_drugs = len(drug_names)
 
         block_keys = [(m, l or NO_LOCUS) for m, l in block_keys]
-        unknown = sorted({m for m, _ in block_keys} - set(SLOTS))
+        known = set(SLOTS) | set(STRUCTURE_MODALITIES)
+        unknown = sorted({m for m, _ in block_keys} - known)
         if unknown:
             raise ValueError(f"LocusFusionV2Net has no feature slot for modalities "
-                             f"{unknown}; known: {sorted(SLOTS)}")
+                             f"{unknown}; known: {sorted(known)}")
         block_frames = list(block_frames or [{}] * len(block_keys))
         if len(block_frames) != len(block_keys):
             raise ValueError("block_frames must match block_keys length "
@@ -248,6 +338,7 @@ class LocusFusionV2Net(nn.Module):
                 for i, m, length in mine:
                     if m == want:
                         nt.append({"index": i, "modality": m, "length": length,
+                                   "channels": int(branch_specs[i][0]),
                                    "offset": offset, "frame": block_frames[i] or {}})
                         offset += length
             if not nt:
@@ -263,6 +354,10 @@ class LocusFusionV2Net(nn.Module):
                 "aa": [{"index": i, "modality": m, "length": length,
                         "channels": int(branch_specs[i][0])}
                        for i, m, length in mine if m in AA_MODALITIES],
+                "structure": next(({"index": i, "length": length,
+                                   "frame": block_frames[i] or {}}
+                                  for i, m, length in mine
+                                  if m in STRUCTURE_MODALITIES), None),
                 "total": offset,
                 "reg_len": sum(b["length"] for b in nt if b["modality"] == "regulatory"),
             })
@@ -273,9 +368,43 @@ class LocusFusionV2Net(nn.Module):
         # translated window) and where inside that codon it falls (`phase`, -1
         # likewise). Precomputed because it is fixed per locus and integer —
         # v1 could only approximate it with a learned per-locus offset.
-        self.frames, unplaced = {}, []
+        self.frames, unplaced, unref, has_ref = {}, [], [], []
         for li, p in enumerate(plan):
             coord, codon, phase, keep, note = self._frame_maps(p)
+            # H37Rv's residue at every codon of this locus, as an index into the
+            # protein block's channel order. It is what the D_BIO delta is taken
+            # against, and what fills `protein` where the isolate's codon did NOT
+            # change (a delta-encoded block is zero there, which would otherwise
+            # read as "no residue" rather than "the same residue").
+            ref_res = self._ref_residues(p, block_frames)
+            if p["aa"] and ref_res is None:
+                unref.append(p["locus"])
+            self.register_buffer(
+                f"ref_res_{li}",
+                torch.as_tensor(ref_res if ref_res is not None
+                                else np.full(1, -1, dtype=np.int64)),
+                persistent=False)
+            has_ref.append(ref_res is not None)
+            # the fold, per codon: C-alpha (zero where missing) and whether it
+            # exists. A locus with no structure block gets a one-row table that
+            # locates nothing.
+            sb = p["structure"]
+            if sb is not None and sb["frame"].get("ca") is not None:
+                ca, has_ca = meta_arrays(sb["frame"])
+                if len(ca) != sb["length"]:
+                    raise ValueError(
+                        f"{p['locus']}: structure block is {sb['length']} codons wide "
+                        f"but its meta carries {len(ca)} coordinates")
+            elif sb is not None:
+                raise ValueError(
+                    f"{p['locus']}: structure block has no coordinates on its meta "
+                    "(FeatureBlock.meta['ca'], attached by datasets.structure). "
+                    "A config written without them cannot rebuild the fold.")
+            else:
+                ca = np.zeros((1, 3), np.float32)
+                has_ca = np.zeros(1, bool)
+            self.register_buffer(f"struct_ca_{li}", torch.as_tensor(ca), persistent=False)
+            self.register_buffer(f"struct_has_{li}", torch.as_tensor(has_ca), persistent=False)
             self.register_buffer(f"coord_map_{li}", torch.as_tensor(coord), persistent=False)
             self.register_buffer(f"codon_map_{li}", torch.as_tensor(codon), persistent=False)
             self.register_buffer(f"phase_map_{li}", torch.as_tensor(phase), persistent=False)
@@ -284,6 +413,19 @@ class LocusFusionV2Net(nn.Module):
             self.frames[p["locus"]] = note
             if not note["genome_anchored"]:
                 unplaced.append(p["locus"])
+            sb = p["structure"]
+            if sb is not None and not (note["genome_anchored"] and note["has_cds"]
+                                       and sb["length"] == note["n_codons"]):
+                # the same check the protein block gets: coordinates indexed by
+                # anything but the tokenizer's codon would put every token on
+                # the wrong atom, silently
+                raise ValueError(
+                    f"{p['locus']}: structure block is {sb['length']} codons wide, "
+                    f"but this locus's coding record "
+                    + (f"has {note['n_codons']} reference codons"
+                       if note["genome_anchored"] and note["has_cds"]
+                       else "has no genome-anchored CDS")
+                    + " — the fold is not on the tokenizer's H37Rv codon grid.")
             for b in p["aa"]:
                 if b["modality"] == "protein" and b["channels"] != PROTEIN_CHANNELS:
                     raise ValueError(
@@ -301,6 +443,14 @@ class LocusFusionV2Net(nn.Module):
                         f"wide but the reference CDS has {note['n_codons']} codons — "
                         "it is not on the H37Rv codon grid. Load with "
                         "protein_frame='reference'.")
+        if unref:
+            warnings.warn(
+                f"LocusFusionV2Net: no reference residues for {unref} — those loci "
+                "lose the property-delta (D_BIO) channels, and a "
+                "synonymous or property-neutral codon reads as an empty residue "
+                "slot. They ride on FeatureBlock.meta['ref_residues'], which the "
+                "protein and biophysical modalities attach on the reference "
+                "codon grid.", stacklevel=2)
         if unplaced:
             warnings.warn(
                 f"LocusFusionV2Net: no genome span for {unplaced} — those loci fall "
@@ -312,10 +462,18 @@ class LocusFusionV2Net(nn.Module):
         self.max_variants = int(max_variants)
         self.tokens_per_locus = 1 + self.max_variants
         self.carry_variants = min(int(carry_variants), self.max_variants)
+        self.struct_length = float(struct_length)
+
+        self._has_ref = has_ref
+        self.use_structure = any(p["structure"] is not None for p in plan)
+        self.c_tok = c_tok(self.max_variants, self.use_structure)
+        self.f_struct = C_TOK                                   # proximity row
+        self.register_buffer("residue_properties",
+                             torch.as_tensor(RESIDUE_PROPERTIES), persistent=False)
 
         # --- token embedding -------------------------------------------------
         n_loci = len(self.loci)
-        self.tok_proj = nn.Linear(C_TOK, d_model)
+        self.tok_proj = nn.Linear(self.c_tok, d_model)
         self.pos_proj = nn.Linear(pos_dims, d_model)
         self.null_proj = nn.Linear(2, d_model)       # log1p(count) / occupied frac
         self.locus_emb = nn.Embedding(n_loci, d_model)
@@ -494,6 +652,26 @@ class LocusFusionV2Net(nn.Module):
                 coord[lo:lo + L] = (np.arange(L, dtype=np.float32) - L) / 3.0
         return coord, codon, phase, keep, note
 
+    @staticmethod
+    def _ref_residues(p, block_frames):
+        """H37Rv's residue per codon for one locus, as protein-channel indices.
+
+        Reads ``meta['ref_residues']`` (the string `datasets.protein` attaches on
+        the reference codon grid) off whichever aa block carries it. -1 marks a
+        codon with no residue, and a locus with no aa block gets None.
+        """
+        for b in p["aa"]:
+            meta = block_frames[b["index"]] or {}
+            ref = meta.get("ref_residues")
+            if not ref:
+                continue
+            idx = np.full(b["length"], -1, dtype=np.int64)
+            for k, res in enumerate(ref[:b["length"]]):
+                j = _RES_ORDER.index(res) if res in _RES_ORDER else -1
+                idx[k] = j
+            return idx
+        return None
+
     @classmethod
     def from_blocks(cls, blocks, **kwargs):
         """Build straight from loader FeatureBlocks (``data.blocks``).
@@ -518,7 +696,7 @@ class LocusFusionV2Net(nn.Module):
         B = xs[0].shape[0]
         dev, dt = xs[0].device, xs[0].dtype
         T, n_loci = self.tokens_per_locus, len(self.loci)
-        feat = torch.zeros(B, n_loci, T, C_TOK, device=dev, dtype=dt)
+        feat = torch.zeros(B, n_loci, T, self.c_tok, device=dev, dtype=dt)
         coord = torch.zeros(B, n_loci, T, device=dev, dtype=dt)
         valid = torch.zeros(B, n_loci, T, dtype=torch.bool, device=dev)
         stats = torch.zeros(B, n_loci, 2, device=dev, dtype=dt)
@@ -547,20 +725,89 @@ class LocusFusionV2Net(nn.Module):
                     1, local.unsqueeze(-1).expand(-1, -1, x.shape[1])
                 ) * here.unsqueeze(-1).to(dt)
 
-            # what that codon now codes for. A delta-encoded protein block is
-            # zero wherever the residue did NOT change, so a synonymous
-            # substitution leaves these slots empty by construction, and a
-            # promoter or 5'-flank column has no codon to read at all.
-            for b in p["aa"]:
-                lo, hi = SLOTS[b["modality"]]
+            # What that codon codes for, in this isolate and in H37Rv.
+            #
+            # A delta-encoded aa block is zero wherever the residue did NOT
+            # change, which is indistinguishable from "no residue here". So the
+            # slots are filled from the reference there: a synonymous change
+            # reads "S, still S", and `d_biophysical` — the only channel that
+            # separates it from a real substitution — is zero.
+            ref_res = getattr(self, f"ref_res_{li}")          # (n_codons,) or (1,)
+            props = self.residue_properties
+            has_ref = bool(self._has_ref[li])
+            known = coding.clone()
+            if has_ref:
+                cc = codon.clamp(0, ref_res.numel() - 1)
+                ref_id = torch.where(coding, ref_res[cc], torch.zeros_like(cc))
+                known = coding & (ref_res[cc] >= 0)
+                ref_props = props[ref_id] * known.unsqueeze(-1).to(dt)
+            # Which residues changed is read off the PROTEIN block, never off
+            # the properties: STOP and a deleted codon have all-zero properties
+            # legitimately, so "the property row is zero" does not mean "nothing
+            # happened here". Without a protein block the two are not separable,
+            # and a property-less residue then reads as unchanged.
+            aa = {b["modality"]: b for b in p["aa"]}
+            got = {}
+            for mod, b in aa.items():
                 x = xs[b["index"]]
                 here = coding & (codon < b["length"])
                 kk = codon.clamp(0, b["length"] - 1)
-                f[:, :, lo:hi] = x.transpose(1, 2).gather(
+                got[mod] = x.transpose(1, 2).gather(
                     1, kk.unsqueeze(-1).expand(-1, -1, x.shape[1])
                 ) * here.unsqueeze(-1).to(dt)
+            if "protein" in got:
+                changed = got["protein"].abs().sum(-1, keepdim=True) > 0
+            elif "biophysical" in got:
+                changed = got["biophysical"].abs().sum(-1, keepdim=True) > 0
+            else:
+                changed = None
+            alt_props = None
+            if changed is not None and has_ref:
+                # A gap token is a base the isolate LOST, so its codon does not
+                # read as the reference no matter what the (delta-zero) aa block
+                # says -- restating the reference residue there would report an
+                # unchanged codon at a deletion. Substitutions only; the deleted
+                # codon keeps empty residue slots and a delta of -ref_props, the
+                # same "the reference residue is gone" a stop gain reports.
+                base = f[:, :, SLOTS["dna"][0]:SLOTS["dna"][1]]
+                sub = (base.sum(-1) > 0) & (base[..., GAP_CHANNEL] == 0)
+                fill = ~changed & known.unsqueeze(-1) & sub.unsqueeze(-1)
+                if "protein" in got:
+                    ref_oh = F.one_hot(ref_id, num_classes=PROTEIN_CHANNELS).to(dt)
+                    got["protein"] = torch.where(
+                        fill, ref_oh * known.unsqueeze(-1).to(dt), got["protein"])
+                if "biophysical" in got:
+                    got["biophysical"] = torch.where(fill, ref_props, got["biophysical"])
+            for mod, v in got.items():
+                lo, hi = SLOTS[mod]
+                f[:, :, lo:hi] = v
+            if "biophysical" in got:
+                alt_props = got["biophysical"]
+            elif "protein" in got:
+                # no biophysical block loaded: the residue's properties are a
+                # table lookup away, so the delta is still available
+                alt_props = got["protein"] @ props
+            # what the substitution did to those properties -- the channels that
+            # make a token read as a CHANGE rather than as a state. The reference
+            # values themselves are not carried: they are a constant of the
+            # position, and the isolate's own properties are already on the token.
+            if has_ref and alt_props is not None:
+                f[:, :, D_BIO[0]:D_BIO[1]] = (alt_props - ref_props) * \
+                    known.unsqueeze(-1).to(dt)
             f[:, :, F_PHASE:F_PHASE + 3] = F.one_hot(
                 ph.clamp(0, 2), num_classes=3).to(dt) * coding.unsqueeze(-1).to(dt)
+
+            # Where this token sits on the fold, relative to the locus's other
+            # variant tokens: row i of the (k x k) C-alpha distance matrix goes
+            # to variant token i, so channel j of token i is its distance to
+            # token j -- the same 5'->3' token order on both axes. `ok` keeps
+            # padding out of it.
+            if p["structure"] is not None:
+                dist, mask, _ = pair_distances(
+                    codon, ok, getattr(self, f"struct_ca_{li}").to(dt),
+                    getattr(self, f"struct_has_{li}"))
+                a = self.f_struct
+                f[:, :, a:a + k] = torch.exp(-dist / self.struct_length) * mask.to(dt)
 
             feat[:, li, 1:1 + k] = f * ok.unsqueeze(-1).to(dt)
             coord[:, li, 1:1 + k] = coord[:, li, 1:1 + k] * ok.to(dt)
@@ -655,6 +902,8 @@ class LocusFusionV2Net(nn.Module):
         ``[{locus, columns, region, valid, codon, coord, n_variants,
         occupied_frac}]``
         — one row per locus, each field (B, max_variants) except the last two.
+        With a structure block, also ``struct_dist`` (A) and ``struct_mask``,
+        each (B, k, k): the distance matrix the token rows were cut from.
         ``columns`` is in the merged axis; ``region`` is 'promoter' or 'cds' and
         ``column_in_block`` re-indexes into whichever block that is, so an
         attention map from ``forward(..., return_attn=True)`` reads as "drug j
@@ -667,6 +916,12 @@ class LocusFusionV2Net(nn.Module):
             occ &= getattr(self, f"keep_map_{li}")
             idx, ok, n_occ = _select_variants(occ, self.max_variants)
             in_reg = idx < p["reg_len"]
+            codon = getattr(self, f"codon_map_{li}")[idx]
+            extra = {}
+            if p["structure"] is not None:
+                dist, mask, _ = pair_distances(codon, ok, getattr(self, f"struct_ca_{li}"),
+                                               getattr(self, f"struct_has_{li}"))
+                extra = {"struct_dist": dist, "struct_mask": mask}
             out.append({
                 "locus": p["locus"],
                 "modalities": [b["modality"] for b in p["nt"] + p["aa"]],
@@ -678,5 +933,6 @@ class LocusFusionV2Net(nn.Module):
                 "coord": getattr(self, f"coord_map_{li}")[idx],
                 "n_variants": n_occ,
                 "occupied_frac": n_occ.to(torch.float32) / max(p["kept"], 1),
+                **extra,
             })
         return out

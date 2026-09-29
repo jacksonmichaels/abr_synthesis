@@ -25,6 +25,7 @@ from .dna import DNAModality
 from .protein import ProteinModality
 from .regulatory import DRUG_TO_REGULATORY, RegulatoryModality
 from .sequences import load_phenotype, load_sequence_df, numeric_labels
+from .structure import StructureModality
 
 # the registry — the whole point of the refactor: any subset can be requested
 MODALITIES = {
@@ -32,7 +33,14 @@ MODALITIES = {
     "protein": ProteinModality,
     "biophysical": BiophysicalModality,
     "regulatory": RegulatoryModality,
+    "structure": StructureModality,
 }
+# Modalities with no per-isolate content: `structure` is the H37Rv fold, the
+# same for every isolate, and only a variant-token model can use it (it is read
+# at the codon a token falls in; a CNN branch over it would see nothing). The
+# runners leave these out of `--modalities all`, so every existing grid keeps
+# the modality set it always had; name them explicitly.
+STATIC_MODALITIES = ("structure",)
 
 DRUG_TO_LOCI = tb.DRUG_TO_LOCI
 
@@ -52,9 +60,24 @@ DRUG_TO_LOCI = tb.DRUG_TO_LOCI
 EXTRA_LOCI = {"ISONIAZID": ["fabG1"], "ETHIONAMIDE": ["fabG1"]}
 
 
-def drug_loci(drug, extra=False):
+# Which gene loci a drug loads by default. "bigtb" is BIG-TB's DRUG_TO_LOCI (the
+# default every existing run used). "who_t12" is the drug's WHO 2023 Table-21
+# tier 1 + tier 2 candidate genes, tier 1 first; most of them only have aligned
+# FASTAs in the gene_msa/who_t12_genotypes folder (pass it as the genotype dir),
+# and a gene with no FASTA there is skipped with a warning like any other.
+LOCUS_SETS = ("bigtb", "who_t12")
+
+
+def drug_loci(drug, extra=False, locus_set="bigtb"):
     """Gene loci for one drug: BIG-TB's DRUG_TO_LOCI, plus EXTRA_LOCI when
-    ``extra`` is set (order preserved, no duplicates)."""
+    ``extra`` is set (order preserved, no duplicates) -- or, with
+    ``locus_set="who_t12"``, its WHO Table-21 tier 1 + 2 genes."""
+    if locus_set not in LOCUS_SETS:
+        raise ValueError(f"unknown locus_set {locus_set!r}; choose from {LOCUS_SETS}")
+    if locus_set == "who_t12":
+        from .regulatory import DRUG_NAME_TO_WHO
+        from .who_catalogue import genes_for_drug
+        return list(dict.fromkeys(g for g, _ in genes_for_drug(DRUG_NAME_TO_WHO[drug.upper()])))
     base = list(DRUG_TO_LOCI.get(drug.upper(), []))
     if extra:
         base += [g for g in EXTRA_LOCI.get(drug.upper(), []) if g not in base]
@@ -134,7 +157,7 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                  regulatory_dir=None, loci=None, regulatory_loci=None,
                  per_modality_branch=True, dna_per_locus=True,
                  extra_loci=False, all_regulatory=False, delta=False,
-                 protein_frame="isolate", verbose=True):
+                 protein_frame="isolate", locus_set="bigtb", verbose=True):
     """Build a DrugData bundle for one drug over the requested modalities.
 
     loci                : which gene loci to load for dna/protein/biophysical.
@@ -186,7 +209,7 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
     regulatory_dir = regulatory_dir or genotype_dir
 
     user_loci = loci is not None
-    loci = list(loci) if user_loci else drug_loci(drug, extra_loci)
+    loci = list(loci) if user_loci else drug_loci(drug, extra_loci, locus_set)
     user_reg = regulatory_loci is not None
     regulatory_loci = (list(regulatory_loci) if user_reg
                        else list(DRUG_TO_REGULATORY.get(drug, [])))

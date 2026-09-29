@@ -40,11 +40,14 @@ import torch  # noqa: E402
 
 from bigtb_ref import (MODEL_WEIGHTS_DIR, REAL_GENOTYPE_DIR,  # noqa: E402
                        REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR, tb)
-from datasets import DRUG_TO_REGULATORY, MODALITIES, load_dataset  # noqa: E402
+from datasets import (DRUG_TO_REGULATORY, MODALITIES,  # noqa: E402
+                      STATIC_MODALITIES, load_dataset)
+from datasets.loader import LOCUS_SETS  # noqa: E402
 from training.checkpoint import SAVE_CHOICES, write_pointer  # noqa: E402
 from datasets.fixtures import build_fixture_dataset  # noqa: E402
 from models import (ARCHITECTURES, DELTA_ARCHS, ENCODERS,  # noqa: E402
                     REFERENCE_FRAME_ARCHS,
+                    STRUCTURE_ARCHS,
                     EXPERIMENTAL_MODELS, LOCUS_ENCODERS, LOCUSFUSION_ARCHS,
                     locusfusion_defaults,
                     PER_LOCUS_ARCHS, SUMMARY_NORMS,
@@ -53,19 +56,23 @@ from training.curves import save_curves  # noqa: E402
 from training.multimodal import run_modal_cv  # noqa: E402
 
 RESULTS_DIR = PROJECT_DIR / "results" / "experiments"
-ALL_MODALITIES = list(MODALITIES)
+# `all` is the per-isolate modalities; `structure` (STATIC_MODALITIES) must be
+# named, so every existing grid keeps the modality set it always had
+ALL_MODALITIES = [m for m in MODALITIES if m not in STATIC_MODALITIES]
 ALL_DRUGS = list(tb.DRUG_TO_LOCI)
 
 
-def _resolve_choices(requested, universe, kind, ap):
+def _resolve_choices(requested, universe, kind, ap, extra=()):
     """Expand the sentinel 'all' to the full universe, else validate the
-    requested items against it. `universe` is the ordered list of valid names."""
-    if any(x.lower() == "all" for x in requested):
-        return list(universe)
+    requested items against it. `universe` is the ordered list of valid names;
+    `extra` are valid too, but only when named (not part of 'all')."""
     picked = [x.upper() if kind == "drug" else x.lower() for x in requested]
-    unknown = [x for x in picked if x not in universe]
+    if "all" in (x.lower() for x in requested):
+        return list(universe) + [x for x in extra if x in picked]
+    unknown = [x for x in picked if x not in universe and x not in extra]
     if unknown:
-        ap.error(f"unknown {kind}(s) {unknown}; choose from {universe} or 'all'")
+        ap.error(f"unknown {kind}(s) {unknown}; choose from {list(universe) + list(extra)} "
+                 "or 'all'")
     return picked
 
 
@@ -129,7 +136,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--modalities", nargs="+", default=["dna"], metavar="M",
-                    help=f"any subset of {ALL_MODALITIES}, or 'all' (default: dna)")
+                    help=f"any subset of {ALL_MODALITIES}, or 'all' (default: dna); "
+                         f"plus {list(STATIC_MODALITIES)}, which 'all' leaves out and "
+                         "only --arch locusfusion_v2 reads")
     ap.add_argument("--drugs", nargs="+", default=None, metavar="DRUG",
                     help="drug(s) to run, or 'all' (default: ISONIAZID RIFAMPICIN)")
     ap.add_argument("--loci", nargs="+", default=None, metavar="GENE",
@@ -142,6 +151,15 @@ def main():
                          "never has more promoter windows than coding loci "
                          "(KANAMYCIN then keeps rrs only and loses the eis "
                          "promoter). Ignored when --regulatory-loci is given.")
+    ap.add_argument("--locus-set", default="bigtb", choices=list(LOCUS_SETS),
+                    help="default gene loci per drug: 'bigtb' = BIG-TB's DRUG_TO_LOCI "
+                         "(every run before 2026-09-24); 'who_t12' = the drug's WHO "
+                         "2023 Table-21 tier 1 + 2 candidate genes, which needs "
+                         "--genotype-dir pointing at a folder that has them. Ignored "
+                         "when --loci is given.")
+    ap.add_argument("--genotype-dir", default=None,
+                    help="--real only: aligned per-gene FASTA folder to read instead "
+                         "of bigtb_ref.REAL_GENOTYPE_DIR.")
     ap.add_argument("--extra-loci", action="store_true",
                     help="add the EXTRA_LOCI overlay to the drug's default loci "
                          "(WHO Table 21 tier-1 genes DRUG_TO_LOCI omits: fabG1 "
@@ -323,6 +341,10 @@ def main():
                          "only ~1.6%% of it varies with the genotype at init — "
                          "the same failure token_signal diagnosed in setfusion. "
                          "'none' turns it off.")
+    lf.add_argument("--lf-struct-length", type=float, default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: decay "
+                         "length in A of the closeness channels exp(-d/L) "
+                         "(default: 10).")
     lf.add_argument("--lf-carry-variants", type=int, default=None,
                     help="how many of each locus's own variant tokens are handed "
                          "up to stage 2 alongside its summary (default: 0). >0 "
@@ -457,6 +479,7 @@ def main():
         "locus_encoder": args.lf_locus_encoder,
         "summary_norm": args.lf_summary_norm,
         "carry_variants": args.lf_carry_variants,
+        "struct_length": args.lf_struct_length,
     }.items() if v is not None}
     experimental = {k: v for k, v in {
         "d_model": args.xm_d_model, "max_variants": args.xm_max_variants,
@@ -484,7 +507,18 @@ def main():
                  f"is not a knob of --arch {args.arch} "
                  f"(its knobs: {sorted(locusfusion_defaults(args.arch))})")
 
-    modalities = _resolve_choices(args.modalities, ALL_MODALITIES, "modality", ap)
+    if args.genotype_dir and not args.real:
+        ap.error("--genotype-dir reads real FASTAs; add --real")
+    modalities = _resolve_choices(args.modalities, ALL_MODALITIES, "modality", ap,
+                                  extra=STATIC_MODALITIES)
+    if args.lf_struct_length is not None and "structure" not in modalities:
+        ap.error("--lf-struct-length sets the structure closeness channels; without "
+                 "--modalities structure it would change nothing and the run would "
+                 "be the control under another name")
+    if "structure" in modalities and args.arch not in STRUCTURE_ARCHS:
+        ap.error(f"--modalities structure is read at a variant token's codon and "
+                 f"has no per-isolate channels; it needs --arch "
+                 f"{'|'.join(STRUCTURE_ARCHS)} (got --arch {args.arch})")
     drugs = _resolve_choices(args.drugs or ["ISONIAZID", "RIFAMPICIN"],
                              ALL_DRUGS, "drug", ap)
     branch_models = _parse_encoders(args.encoders, ap)
@@ -556,7 +590,8 @@ def main():
     with contextlib.ExitStack() as stack:
         if args.real:
             genotype_dir, phenotype_csv, regulatory_dir = (
-                REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR)
+                args.genotype_dir or REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
+                REAL_REGULATORY_DIR)
         else:
             tmp = stack.enter_context(tempfile.TemporaryDirectory())
             genotype_dir, phenotype_csv = _make_synthetic(
@@ -571,7 +606,8 @@ def main():
                                     per_modality_branch=not per_locus,
                                     extra_loci=args.extra_loci,
                                     all_regulatory=args.all_regulatory,
-                                    delta=delta, protein_frame=protein_frame)
+                                    delta=delta, protein_frame=protein_frame,
+                                    locus_set=args.locus_set)
                 result = run_modal_cv(data, epochs=epochs, n_splits=args.n_splits,
                                       batch_size=args.batch_size, device=args.device,
                                       tb_dir=tb_dir, seed=args.seed,
@@ -602,11 +638,12 @@ def main():
                                           "per_modality_branch": not per_locus,
                                           "all_regulatory": args.all_regulatory,
                                           "extra_loci": args.extra_loci,
+                                          "locus_set": args.locus_set,
                                           "delta": args.delta,
                                           # the RESOLVED value, unlike "delta"
                                           # above, which records the raw flag
                                           "protein_frame": protein_frame,
-                                          "loci_override": args.loci,
+                                                                                    "loci_override": args.loci,
                                           "regulatory_loci_override": args.regulatory_loci,
                                       })
                 out = run_dir / f"{drug}__{result['tag']}.json"

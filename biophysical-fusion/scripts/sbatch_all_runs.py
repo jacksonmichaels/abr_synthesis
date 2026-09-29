@@ -89,6 +89,8 @@ GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion", "locusfusion",
 # set is the right grid -- `all_modalities`, because that is where the protein and
 # biophysical features `additive` and `fm` read actually exist, and because
 # full_run_v2/all_modalities__* is the matched control.
+WHO_T12_GENOTYPE_DIR = ("/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/"
+                        "gene_msa/who_t12_genotypes")
 AGGREGATOR_ARCHS = ("catalogue", "additive", "noisyor", "gatedpool", "deepsets", "fm")
 
 
@@ -98,6 +100,26 @@ def _build_grid():
     grid.update({f"all_modalities__{arch}":
                  {"modalities": list(MODALITY_SETS["all_modalities"]), "arch": arch}
                  for arch in AGGREGATOR_ARCHS})
+    # AlphaFold C-alpha proximity between a locus's variant tokens (2026-09-24,
+    # tentative; datasets/structure.py). Only locusfusion_v2 reads `structure`, so
+    # it is one explicit entry rather than a MODALITY_SETS row crossed with every
+    # arch. Matched control: all_modalities__locusfusion_v2.
+    grid["all_modalities_structure__locusfusion_v2"] = {
+        "modalities": list(MODALITY_SETS["all_modalities"]) + ["structure"],
+        "arch": "locusfusion_v2"}
+    # ...and the same with longer closeness decay lengths (default 10 A).
+    for L in (20, 30):
+        grid[f"all_modalities_structure_L{L}__locusfusion_v2"] = {
+            "modalities": list(MODALITY_SETS["all_modalities"]) + ["structure"],
+            "arch": "locusfusion_v2", "extra_args": ["--lf-struct-length", str(L)]}
+    # WHO 2023 Table-21 tier 1 + 2 candidate genes per drug instead of BIG-TB's
+    # DRUG_TO_LOCI (2026-09-24). The 35 genes with no curated alignment were
+    # extracted by gene_msa/ (gene body +/- 100 bp); the folder symlinks the 19
+    # curated FASTAs next to them. Matched control:
+    # locusfusion_v2/sd_all_modalities__locusfusion_v2.
+    grid["all_modalities_who_t12__locusfusion_v2"] = {
+        "modalities": list(MODALITY_SETS["all_modalities"]), "arch": "locusfusion_v2",
+        "extra_args": ["--locus-set", "who_t12", "--genotype-dir", WHO_T12_GENOTYPE_DIR]}
     return grid
 
 
@@ -203,6 +225,7 @@ def run_experiment_command(exp_name, cfg, drug, args):
     if loci:
         parts += ["--loci", *loci]
     parts += _training_knobs(args)
+    parts += list(cfg.get("extra_args", ()))       # per-experiment model knobs
     if args.tb:
         parts += ["--tb"]
     return " ".join(shlex.quote(p) for p in parts)
@@ -228,6 +251,7 @@ def run_multidrug_command(exp_name, cfg, args):
     if loci:
         parts += ["--loci", *loci]
     parts += _training_knobs(args)
+    parts += list(cfg.get("extra_args", ()))       # per-experiment model knobs
     if args.monitor_min_n:                 # joint-only: no macro to trim single-drug
         parts += ["--monitor-min-n", str(args.monitor_min_n)]
     if args.tb:

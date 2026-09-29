@@ -92,16 +92,22 @@ class ProteinModality(Modality):
                       f"— stays plain one-hot")
             stop = frame == "reference"
             array = stack_padded([
-                delta_zero_columns(biochem.one_hot_aa(p, pad_to=width, with_stop=stop), p, ref_aa)
+                delta_zero_columns(biochem.one_hot_aa(p, pad_to=width, with_stop=stop),
+                                   p, ref_aa)
                 if self.delta else biochem.one_hot_aa(p, pad_to=width, with_stop=stop)
                 for p in proteins])
             blocks.append(FeatureBlock(
                 name=f"protein:{g}",
                 modality=self.name,
                 array=array,
-                channel_names=list(biochem.RESIDUES_WITH_STOP if stop else biochem.AMINO_ACIDS),
+                channel_names=biochem.residue_channels(with_stop=stop),
                 note=(f"gene {g}, one residue per H37Rv codon (stops kept)" if stop
                       else f"gene {g}, CDS window translated + left-aligned")
                      + (" [delta vs H37Rv]" if self.delta else ""),
+                # The reference residue of every codon, so a model reading a
+                # delta-encoded block can say what the codon read BEFORE the
+                # substitution (and, with biochem.AA_PROPERTY, what it was
+                # worth biophysically). Only meaningful on the reference grid.
+                meta={"ref_residues": ref_aa} if (stop and ref_aa) else {},
             ))
         return blocks

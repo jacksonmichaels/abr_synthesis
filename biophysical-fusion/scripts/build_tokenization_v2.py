@@ -27,10 +27,13 @@ token *is*.
 | streams | `nt`, `aa`, `reg` tokenized separately | one merged 5'->3' column axis per locus |
 | cap | 16 per (locus, stream) | 16 per **locus** |
 | protein / biophysical | their own tokens, on their own axis | channels on the DNA token, read at that column's codon |
-| feature width | 42 | 38 |
+| the reference | not on the token | the change in residue properties from H37Rv's; H37Rv's residue where a codon did not change |
+| an uncalled base (`N`) | the all-zero column, i.e. "no variant" | the same: no channel of its own, so no token |
+| feature width | 42 | 41 (57 with `structure`, §6) |
 | column -> codon | a LEARNED per-locus offset | the real map, off `FeatureBlock.meta` |
 | protein residue k | the isolate's own k-th codon, degapped | H37Rv codon k in every isolate; STOP is a residue |
 | promoter position | its own stream, counted back from the window's end | its H37Rv genome position; columns the gene record also covers are dropped |
+| positional encoding | wavelengths 2π–2π·10⁴ codons, 64 dims | 1/3–4096 codons, the range the data occupies, 32 dims |
 
 The last two rows are what make the rest possible. `datasets.cds.block_frame`
 places every nucleotide block in the H37Rv genome by exact search and gives a
@@ -40,6 +43,15 @@ inside the CDS window (katG: 53 in a 2,276-column span holding a 2,223 bp CDS),
 so `(column - start) // 3` is wrong — and a promoter column sits at its real
 distance from that start codon (§4). The protein row is what keeps the residue on
 that codon when an isolate carries an indel (§5).
+
+**A token states a change, not a state.** v2's token carries the isolate's base
+and residue, that residue's properties, and how those properties differ from
+H37Rv's residue at that codon. `S315T` reads as "threonine, +0.47 molecular
+weight, +0.49 hydrophobicity" without the model having to learn the
+subtraction. Where a substitution left the codon's residue unchanged, the
+reference fills the slot, so a synonymous substitution says "still serine" with
+a zero delta. Otherwise it would leave an empty slot that looks like no residue
+at all.
 """)
 
 code(r"""
@@ -72,12 +84,13 @@ MODALITIES = ["dna", "protein", "biophysical", "regulatory"]
 data = load_dataset(DRUG, MODALITIES, REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
                     regulatory_dir=REAL_REGULATORY_DIR,
                     per_modality_branch=False, delta=True, verbose=False)
-grid = load_dataset(DRUG, ["protein", "biophysical"], REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
-                    per_modality_branch=False, delta=True, protein_frame="reference",
-                    verbose=False)
-assert grid.isolate_ids == data.isolate_ids
+v2data = load_dataset(DRUG, MODALITIES, REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
+                      regulatory_dir=REAL_REGULATORY_DIR,
+                      per_modality_branch=False, delta=True,
+                      protein_frame="reference", verbose=False)
+assert v2data.isolate_ids == data.isolate_ids
 blocks_v1 = data.blocks
-blocks_v2 = [{b.name: b for b in grid.blocks}.get(b.name, b) for b in data.blocks]
+blocks_v2 = v2data.blocks
 xs1 = [torch.from_numpy(b.array[:N]).float() for b in blocks_v1]
 xs2 = [torch.from_numpy(b.array[:N]).float() for b in blocks_v2]
 
@@ -159,6 +172,10 @@ code(r"""
 def layout(mod):
     rows = [{"dims": f"{lo}:{hi}", "n": hi - lo, "what": f"{m} one-hot / values"}
             for m, (lo, hi) in mod.SLOTS.items()]
+    span_ = getattr(mod, "D_BIO", None)                # v2 only
+    if span_:
+        rows.append({"dims": f"{span_[0]}:{span_[1]}", "n": span_[1] - span_[0],
+                     "what": "properties, isolate - H37Rv"})
     flags = [(n[2:].lower(), getattr(mod, n)) for n in dir(mod)
              if n.startswith("F_") and n != "F_PHASE"]
     for name, i in sorted(flags, key=lambda t: t[1]):
@@ -174,6 +191,12 @@ display(pd.concat([a.reset_index(drop=True), b.reset_index(drop=True)], axis=1).
 """)
 
 md(r"""
+What v2 adds: three channels for the change in residue properties (isolate
+minus H37Rv) and a 21st residue channel, STOP. It has no channel for a symbol
+that could not be read. An `N` is the all-zero column in both models, which
+under delta encoding is exactly what a position *matching* the reference looks
+like, so a failed base call reads as "no variant here".
+
 The five channels v2 drops: `is_nt` / `is_aa` / `is_reg` said which stream a
 token came from and there are no streams; `is_gap` was a copy of the `-` channel
 of the nucleotide one-hot, which is still there; `uncovered` was a locus-level
@@ -195,6 +218,7 @@ REF_AA = {g: biochem.translate_reference_frame(REF_NT[g], REF_NT[g],
           for g in v2.loci if REF_NT[g]}          # reference codon k -> residue, v2's numbering
 REF_REG = {g: reference_row(REAL_REGULATORY_DIR, g) for g in v2.loci}
 S2, S1 = lf2.SLOTS, lf1.SLOTS
+V2_RESIDUES = lf2._RES_ORDER          # 20 residues + STOP
 
 def span(f, slot):
     return f[slot[0]:slot[1]]
@@ -215,8 +239,9 @@ def v2_tokens(i):
             f = feat[0, li, t].numpy()
             col, codon = int(r["column_in_block"][i, t - 1]), int(r["codon"][i, t - 1])
             region = "cds" if int(r["region"][i, t - 1]) else "promoter"
-            aa = letter(span(f, S2["protein"]), biochem.RESIDUES_WITH_STOP)
-            base = letter(span(f, S2["dna"]), NT_CHANNELS) or letter(span(f, S2["regulatory"]), NT_CHANNELS)
+            aa = letter(span(f, S2["protein"]), V2_RESIDUES)
+            base = (letter(span(f, S2["dna"]), NT_CHANNELS)
+                    or letter(span(f, S2["regulatory"]), NT_CHANNELS))
             ph = f[lf2.F_PHASE:lf2.F_PHASE + 3]
             out.append({
                 "locus": locus, "region": region, "column": col, "codon": codon,
@@ -224,7 +249,10 @@ def v2_tokens(i):
                 "base": f"{(REF_NT if region == 'cds' else REF_REG)[locus][col]}->{base}",
                 "residue": (f"{REF_AA[locus][codon]}{codon + 1}{aa}"
                             if aa and locus in REF_AA and codon < len(REF_AA[locus]) else ""),
-                "biophysical": (", ".join(f"{v:+.2f}" for v in span(f, S2["biophysical"])) if aa else ""),
+                "properties (isolate)": (", ".join(f"{v:+.2f}" for v in span(f, S2["biophysical"]))
+                                         if aa else ""),
+                "change": (", ".join(f"{v:+.2f}" for v in f[lf2.D_BIO[0]:lf2.D_BIO[1]])
+                           if aa else ""),
                 "phase": int(np.argmax(ph)) if ph.sum() else -1,
             })
     return pd.DataFrame(out)
@@ -287,11 +315,11 @@ ALL = sorted({g for gs in __import__("bigtb_ref").tb.DRUG_TO_LOCI.values() for g
 keys, specs, frames = [], [], []
 for g in ALL:
     r = _ref(REAL_GENOTYPE_DIR, g)
-    keys.append(("dna", g)); specs.append((5, len(r)))
+    keys.append(("dna", g)); specs.append((6, len(r)))
     frames.append(cds.block_frame(REAL_GENOTYPE_DIR, g, len(r), translated=True))
     p = _ref(REAL_REGULATORY_DIR, g)
     if p:
-        keys.append(("regulatory", g)); specs.append((5, len(p)))
+        keys.append(("regulatory", g)); specs.append((6, len(p)))
         frames.append(cds.block_frame(REAL_REGULATORY_DIR, g, len(p)))
 v2_all = LocusFusionV2Net(keys, specs, block_frames=frames)
 
@@ -372,7 +400,8 @@ What the drop does to real isolates, on the drug whose loci overlap:
 code(r"""
 sm = load_dataset("STREPTOMYCIN", ["dna", "regulatory"], REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
                   regulatory_dir=REAL_REGULATORY_DIR,
-                  per_modality_branch=False, delta=True, verbose=False)
+                  per_modality_branch=False, delta=True,
+                  verbose=False)
 sm_model = LocusFusionV2Net.from_blocks(sm.blocks, n_drugs=1)
 sx = [torch.from_numpy(b.array[:N]).float() for b in sm.blocks]
 rows = []
@@ -442,7 +471,322 @@ what is left is the 16-token cap: an isolate with more changed columns than that
 keeps the first 16 in 5'->3' order and loses the rest. `stop gained` is new with
 the reference frame — a nonsense mutation used to be an empty residue slot, the
 same as a synonymous change.
+""")
 
+md(r"""
+## 6. Structural features (tentative)
+
+> **Tentative — for discussion.** Nothing here is settled or comes from a trained
+> model. The model currently uses **closeness exp(−d / 10 Å)**. This section lays
+> out the alternatives.
+
+When `structure` is loaded (`--modalities ... structure`), each coding locus gets
+the C-alpha coordinates of its H37Rv AlphaFold model, which gives a distance *d*
+between any two of a locus's variant tokens.
+
+- **Slot-aligned.** Every candidate encoding gives variant token *i* row *i* of
+  the locus's 16×16 matrix, so channel *j* describes token *i* → token *j*.
+- **No position.** Promoter, flank, insertion, rRNA, stop-codon and padding
+  tokens, and `[NULL]`, have no C-alpha. Their row, and every other token's
+  entry for them, reads as "missing".
+- **Base layout unchanged.** The channels are appended after it.
+
+| encoding | channels | value | own slot / same codon | missing |
+|---|---|---|---|---|
+| distance + mask | 32 | d / 10 Å, plus 1 where d exists | 0, mask 1 | 0, mask 0 |
+| distance only | 16 | d / 10 Å | 0 | 0 |
+| **closeness exp(−d/10)** *(current)* | 16 | exp(−d / 10 Å) | 1 | 0 |
+| closeness exp(−d/30) | 16 | exp(−d / 30 Å) | 1 | 0 |
+| closeness 1/(1+d/10) | 16 | 1 / (1 + d / 10 Å) | 1 | 0 |
+| closeness linear | 16 | 1 − d / (the protein's largest C-alpha distance) | 1 | 0 |
+| closeness percentile | 16 | 1 − (share of the protein's residue pairs closer than d) | 1 | 0 |
+| contact | 16 | 1 if d < 8 Å | 1 | 0 |
+
+The two protein-relative encodings (linear, percentile) rescale per gene, so the
+same value means "near for this protein" in a small protein and a large one.
+""")
+
+code(r"""
+from datasets import structure as st
+from models.locusfusion_v2 import STRUCT_LENGTH
+
+sdata = load_dataset(DRUG, ["dna", "structure"], REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
+                     per_modality_branch=False, delta=True, verbose=False)
+assert sdata.isolate_ids == v2data.isolate_ids
+blocks_s = blocks_v2 + [b for b in sdata.blocks if b.modality == "structure"]
+xs_s = xs2 + [torch.from_numpy(b.array[:N]).float() for b in blocks_s[len(blocks_v2):]]
+v2s = LocusFusionV2Net.from_blocks(blocks_s, n_drugs=1)
+V = v2s.max_variants
+del sdata
+
+feat_s = v2s._locus_tokens(xs_s)[0]
+assert torch.equal(feat_s[..., :lf2.C_TOK], v2._locus_tokens(xs2)[0]), "structure changed a base channel"
+rep_s = v2s.variant_report(xs_s)
+for li, r in enumerate(rep_s):                       # the model's channels ARE the current encoding
+    if "struct_dist" in r:
+        k = r["codon"].shape[1]
+        want = st.ENCODINGS[st.CURRENT_ENCODING][1](r["struct_dist"], r["struct_mask"], r["locus"])[0]
+        assert torch.allclose(feat_s[:, li, 1:1 + k, v2s.f_struct:v2s.f_struct + k], want, atol=1e-5)
+print(f"token width {v2.c_tok} -> {v2s.c_tok} ({lf2.C_TOK} base + {V} structure); base channels "
+      f"identical with and without structure; model channels == '{st.CURRENT_ENCODING}'")
+""")
+
+md(r"""
+### 6.1 Which isolates have geometry to encode
+
+A row only says something when a locus has **two or more located tokens**. The
+table also counts the isolates whose tokens are in different codons at least 4
+codons apart. Tokens in the same codon or adjacent codons are always 0–4 Å apart,
+which the 1D position already says.
+""")
+
+code(r"""
+rows = []
+for li, r in enumerate(rep_s):
+    v = r["valid"]
+    if "struct_mask" not in r:
+        rows.append({"locus": r["locus"], "tokens": int(v.sum()), "located": 0})
+        continue
+    loc = r["struct_mask"].diagonal(dim1=1, dim2=2)
+    c = r["codon"]
+    far = (c.unsqueeze(2) - c.unsqueeze(1)).abs() >= 4
+    informative = (r["struct_mask"] & far).flatten(1).any(1)
+    rows.append({"locus": r["locus"], "tokens": int(v.sum()), "located": int(loc.sum()),
+                 "isolates with a token": int(v.any(1).sum()),
+                 "with ≥2 located": int((loc.sum(1) >= 2).sum()),
+                 "with a pair ≥4 codons apart": int(informative.sum())})
+cov = pd.DataFrame(rows).set_index("locus")
+display(cov.fillna(0).astype(int))
+
+kr = rep_s[v2s.loci.index("katG")]
+pairs = {}
+for b in torch.nonzero((kr["struct_mask"] & ((kr["codon"].unsqueeze(2) - kr["codon"].unsqueeze(1)).abs() >= 4))
+                       .flatten(1).any(1)).flatten().tolist():
+    cod = sorted({int(x) + 1 for x in kr["codon"][b][kr["struct_mask"][b].diagonal()]})
+    pairs[tuple(cod)] = pairs.get(tuple(cod), 0) + 1
+top = sorted(pairs.items(), key=lambda t: -t[1])[:5]
+print("katG, most common located codon sets among those isolates:")
+for cod, n in top:
+    print(f"  {n:5d} isolates  codons {list(cod)}")
+""")
+
+md(r"""
+Most isolates have no located pair, so their structure channels only mark their
+own slot. The isolates that do have one mostly share the same few codon sets,
+e.g. katG 315 + 463 (S315T with R463L, a lineage marker). A fixed pair has the
+same distance in every carrier, so it tells the model little beyond which pair is
+present.
+
+### 6.2 The encodings against distance
+
+Each curve is what one channel reads at a given C-alpha distance. The histogram
+underneath shows where this drug's real located token pairs fall; only pairs in
+different codons are counted.
+""")
+
+code(r"""
+CLOSE = [n for n in st.ENCODINGS if n.startswith("closeness") or n.startswith("contact")]
+COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7"]   # categorical slots, fixed order
+
+pairs_d, pairs_l = [], []
+for r in rep_s:
+    if "struct_dist" not in r:
+        continue
+    c = r["codon"]
+    k = c.shape[1]
+    m = r["struct_mask"] & (c.unsqueeze(2) != c.unsqueeze(1)) & torch.triu(torch.ones(k, k, dtype=torch.bool), 1)
+    pairs_d.append(r["struct_dist"][m]); pairs_l += [r["locus"]] * int(m.sum())
+pairs_d = torch.cat(pairs_d)
+
+d = torch.linspace(0, 90, 451)
+one = torch.ones_like(d, dtype=torch.bool)
+fig, (ax, axd, axh) = plt.subplots(3, 1, figsize=(7.6, 8.0), sharex=True, constrained_layout=True,
+                                   gridspec_kw={"height_ratios": [2.2, 1, 1.2]})
+for name, col in zip(CLOSE, COLORS):
+    y = st.ENCODINGS[name][1](d, one, "katG")[0]
+    ax.plot(d, y, color=col, lw=2.6 if name == st.CURRENT_ENCODING else 1.6,
+            label=name + (" (current)" if name == st.CURRENT_ENCODING else "")
+                  + (" — katG" if "linear" in name or "percentile" in name else ""))
+ax.set_ylabel("channel value")
+ax.set_title("Closeness and contact encodings vs C-alpha distance")
+ax.legend(frameon=False, fontsize=8)
+axd.plot(d, d / 10, color="#008300", lw=1.6, label="distance / 10 Å (distance only, distance + mask)")
+axd.set_ylabel("channel value")
+axd.set_title("Distance encodings vs C-alpha distance")
+axd.legend(frameon=False, fontsize=8)
+axh.hist(pairs_d.numpy(), bins=np.arange(0, 91, 2), color="#2a78d6")
+axh.set_xlabel("C-alpha distance (Å)")
+axh.set_ylabel("token pairs")
+axh.set_title(f"{DRUG}: located token pairs in different codons, {N:,} isolates (n={len(pairs_d):,})")
+for a in (ax, axd, axh):
+    a.grid(color="#e6e5df", linewidth=0.8); a.set_axisbelow(True)
+    for side in ("top", "right"):
+        a.spines[side].set_visible(False)
+plt.show()
+q = np.percentile(pairs_d.numpy(), [10, 25, 50, 75, 90])
+print("pair distance percentiles 10/25/50/75/90 (Å):", " / ".join(f"{v:.1f}" for v in q))
+""")
+
+code(r"""
+def own_slot_unique(name):
+    hits = tot = 0
+    for r in rep_s:
+        if "struct_dist" not in r:
+            continue
+        blocks = st.ENCODINGS[name][1](r["struct_dist"], r["struct_mask"], r["locus"])
+        loc = r["struct_mask"].diagonal(dim1=1, dim2=2)
+        if name == "distance + mask":
+            same = (blocks[0] == 0) & (blocks[1] == 1)
+        else:
+            same = blocks[0] == blocks[0].diagonal(dim1=1, dim2=2).unsqueeze(-1)
+        hits += int(((same.sum(-1) == 1) & loc).sum()); tot += int(loc.sum())
+    return hits / max(tot, 1)
+
+def at(name, dist, locus="katG"):
+    return float(st.ENCODINGS[name][1](torch.tensor([dist]), torch.tensor([True]), locus)[0][0])
+
+rows = []
+for name, (ch, fn) in st.ENCODINGS.items():
+    vals = torch.cat([fn(pairs_d[i:i + 1], torch.ones(1, dtype=torch.bool), l)[0]
+                      for i, l in enumerate(pairs_l)]) if name in CLOSE else None
+    rows.append({"encoding": name + (" (current)" if name == st.CURRENT_ENCODING else ""),
+                 "channels": ch,
+                 **{f"{x:g} Å": at(name, x) for x in (0, 3.8, 10, 20, 40, 60)},
+                 "real pairs in 0.05–0.95": (float(((vals > 0.05) & (vals < 0.95)).float().mean())
+                                             if vals is not None else np.nan),
+                 "own slot unique": own_slot_unique(name),
+                 "missing ≠ far": "yes" if name == "distance + mask" else "no"})
+res = pd.DataFrame(rows).set_index("encoding")
+display(res.style.format({c: "{:.3f}" for c in res.columns if c.endswith("Å")}
+                         | {"real pairs in 0.05–0.95": "{:.0%}", "own slot unique": "{:.1%}"},
+                         na_rep="—"))
+""")
+
+md(r"""
+How to read the table:
+
+- **Value columns** are what one channel reads at that distance (katG for the
+  protein-relative encodings).
+- **`real pairs in 0.05–0.95`** is the share of this drug's real token pairs
+  that land where a closeness channel still separates distances. Near 0 or near
+  1, pairs at different distances look alike. The distance encodings have no
+  ceiling, so the column doesn't apply to them.
+- **`own slot unique`** is the share of located tokens whose row has exactly one
+  "same residue" entry. That entry is how a token can find its own slot.
+- **`missing ≠ far`** is whether a missing partner (promoter, rRNA, padding)
+  can be told apart from a very distant one.
+
+### 6.3 One isolate under each encoding
+
+This example is from ETHAMBUTOL's embA, not this drug: ISONIAZID has no isolate
+with six or more located tokens in separate, non-adjacent codons, because its
+multi-token isolates are deletions through consecutive codons. The pick is the
+embA isolate with at least six distinct located codons whose tokens are furthest
+apart on the fold.
+""")
+
+code(r"""
+EX_DRUG, EX_LOCUS = "ETHAMBUTOL", "embA"
+ex = load_dataset(EX_DRUG, ["dna", "structure"], REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
+                  loci=[EX_LOCUS], per_modality_branch=False, delta=True, verbose=False)
+ex_net = LocusFusionV2Net.from_blocks(ex.blocks, n_drugs=1)
+ex_rep = ex_net.variant_report([torch.from_numpy(b.array).float() for b in ex.blocks])[0]
+ex_ids = ex.isolate_ids
+del ex
+
+loc = ex_rep["struct_mask"].diagonal(dim1=1, dim2=2)
+def score(b):
+    cod = sorted(set(ex_rep["codon"][b][loc[b]].tolist()))
+    if len(cod) < 6:
+        return -1
+    D = ex_rep["struct_dist"][b][loc[b]][:, loc[b]]
+    return float(D[torch.triu(torch.ones_like(D, dtype=torch.bool), 1)].median())
+cand = torch.nonzero(loc.sum(1) >= 6).flatten().tolist()
+EX = max(cand, key=score)
+k = int(ex_rep["valid"][EX].sum())
+s = st.load_structure(EX_LOCUS)
+ref_row = reference_row(REAL_GENOTYPE_DIR, EX_LOCUS)
+EX_AA = biochem.translate_reference_frame(ref_row, ref_row, cds.cds_columns(REAL_GENOTYPE_DIR, EX_LOCUS))
+codons = [int(c) for c in ex_rep["codon"][EX, :k]]
+located = [bool(x) for x in loc[EX, :k]]
+labels = [f"{EX_AA[c]}{c + 1}" if ok else ("promoter" if int(ex_rep["region"][EX, j]) == 0 else "no codon")
+          for j, (c, ok) in enumerate(zip(codons, located))]
+D_ex = ex_rep["struct_dist"][EX:EX + 1, :k, :k]
+M_ex = ex_rep["struct_mask"][EX:EX + 1, :k, :k]
+print(f"{EX_DRUG} / {EX_LOCUS}: isolate {ex_ids[EX]}, {k} tokens, {sum(located)} located: {labels}")
+
+tab = pd.DataFrame(np.where(M_ex[0].numpy(), D_ex[0].numpy(), np.nan),
+                   index=[f"{j + 1}: {l}" for j, l in enumerate(labels)],
+                   columns=[f"→{j + 1}" for j in range(k)])
+display(tab.style.format("{:.1f}", na_rep="·").background_gradient(cmap="Blues_r", vmin=0, vmax=80)
+        .set_caption("C-alpha distance (Å) between the tokens; · = no distance"))
+""")
+
+code(r"""
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401  (registers the 3d projection)
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+
+ca = s["ca"]
+ok = ~np.isnan(ca).any(1)
+pts = [(j, codons[j]) for j in range(k) if located[j]]
+norm = Normalize(0, 80)
+cmap = plt.get_cmap("viridis_r")
+fig = plt.figure(figsize=(7.6, 6.4), constrained_layout=True)
+ax = fig.add_subplot(projection="3d")
+ax.plot(*ca[ok].T, color="#c9c8c1", lw=0.8)
+for a in range(len(pts)):
+    for b in range(a + 1, len(pts)):
+        (ja, ca_a), (jb, ca_b) = pts[a], pts[b]
+        if ca_a == ca_b:
+            continue
+        seg = np.stack([ca[ca_a], ca[ca_b]])
+        ax.plot(*seg.T, color=cmap(norm(np.linalg.norm(seg[0] - seg[1]))), lw=1.4, alpha=0.9)
+for j, c in pts:
+    ax.scatter(*ca[c], s=60, color="#eb6834", edgecolor="white", linewidth=1.0, depthshade=False)
+    ax.text(*ca[c], f"  {j + 1}: {labels[j]}", fontsize=8)
+ax.set_xlabel("x (Å)"); ax.set_ylabel("y (Å)"); ax.set_zlabel("z (Å)")
+ax.set_title(f"{EX_LOCUS} C-alpha trace and isolate {ex_ids[EX]}'s located tokens")
+fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, shrink=0.6, label="token-pair distance (Å)")
+plt.show()
+""")
+
+code(r"""
+panels = []
+for name, (ch, fn) in st.ENCODINGS.items():
+    blocks = fn(D_ex, M_ex, EX_LOCUS)
+    tag = " (current)" if name == st.CURRENT_ENCODING else ""
+    if name == "distance + mask":
+        panels += [(f"{name}: distance / 10 Å", blocks[0][0], "dist"), (f"{name}: mask", blocks[1][0], "unit")]
+    else:
+        panels.append((name + tag, blocks[0][0], "dist" if name.startswith("distance") else "unit"))
+fig, axes = plt.subplots(3, 3, figsize=(12.5, 12), constrained_layout=True)
+short = [f"{j + 1}:{l}" for j, l in enumerate(labels)]
+for ax, (title, A, kind) in zip(axes.flat, panels):
+    A = A.numpy()
+    im = ax.imshow(A, cmap="Blues" if kind == "unit" else "Greens_r",
+                   vmin=0, vmax=1 if kind == "unit" else max(float(A.max()), 1e-6))
+    ax.set_xticks(range(k), short, rotation=90, fontsize=7)
+    ax.set_yticks(range(k), short, fontsize=7)
+    ax.set_title(title, fontsize=9)
+    for i in range(k):
+        for j in range(k):
+            ax.text(j, i, f"{A[i, j]:.2f}", ha="center", va="center", fontsize=5.5,
+                    color="white" if (A[i, j] > 0.6 if kind == "unit" else A[i, j] < 0.4 * A.max()) else "#1a1a19")
+    fig.colorbar(im, ax=ax, shrink=0.7)
+for ax in list(axes.flat)[len(panels):]:
+    ax.axis("off")
+fig.suptitle(f"{EX_LOCUS}, isolate {ex_ids[EX]}: the channels token i carries (row i), by encoding")
+plt.show()
+""")
+
+md(r"""
+Row *i* of each panel is exactly what token *i* would carry under that encoding.
+For the far pairs in this isolate, exp(−d/10) reads close to 0 while exp(−d/30),
+linear and percentile still separate them. Contact keeps only "within 8 Å".
+""")
+
+md(r"""
 ## Caveats
 
 * **"locusfusion" here is this branch's `models/locusfusion.py` — the tokenizer
@@ -451,10 +795,13 @@ same as a synonymous change.
   v1 coordinate mismatch in §3 (katG S315 at 357.7 against 314) is the bug that
   branch fixed, so §1-3 compare v2 against the pre-fix v1, and the trained control
   for v2 is `results/experiments/locusfusion_fixed`, not this notebook's v1.
-* v1 and v2 read different protein/biophysical blocks, each the input it was
-  built for: v1 the isolate frame (20 channels, left-aligned), v2 the H37Rv codon
-  grid (21 channels with STOP, one column per reference codon). DNA and promoter
-  blocks are identical.
+* v1 and v2 read different protein blocks, each the input it was built for:
+  v1 the isolate frame (20 residue channels, left-aligned), v2 the H37Rv codon
+  grid (21 channels: 20 residues and STOP, one column per reference codon). Both
+  read the same 5-channel nucleotide alphabet (A C T G -).
+* **An uncalled base makes no token** in either model. `N` is the all-zero
+  column, and under delta encoding that is what a column matching H37Rv looks
+  like.
 * §1-3 are one drug (`ISONIAZID`, two loci) on the first 4,000 isolates, §5 on
   all of them;
   §4 places all 18 loci from their reference rows and measures the drop on
@@ -462,13 +809,22 @@ same as a synonymous change.
   and *rrl* are hypervariable and are where the 16-token cap binds.
 * ISONIAZID's two loci do not overlap their promoter windows, so the drop in §4
   leaves every ISONIAZID number in §1 and §5 unchanged.
+* The `locusfusion_fixed` run this branch compares against also carries the
+  reference on its token, as a symbol id rather than as a property delta, and it
+  detects an uncalled base, which v2 does not.
 * No model here is trained. This notebook compares what the two tokenizers
-  *emit*; whether the merged token trains better is a run, not a table.
-* The residue attached to a token is the isolate's residue at that codon, which
-  is the *changed* one only because the protein block is delta-encoded — a
-  synonymous substitution leaves the protein slots zero by construction. A codon
-  that lost a base to a deletion reads `-` and carries no residue; the deletion
-  is its gap token.
+  *emit*. Whether the merged token (or `structure`) trains better is a question
+  for a training run, not this notebook.
+* The residue attached to a token is the isolate's residue at that codon. Where
+  the codon did not change, the delta-encoded block is zero and the REFERENCE
+  residue fills the slot instead, so "unchanged" and "no residue here" are no
+  longer the same token; the property delta is what separates a synonymous
+  change from a substitution.
+* **Which residues changed is read off the protein block, never off the
+  properties.** STOP and a deleted codon have all-zero properties legitimately.
+  In a `dna+biophysical` cell, with no protein block loaded, those two are not
+  separable from "unchanged" — the one cell where a stop gain reads as a bare
+  base.
 * Placement needs each block's reference row to be an exact H37Rv substring.
   It is for all 18 loci here; a block that is not falls back to the old
   convention — promoter counted back from the window's end, nothing dropped —
@@ -476,6 +832,11 @@ same as a synonymous change.
 * `coord` for a promoter column is its genome distance from the start codon in
   base pairs / 3. That is a codon *unit*, not a codon — there is no reading frame
   upstream, which is why promoter tokens carry no phase.
+* **§6 is tentative.** The encoding (the model's current exp(−d/10) included),
+  its length scales and AlphaFold as the source of structures are all
+  placeholders for discussion. The AlphaFold models are single chains with no
+  ligands, pLDDT is not a model input, and only distances within a locus exist.
+  §6.3's example is from ETHAMBUTOL/embA, not ISONIAZID.
 """)
 
 nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3",

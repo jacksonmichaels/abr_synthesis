@@ -185,6 +185,11 @@ def one_hot_aa(protein_seq: str, pad_to: int = None,
     return out
 
 
+def residue_channels(with_stop: bool = False):
+    """The channel names `one_hot_aa` emits, in order."""
+    return list(RESIDUES_WITH_STOP if with_stop else AMINO_ACIDS)
+
+
 def upsample_to_nt(bio: np.ndarray) -> np.ndarray:
     """Repeat each AA-position column 3x (AA resolution -> ~nucleotide
     resolution). Used only by EarlyFusionCNN's channel-stack ablation."""

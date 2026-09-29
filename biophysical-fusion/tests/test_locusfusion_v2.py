@@ -30,6 +30,10 @@ did not, or a failure it was built to avoid:
   * **Nothing is called wild type.** The per-locus token is [NULL].
   * Fallback without frames warns; dense input warns; a checkpoint rebuilds the
     same maps and the same logits; every parameter gets a gradient.
+  * **Structure is a row of the distance matrix.** Each located token carries its
+    C-alpha distance to every other variant token of its locus, with a mask that
+    is off for promoter, rRNA, stop and [NULL]; the base 48 channels -- and so
+    every existing checkpoint -- are untouched, and the fold survives config.json.
 """
 import sys
 import traceback
@@ -43,7 +47,9 @@ import torch  # noqa: E402
 
 from models import (LOCUSFUSION_V2_DEFAULTS, LocusFusionV2Net,  # noqa: E402
                     locusfusion_defaults)
-from models.locusfusion_v2 import C_TOK, F_IS_NULL, F_PHASE, SLOTS  # noqa: E402
+from models.locusfusion_v2 import (C_TOK, D_BIO, F_IS_NULL,  # noqa: E402
+                                   F_PHASE, RESIDUE_PROPERTIES, SLOTS,
+                                   STRUCT_LENGTH, _RES_ORDER)
 from training.checkpoint import build_model_from_config, model_config  # noqa: E402
 
 _RESULTS = []
@@ -65,6 +71,10 @@ SPECS = [(5, 120), (5, 90), (5, 60),
          (21, 20), (21, 20), (21, 5),
          (3, 20),
          (5, 40), (5, 30)]
+# H37Rv's residue at each of the 20 codons, as the aa blocks carry it on
+# FeatureBlock.meta. Distinct residues so a filled slot names a real one:
+# alanine at every codon but codon 5, which is serine.
+REF_AA = "A" * 5 + "S" + "A" * 14
 FRAMES = [
     {"ref_gap_cols": [45], "genome_start": 1000, "genome_end": 1119, "strand": "+",
      "cds_start": 30, "cds_end": 91, "has_cds": True},
@@ -72,7 +82,8 @@ FRAMES = [
      "cds_start": 15, "cds_end": 75, "has_cds": True},
     {"ref_gap_cols": [], "genome_start": 9000, "genome_end": 9060, "strand": "+",
      "cds_start": 10, "cds_end": 60, "has_cds": False},
-    {}, {}, {}, {},
+    {"ref_residues": REF_AA}, {"ref_residues": REF_AA}, {"ref_residues": "AAAAA"},
+    {"ref_residues": REF_AA},
     {"ref_gap_cols": [], "genome_start": 980, "genome_end": 1020, "strand": "+"},
     {"ref_gap_cols": [], "genome_start": 5100, "genome_end": 5130, "strand": "-"},
 ]
@@ -187,13 +198,85 @@ def _test_residue_lands_on_its_codon_gap_aware():
     assert abs(coord - 17 / 3) < 1e-5, coord
 
 
-def _test_synonymous_change_carries_no_residue():
+def _test_synonymous_change_restates_the_reference():
+    """A delta-encoded aa block is zero where the residue did not change, which
+    is indistinguishable from "no residue here". The reference fills it instead:
+    the token says which residue the codon still codes for, and the property
+    delta -- the only channel that separates it from a substitution -- is zero."""
     m = net()
     xs = put(reference_batch(1), ("dna", "gA"), 48, channel=2)       # protein stays zero
     f, _, valid = token(m, xs, "gA", 1)
     assert valid
-    assert float(f[SLOTS["protein"][0]:SLOTS["biophysical"][1]].abs().sum()) == 0
+    ser = _RES_ORDER.index("S")                       # REF_AA's codon 5
+    aa = f[SLOTS["protein"][0]:SLOTS["protein"][1]]
+    assert int(aa.argmax()) == ser and float(aa.sum()) == 1.0, \
+        "a synonymous token did not restate the reference residue"
+    props = torch.as_tensor(RESIDUE_PROPERTIES[ser])
+    assert torch.allclose(f[SLOTS["biophysical"][0]:SLOTS["biophysical"][1]], props,
+                          atol=1e-6), "the isolate's properties were left empty"
+    assert float(f[D_BIO[0]:D_BIO[1]].abs().sum()) == 0, \
+        "a synonymous change reported a property delta"
     assert float(f[F_PHASE:F_PHASE + 3].sum()) == 1, "a coding base lost its phase"
+
+
+def _test_substitution_carries_reference_and_delta():
+    """A real substitution: both residues are on the token and the delta is what
+    the substitution did to each property."""
+    m = net()
+    ser, asn = _RES_ORDER.index("S"), _RES_ORDER.index("N")
+    xs = put(reference_batch(1), ("dna", "gA"), 48, channel=2)       # the base
+    xs = put(xs, ("protein", "gA"), 5, channel=asn)                  # S -> N
+    alt = torch.as_tensor(RESIDUE_PROPERTIES[asn])
+    ref = torch.as_tensor(RESIDUE_PROPERTIES[ser])
+    for c in range(3):                                               # its properties
+        xs = put(xs, ("biophysical", "gA"), 5, channel=c, value=float(alt[c]))
+    f, _, valid = token(m, xs, "gA", 1)
+    assert valid
+    assert int(f[SLOTS["protein"][0]:SLOTS["protein"][1]].argmax()) == asn
+    assert torch.allclose(f[D_BIO[0]:D_BIO[1]], alt - ref, atol=1e-5), \
+        "the property delta is not alt - ref"
+    assert D_BIO[1] == F_IS_NULL, "a reference-value slot is still in the layout"
+
+
+def _test_delta_without_a_biophysical_block():
+    """The properties are a table lookup from the residue, so a dna+protein cell
+    still gets the reference and the delta."""
+    keys = [k for k in KEYS if k[0] != "biophysical"]
+    specs = [sp for k, sp in zip(KEYS, SPECS) if k[0] != "biophysical"]
+    frames = [fr for k, fr in zip(KEYS, FRAMES) if k[0] != "biophysical"]
+    torch.manual_seed(0)
+    m = LocusFusionV2Net(keys, specs, block_frames=frames); m.eval()
+    idx = {k: i for i, k in enumerate(keys)}
+    xs = [torch.zeros(1, c, length) for c, length in specs]
+    ser, asn = _RES_ORDER.index("S"), _RES_ORDER.index("N")
+    xs[idx[("dna", "gA")]][0, 2, 48] = 1.0
+    xs[idx[("protein", "gA")]][0, asn, 5] = 1.0
+    feat, _, valid, _ = m._locus_tokens(xs)
+    li = m.loci.index("gA")
+    f = feat[0, li, 1]
+    assert bool(valid[0, li, 1])
+    ref = torch.as_tensor(RESIDUE_PROPERTIES[ser])
+    alt = torch.as_tensor(RESIDUE_PROPERTIES[asn])
+    assert torch.allclose(f[D_BIO[0]:D_BIO[1]], alt - ref, atol=1e-5)
+
+
+def _test_a_deleted_base_does_not_restate_the_reference():
+    """A gap token is a base the isolate LOST. The aa block is delta-zero at that
+    codon (nothing SUBSTITUTED it), so the reference fill must not claim the codon
+    still reads as H37Rv -- the deletion would vanish from the residue channels."""
+    m = net()
+    gap = SLOTS["dna"][0] + 4                       # A C T G -
+    xs = put(reference_batch(1), ("dna", "gA"), 48, channel=4)
+    f, _, valid = token(m, xs, "gA", 1)
+    ser = _RES_ORDER.index("S")                     # REF_AA's codon 5
+    assert valid and float(f[gap]) == 1.0, "a deleted base made no token"
+    assert float(f[SLOTS["protein"][0]:SLOTS["protein"][1]].abs().sum()) == 0, \
+        "a deletion was reported as an unchanged residue"
+    assert float(f[SLOTS["biophysical"][0]:SLOTS["biophysical"][1]].abs().sum()) == 0
+    # ...and the delta says the reference residue is GONE, as it does for a stop
+    assert torch.allclose(f[D_BIO[0]:D_BIO[1]],
+                          -torch.as_tensor(RESIDUE_PROPERTIES[ser]), atol=1e-6), \
+        "a deletion did not report the loss of the reference residue"
 
 
 def _test_flank_and_promoter_carry_no_codon():
@@ -314,6 +397,8 @@ def _test_rrna_carries_no_codons():
     assert valid and abs(coord - 2 / 3) < 1e-5         # origin at the rRNA gene start
     assert float(f[SLOTS["protein"][0]:].abs().sum()) == 0, \
         "an rRNA token carried a residue, biophysics or phase"
+    assert float(f[D_BIO[0]:D_BIO[1]].abs().sum()) == 0, \
+        "an rRNA token carried a property delta"
 
 
 # --- the reference codon grid ---------------------------------------------
@@ -351,7 +436,11 @@ def _test_stop_gain_carries_a_residue():
     lo, hi = SLOTS["protein"]
     assert valid[:, li, 1].all()
     assert float(feat[0, li, 1, lo + 20]) == 1.0, "the stop codon is not on its token"
-    assert float(feat[1, li, 1, lo:hi].abs().sum()) == 0, "the synonymous twin carried a residue"
+    assert int(feat[1, li, 1, lo:hi].argmax()) == _RES_ORDER.index("S"), \
+        "the synonymous twin did not restate the reference residue"
+    assert float(feat[0, li, 1, D_BIO[0]:D_BIO[1]].abs().sum()) > 0, \
+        "a stop gain reported no property change"
+    assert float(feat[1, li, 1, D_BIO[0]:D_BIO[1]].abs().sum()) == 0
     assert not torch.allclose(m(xs)[0], m(xs)[1]), "a stop gain and a synonymous change scored the same"
 
 
@@ -455,8 +544,226 @@ def _test_feature_layout():
     spans = sorted(SLOTS.values())
     for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
         assert a1 <= b0, f"feature slots overlap: {spans}"
-    assert spans[-1][1] <= F_IS_NULL < F_PHASE and F_PHASE + 3 == C_TOK == 38
-    assert SLOTS["protein"][1] - SLOTS["protein"][0] == 21, "protein slot is not 20 residues + STOP"
+    assert spans[-1][1] <= D_BIO[0]
+    assert D_BIO[1] <= F_IS_NULL < F_PHASE and F_PHASE + 3 == C_TOK == 41
+    assert SLOTS["protein"][1] - SLOTS["protein"][0] == 21, \
+        "protein slot is not 20 residues + STOP"
+    assert SLOTS["dna"][1] - SLOTS["dna"][0] == 5, "dna slot is not A C T G -"
+    assert D_BIO[1] - D_BIO[0] == SLOTS["biophysical"][1] - SLOTS["biophysical"][0]
+    assert RESIDUE_PROPERTIES.shape == (21, 3)
+    assert not RESIDUE_PROPERTIES[_RES_ORDER.index("*")].any(), "STOP has properties"
+
+
+# --- the structure channels --------------------------------------------------
+# gA's 20 codons laid out along x, 3.8 A apart, except codon 12, which folds back
+# to sit 5 A above codon 5. Codon 19 is the stop: no coordinate. gB gets a fold
+# too; rrX (rRNA) gets none.
+def _fold(n, fold_back=True):
+    ca = [[3.8 * k, 0.0, 0.0] for k in range(n)]
+    if fold_back and n > 12:
+        ca[12] = [3.8 * 5, 5.0, 0.0]
+    ca[n - 1] = None
+    return {"ca": ca, "model_id": "AF-TEST-F1", "afdb_version": 0}
+
+
+S_KEYS = KEYS + [("structure", "gA"), ("structure", "gB")]
+S_SPECS = SPECS + [(0, 20), (0, 20)]
+S_FRAMES = FRAMES + [_fold(20), _fold(20, fold_back=False)]
+S = {key: i for i, key in enumerate(S_KEYS)}
+
+
+def s_net(**kw):
+    torch.manual_seed(0)
+    m = LocusFusionV2Net(S_KEYS, S_SPECS, block_frames=S_FRAMES, **kw)
+    m.eval()
+    return m
+
+
+def s_batch(b=1):
+    return [torch.zeros(b, c, length) for c, length in S_SPECS]
+
+
+def s_put(xs, key, column, channel=0):
+    xs = [x.clone() for x in xs]
+    xs[S[key]][:, channel, column] = 1.0
+    return xs
+
+
+def _struct(m, xs, locus, slot):
+    """(proximity row, "is a real entry" row) of one variant slot.
+
+    The channels hold exp(-d / STRUCT_LENGTH), so a real entry is > 0 and an
+    absent one is exactly 0; the distance in A is -ln(proximity) * STRUCT_LENGTH.
+    """
+    feat, _, _, _ = m._locus_tokens(xs)
+    f = feat[0, m.loci.index(locus), slot]
+    V = m.max_variants
+    prox = f[m.f_struct:m.f_struct + V]
+    return prox, (prox > 0).float()
+
+
+def _angstrom(prox):
+    """The proximity channels read back as distances in A (inf where absent)."""
+    return -torch.log(prox.clamp(min=1e-12)) * STRUCT_LENGTH
+
+
+def _test_structure_width_and_checkpoint_compat():
+    plain, s = net(), s_net()
+    assert plain.c_tok == C_TOK == 41 and plain.tok_proj.in_features == 41, \
+        "a model without structure changed width"
+    assert not plain.use_structure and s.use_structure
+    assert s.c_tok == 41 + s.max_variants == s.tok_proj.in_features, \
+        "structure is not exactly max_variants channels"
+
+
+def _test_structure_leaves_the_other_channels_alone():
+    xs = s_put(s_put(s_batch(), ("dna", "gA"), 48, 2), ("regulatory", "gB"), 3)
+    a = net()._locus_tokens([x for x, k in zip(xs, S_KEYS) if k[0] != "structure"])[0]
+    b = s_net()._locus_tokens(xs)[0]
+    assert torch.equal(a, b[..., :C_TOK]), "adding structure changed a base channel"
+
+
+def _test_structure_row_is_the_distance_matrix():
+    """Promoter column 0 (slot 1), codon 5 (column 48, slot 2), codon 12 (column
+    67, slot 3). Row index j is variant slot j+1."""
+    m = s_net()
+    xs = s_put(s_put(s_put(s_batch(), ("regulatory", "gA"), 0), ("dna", "gA"), 48),
+               ("dna", "gA"), 67)
+    rep = {r["locus"]: r for r in m.variant_report(xs)}["gA"]
+    assert rep["codon"][0, :3].tolist() == [-1, 5, 12], rep["codon"][0, :3]
+    prox, mk = _struct(m, xs, "gA", 2)                       # codon 5
+    d = _angstrom(prox)
+    assert mk[:3].tolist() == [0, 1, 1] and not mk[3:].any(), mk
+    assert abs(float(prox[1]) - 1.0) < 1e-5, "a token is not maximally close to itself"
+    assert abs(float(d[2]) - 5.0) < 1e-3, f"codon 5 -> 12 should be 5 A, got {float(d[2])}"
+    prox12, _ = _struct(m, xs, "gA", 3)
+    assert abs(float(_angstrom(prox12)[1]) - 5.0) < 1e-3, "the matrix is not symmetric"
+    dp, mp = _struct(m, xs, "gA", 1)                         # the promoter token
+    assert not dp.any() and not mp.any(), "a promoter token was placed"
+    assert torch.allclose(rep["struct_dist"][0, 1, 2], torch.tensor(5.0), atol=1e-4)
+    # slot-aligned: stacking the tokens' distance channels IS the matrix
+    V = m.max_variants
+    feat = m._locus_tokens(xs)[0][0, m.loci.index("gA"), 1:1 + V]
+    stacked = feat[:, m.f_struct:m.f_struct + V]
+    k = rep["struct_dist"].shape[-1]
+    real = stacked[:k, :k] > 0
+    assert torch.allclose(_angstrom(stacked[:k, :k])[real],
+                          rep["struct_dist"][0][real], atol=1e-3)
+    assert not stacked[k:].any() and not stacked[:, k:].any()
+
+
+def _test_structure_same_codon_is_zero_not_masked():
+    m = s_net()
+    xs = s_put(s_put(s_batch(), ("dna", "gA"), 47), ("dna", "gA"), 48)   # codon 5, phases 1, 2
+    prox, mk = _struct(m, xs, "gA", 1)
+    assert mk[:2].tolist() == [1, 1], "two tokens in one codon are not both placed"
+    assert abs(float(prox[1]) - 1.0) < 1e-5, "0 A did not read as maximum proximity"
+
+
+def _test_structure_masks_stop_rrna_and_null():
+    m = s_net()
+    xs = s_put(s_put(s_batch(), ("dna", "gA"), 88), ("dna", "gA"), 48)   # stop, codon 5
+    xs = s_put(xs, ("dna", "rrX"), 20)
+    rep = {r["locus"]: r for r in m.variant_report(xs)}
+    assert rep["gA"]["codon"][0, :2].tolist() == [5, 19]
+    d, mk = _struct(m, xs, "gA", 2)
+    assert not mk.any() and not d.any(), "the stop codon was placed"
+    _, mk5 = _struct(m, xs, "gA", 1)
+    assert mk5.tolist()[:2] == [1, 0], "a located token claims a distance to the stop"
+    feat, _, _, _ = m._locus_tokens(xs)
+    assert not feat[:, :, :, C_TOK:][:, m.loci.index("rrX")].any(), "an rRNA token was placed"
+    assert not feat[:, :, 0, C_TOK:].any(), "[NULL] was placed"
+
+
+def _test_structure_bad_construction_rejected():
+    cases = [
+        (S_KEYS + [("structure", "rrX")], S_SPECS + [(0, 5)], S_FRAMES + [_fold(5)],
+         "a structure block on an rRNA locus"),
+        (S_KEYS[:-1] + [("structure", "gB")], S_SPECS[:-1] + [(0, 19)],
+         S_FRAMES[:-1] + [_fold(19)], "a structure block off the codon grid"),
+        (S_KEYS, S_SPECS, S_FRAMES[:-1] + [{}], "a structure block with no coordinates"),
+    ]
+    for keys, specs, frames, what in cases:
+        try:
+            LocusFusionV2Net(keys, specs, block_frames=frames)
+        except ValueError:
+            continue
+        raise AssertionError(f"{what} was accepted")
+
+
+def _test_structure_backward_and_round_trip():
+    import json
+
+    class _B:
+        def __init__(self, key, spec, meta):
+            self.name = f"{key[0]}:{key[1]}"
+            self._spec, self.meta, self.channel_names = spec, meta, []
+
+        def spec(self):
+            return self._spec
+
+    blocks = [_B(k, s, f) for k, s, f in zip(S_KEYS, S_SPECS, S_FRAMES)]
+    torch.manual_seed(0)
+    a = LocusFusionV2Net.from_blocks(blocks, drug_names=["A", "B"], carry_variants=2)
+    xs = s_put(s_put(s_batch(3), ("dna", "gA"), 48), ("dna", "gA"), 67)
+    a(xs).sum().backward()
+    dead = [n for n, p in a.named_parameters() if p.grad is None]
+    assert not dead, f"parameters with no gradient: {dead}"
+    # through JSON, as config.json is written: a missing coordinate is None there
+    cfg = json.loads(json.dumps(model_config(
+        arch="locusfusion_v2", blocks=blocks, encoder_types=["cnn"] * len(S_KEYS),
+        drug_names=["A", "B"], out_bias=None,
+        head={"hidden": 256, "dropout": 0.0, "per_drug_hidden": 0},
+        locusfusion={"carry_variants": 2}), allow_nan=False))
+    b = build_model_from_config({"model": cfg})
+    b.load_state_dict(a.state_dict(), strict=True)
+    assert b.use_structure and b.c_tok == a.c_tok
+    for li in range(len(a.loci)):
+        for k in ("ca", "has"):
+            assert torch.equal(getattr(a, f"struct_{k}_{li}"), getattr(b, f"struct_{k}_{li}"))
+    a.eval(); b.eval()
+    assert torch.allclose(a(xs), b(xs), atol=1e-6), "rebuilt model gives different logits"
+
+
+def _test_structure_length_scale():
+    """struct_length sets the decay: codon 5 -> 12 is 5 A apart, so it reads
+    exp(-5/10) by default and exp(-5/30) at 30 A. A config records it only when
+    it differs from the default, so every older checkpoint rebuilds at 10 A."""
+    import json
+
+    xs = s_put(s_put(s_batch(), ("dna", "gA"), 48), ("dna", "gA"), 67)
+    li = None
+    for L in (STRUCT_LENGTH, 30.0):
+        m = s_net(struct_length=L)
+        li = m.loci.index("gA")
+        f = m._locus_tokens(xs)[0][0, li, 1]
+        got = float(f[m.f_struct + 1])
+        assert abs(got - float(np.exp(-5.0 / L))) < 1e-5, (L, got)
+        assert abs(float(f[m.f_struct]) - 1.0) < 1e-6, "own slot is not 1"
+    assert LOCUSFUSION_V2_DEFAULTS["struct_length"] == STRUCT_LENGTH
+
+    class _B:
+        def __init__(self, key, spec, meta):
+            self.name = f"{key[0]}:{key[1]}"
+            self._spec, self.meta, self.channel_names = spec, meta, []
+
+        def spec(self):
+            return self._spec
+
+    blocks = [_B(k, sp, fr) for k, sp, fr in zip(S_KEYS, S_SPECS, S_FRAMES)]
+    head = {"hidden": 256, "dropout": 0.0, "per_drug_hidden": 0}
+    for knobs, want in (({}, STRUCT_LENGTH), ({"struct_length": 30.0}, 30.0)):
+        cfg = json.loads(json.dumps(model_config(
+            arch="locusfusion_v2", blocks=blocks, encoder_types=["cnn"] * len(S_KEYS),
+            drug_names=["A"], out_bias=None, head=head, locusfusion=knobs)))
+        b = build_model_from_config({"model": cfg})
+        assert b.struct_length == want, (knobs, b.struct_length)
+    try:
+        s_net(struct_length=0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("struct_length=0 was accepted")
 
 
 # --- the real reference rows, when mounted ---------------------------------
@@ -501,7 +808,14 @@ if __name__ == "__main__":
     check("nothing is named for wild type", _test_nothing_is_called_wild_type)
     check("only nucleotide blocks make tokens", _test_only_nucleotides_make_tokens)
     check("the residue lands on its own codon, gap-aware", _test_residue_lands_on_its_codon_gap_aware)
-    check("a synonymous change carries no residue", _test_synonymous_change_carries_no_residue)
+    check("a synonymous change restates the reference residue",
+          _test_synonymous_change_restates_the_reference)
+    check("a substitution carries both residues and the property delta",
+          _test_substitution_carries_reference_and_delta)
+    check("the property delta survives without a biophysical block",
+          _test_delta_without_a_biophysical_block)
+    check("a deleted base does not restate the reference residue",
+          _test_a_deleted_base_does_not_restate_the_reference)
     check("flank and promoter bases carry no codon", _test_flank_and_promoter_carry_no_codon)
     check("promoter placed by genome position, + strand", _test_promoter_placed_by_genome_position_plus_strand)
     check("promoter placed by genome position, - strand", _test_promoter_placed_by_genome_position_minus_strand)
@@ -520,6 +834,18 @@ if __name__ == "__main__":
     check("backward reaches every parameter", _test_backward_reaches_every_parameter)
     check("a checkpoint config rebuilds the same model", _test_config_round_trips)
     check("feature layout", _test_feature_layout)
+    check("structure: width, and old checkpoints unchanged",
+          _test_structure_width_and_checkpoint_compat)
+    check("structure: the other channels are untouched",
+          _test_structure_leaves_the_other_channels_alone)
+    check("structure: a token's row is its distance-matrix row",
+          _test_structure_row_is_the_distance_matrix)
+    check("structure: one codon is 0 A, not masked", _test_structure_same_codon_is_zero_not_masked)
+    check("structure: stop, rRNA and [NULL] are masked", _test_structure_masks_stop_rrna_and_null)
+    check("structure: bad construction is rejected", _test_structure_bad_construction_rejected)
+    check("structure: the decay length is a knob, default 10 A", _test_structure_length_scale)
+    check("structure: backward, and a JSON config rebuilds it",
+          _test_structure_backward_and_round_trip)
     check("real frames, all loci (skipped without data)", _test_real_frames_all_loci)
     n_fail = _RESULTS.count(False)
     print(f"\n{len(_RESULTS) - n_fail}/{len(_RESULTS)} passed")

@@ -57,9 +57,10 @@ REAL_REGULATORY_DIR = (
 # AlphaFold DB models of the H37Rv proteins, C-alpha coordinates re-indexed onto
 # the H37Rv codon grid (one {locus}.npz per coding locus, plus manifest.json).
 # Built by scripts/fetch_af_structures.py; read by datasets/structure.py.
-REAL_STRUCTURE_DIR = (
-    "/home/jacksonmicha_umass_edu/abr_workspace/structures/alphafold"
-)
+# Tracked in git (AlphaFold DB, CC-BY 4.0; raw/ PDBs are not), so it resolves
+# inside whichever clone is running.
+REAL_STRUCTURE_DIR = str(Path(__file__).resolve().parent.parent
+                         / "structures" / "alphafold")
 # Trained model weights. NOT under results/ — that lives on the workspace
 # filesystem and is git-ignored, and a full grid is tens of GB. This is the
 # lab's shared large-storage volume, so every run's checkpoints and the config

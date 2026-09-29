@@ -71,3 +71,14 @@ reference_docs/
 # --- rasters of tracked vectors ---------------------------------------------
 # biophysical-fusion/diagrams/ keeps the .svg; the .png beside it is a render.
 *.png
+
+# AlphaFold C-alpha coordinates for the `structure` modality (small, public
+# CC-BY 4.0 data): tracked so a fresh clone runs. raw/ PDBs are a re-fetchable cache.
+!/structures/alphafold/*.npz
+!/structures/alphafold/manifest.json
+/structures/alphafold/raw/
+# gene_msa window definitions (config, not data); aligned/ and slurm_logs/ stay out
+!/gene_msa/gene_windows.json
+/gene_msa/aligned/
+/gene_msa/slurm_logs/
+/gene_msa/who_t12_genotypes/

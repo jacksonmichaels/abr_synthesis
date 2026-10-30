@@ -74,7 +74,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--barcode", default=str(EXP / "ref" / "barcode.bed"))
-    ap.add_argument("--cache", default=str(Path.home() / "abr_workspace" / "wholegenome_cache.npz"))
+    ap.add_argument("--cache", default=str(Path.home() / "abr_workspace" / "archive" / "2026-10-30" / "wholegenome_cache.npz"))
     ap.add_argument("--genbank", default=str(SNAP / "genbank" / "genome.gbff"))
     ap.add_argument("--phenotype-csv", default=str(SNAP / "phenotype_data" / "master_resistance_table.csv"))
     ap.add_argument("--min-frac", type=float, default=0.5)

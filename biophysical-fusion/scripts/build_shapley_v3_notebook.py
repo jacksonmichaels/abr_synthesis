@@ -1,8 +1,8 @@
-"""Generate notebooks/shapley_locusfusion_v3.ipynb: exact Shapley over the LocusFusion v3
+"""Generate notebooks/paper/shapley_locusfusion_v3.ipynb: exact Shapley over the LocusFusion v3
 19-locus cells, then a comparison with the expected-gradients SHAP run.
 
     python scripts/build_shapley_v3_notebook.py
-    jupyter nbconvert --to notebook --execute --inplace notebooks/shapley_locusfusion_v3.ipynb
+    jupyter nbconvert --to notebook --execute --inplace notebooks/paper/shapley_locusfusion_v3.ipynb
     (or: sbatch scripts/sbatch/build_shapley_v3_notebook.sh)
 
 Reads only CSVs: results/analysis/shap_locusfusion_v3/shapley/ (scripts/shapley_locusfusion_v3.py)
@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
-OUT = PROJECT / "notebooks" / "shapley_locusfusion_v3.ipynb"
+OUT = PROJECT / "notebooks" / "paper" / "shapley_locusfusion_v3.ipynb"
 cells = []
 
 

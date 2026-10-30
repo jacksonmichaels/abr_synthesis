@@ -1,7 +1,7 @@
 """locusfusion_v3 against the paper's comparisons.
 
 v3 = locusfusion_v2 + --lf-unknown-symbols (an uncalled base makes a token).
-This rebuilds the paper's 14-row Holm family (SIGNIFICANCE_TESTS.md) with v3 in
+This rebuilds the paper's 14-row Holm family (docs/SIGNIFICANCE_TESTS.md) with v3 in
 every LocusFusion row, the v3 tokenizer ablation (v3 minus the uncalled-base
 channel) standing in for v1's tokenizer-fix row, and then the unadjusted
 extras: v3 against v1, modality effects, seeds and repartitions.
@@ -85,7 +85,7 @@ def build_frame(as_v1=False):
 
 
 def family(frame, drugs):
-    """The paper's 14 rows (SIGNIFICANCE_TESTS.md), LocusFusion -> v3."""
+    """The paper's 14 rows (docs/SIGNIFICANCE_TESTS.md), LocusFusion -> v3."""
     W = WilcoxonComparisons(frame, drugs)
     missing = []
 

@@ -1,0 +1,8 @@
+# Archived work: same rule as results/ -- track the small text that explains or
+# reproduces something (write-ups, scripts, submit files), never its output.
+*
+!*/
+!.gitignore
+!*.md
+!*.sh
+!*.py

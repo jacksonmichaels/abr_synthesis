@@ -1,4 +1,4 @@
-"""Generate notebooks/shap_shapley_v3_alltest.ipynb: SHAP (expected gradients) and exact
+"""Generate notebooks/paper/shap_shapley_v3_alltest.ipynb: SHAP (expected gradients) and exact
 Shapley for the LocusFusion v3 19-locus cells, on every test isolate.
 
     python scripts/build_shap_alltest_notebook.py
@@ -14,7 +14,7 @@ Replaces notebooks/shap_locusfusion_v3.ipynb and notebooks/shapley_locusfusion_v
 
     python scripts/build_shap_alltest_notebook.py --split lineage
 
-builds notebooks/shap_shapley_lineage_alltest.ipynb instead, from the lineage-split
+builds notebooks/paper/shap_shapley_lineage_alltest.ipynb instead, from the lineage-split
 checkpoints (results/analysis/shap_locusfusion_lineage_alltest/, written by
 scripts/sbatch/shap_alltest_lineage.sh and shapley_alltest_lineage.sh) with the
 lineage-trained 19-locus LASSO as the reference line (.../who/side_by_side.csv), into
@@ -31,7 +31,7 @@ SPLIT = ap.parse_args().split
 LINEAGE = SPLIT == "lineage"
 
 PROJECT = Path(__file__).resolve().parent.parent
-OUT = PROJECT / "notebooks" / ("shap_shapley_lineage_alltest.ipynb" if LINEAGE
+OUT = PROJECT / "notebooks" / "paper" / ("shap_shapley_lineage_alltest.ipynb" if LINEAGE
                                else "shap_shapley_v3_alltest.ipynb")
 cells = []
 

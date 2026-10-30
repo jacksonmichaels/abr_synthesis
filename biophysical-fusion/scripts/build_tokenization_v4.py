@@ -1,8 +1,8 @@
-"""Builds notebooks/tokenization_v4.ipynb -- what v4's tokenizer changes from
+"""Builds notebooks/locusfusion_v4/tokenization_v4.ipynb -- what v4's tokenizer changes from
 v3's, on real isolates, with both tokenizers running side by side.
 
     python scripts/build_tokenization_v4.py      # write the notebook
-    jupyter nbconvert --to notebook --execute --inplace notebooks/tokenization_v4.ipynb
+    jupyter nbconvert --to notebook --execute --inplace notebooks/locusfusion_v4/tokenization_v4.ipynb
 
 v3 here is `LocusFusionV2Net(unknown_symbols=True)`, the paper's model.
 
@@ -64,7 +64,7 @@ import matplotlib.pyplot as plt
 import torch
 from IPython.display import display
 
-PROJECT = next(p for p in [Path.cwd().parent, Path.cwd(),
+PROJECT = next(p for p in [Path.cwd(), *Path.cwd().parents,
                            Path("/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion")]
                if (p / "training" / "checkpoint.py").exists())
 sys.path.insert(0, str(PROJECT))
@@ -312,7 +312,7 @@ locus with no site for that drug, a position the structure does not resolve.
 
 Protein distances are the closest heavy atom to a site residue on the AlphaFold
 monomer, residues from the literature review with the corrections in
-`notebooks/binding_site_distance.ipynb` (gyrB shifted -39, eis E32/F393
+`notebooks/locusfusion_v4/binding_site_distance.ipynb` (gyrB shifted -39, eis E32/F393
 dropped). For `rrs` / `rrl` / `rpsL` under STR / KAN / AMK / CAP it is the
 distance to the drug's own atoms in a drug-bound ribosome (4DR3, 8EV7, 8EV6,
 5V93).
@@ -462,7 +462,7 @@ Both probes run after every arm, inside the training job: test isolates with 1
 and 2 synthetic synonymous changes (mean |Dlogit|, mean DP(R)), and every
 candidate alone on an H37Rv background -- the pncA scan over all 17 coding loci.
 
-The tables below are read from the result JSONs; `notebooks/locusfusion_v4_results.ipynb`
+The tables below are read from the result JSONs; `notebooks/locusfusion_v4/locusfusion_v4_results.ipynb`
 is the full results view, with a coverage table of what has run. `canary` and
 `tune` are plumbing and hyperparameter checks, not results, and are excluded.
 """)
@@ -546,7 +546,7 @@ nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3",
                                    "language_info": {"name": "python"}},
       "nbformat": 4, "nbformat_minor": 5}
 
-out = Path(__file__).resolve().parents[1] / "notebooks" / "tokenization_v4.ipynb"
+out = Path(__file__).resolve().parents[1] / "notebooks" / "locusfusion_v4" / "tokenization_v4.ipynb"
 out.parent.mkdir(exist_ok=True)
 out.write_text(json.dumps(nb, indent=1))
 print(f"wrote {out}  ({len(cells)} cells)")

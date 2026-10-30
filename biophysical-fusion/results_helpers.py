@@ -258,7 +258,7 @@ NEMENYI_Q05 = {2: 1.960, 3: 2.344, 4: 2.569, 5: 2.728, 6: 2.850, 7: 2.949, 8: 3.
 
 # ------------------------------------------------------------------ the paper's family
 # One definition, read by results.ipynb §9 and display_figures.ipynb. Changing a
-# row changes every Holm p -- record why in SIGNIFICANCE_TESTS.md.
+# row changes every Holm p -- record why in docs/SIGNIFICANCE_TESTS.md.
 _PD, _L19, _WG = "single-drug", "single-drug, all loci", "single-drug, whole genome"
 _A, _EST3 = "all_modalities", ["mdcnn", "cisfusion", "late_fusion"]
 PAPER_GROUPS = ("LASSO vs. CNN", "LocusFusion", "Locus set", "Modalities", "Model size")

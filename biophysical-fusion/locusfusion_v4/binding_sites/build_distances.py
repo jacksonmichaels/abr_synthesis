@@ -11,7 +11,7 @@ Writes, next to this file:
   distances.json  what each array is the distance TO, from which structure, and
                   its indexing -- the provenance table for the README.
 
-Two sources (the recipe of notebooks/binding_site_distance.ipynb §2 and §7):
+Two sources (the recipe of notebooks/locusfusion_v4/binding_site_distance.ipynb §2 and §7):
   * protein sites (sites.json "protein_sites"): closest heavy-atom distance from
     each residue to any site residue, on the AlphaFold model of the H37Rv
     protein (structures/alphafold/{locus}.npz). 0 A for a site residue itself.

@@ -1,7 +1,7 @@
-"""Generate notebooks/display_figures.ipynb — the manuscript's figures, in paper order.
+"""Generate notebooks/paper/display_figures.ipynb — the manuscript's figures, in paper order.
 
     python scripts/build_display_figures.py
-    jupyter nbconvert --to notebook --execute --inplace notebooks/display_figures.ipynb
+    jupyter nbconvert --to notebook --execute --inplace notebooks/paper/display_figures.ipynb
     (or: sbatch scripts/sbatch/build_display_figures.sh)
 
 Every figure is saved to results/figures/manuscript/ as PDF (for LaTeX) and PNG
@@ -37,13 +37,13 @@ PROJECT = Path(__file__).resolve().parent.parent
 _ap = argparse.ArgumentParser(
     description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 _ap.add_argument("-o", "--output", type=Path, default=None,
-                 help="notebook path (default: <project>/notebooks/display_figures.ipynb)")
+                 help="notebook path (default: <project>/notebooks/paper/display_figures.ipynb)")
 _ap.add_argument("--split", choices=("lineage", "random"), default="lineage",
                  help="evaluation setting of Figures 2-4 (default: lineage, the paper's)")
 _args = _ap.parse_args()
 SPLIT = _args.split
 OUT = (_args.output.expanduser().resolve() if _args.output
-       else PROJECT / "notebooks" / "display_figures.ipynb")
+       else PROJECT / "notebooks" / "paper" / "display_figures.ipynb")
 
 cells = []
 
@@ -599,7 +599,7 @@ md("""
 
 The three appendix figures in the manuscript (`fig:shapley_modality`,
 `fig:shapley_locus`, `fig:own_who`). They are drawn by
-`notebooks/shap_shapley_v3_alltest.ipynb` (built by
+`notebooks/paper/shap_shapley_v3_alltest.ipynb` (built by
 `scripts/build_shap_alltest_notebook.py`) from the random-split LocusFusion v3
 checkpoints, and are copied here unchanged so every manuscript file sits in one
 folder.

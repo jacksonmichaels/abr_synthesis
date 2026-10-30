@@ -52,8 +52,8 @@ isolates.
 Distances are listed per drug and locus in `binding_sites/distances.json` and
 built by `binding_sites/build_distances.py` from `binding_sites/sites.json`.
 
-- **Protein sites.** Residues come from `mtb_drug_binding_sites_literature_review.pdf`,
-  corrected as in `notebooks/binding_site_distance.ipynb`: gyrB QRDR-B is
+- **Protein sites.** Residues come from `reference_docs/mtb_drug_binding_sites_literature_review.pdf`,
+  corrected as in `notebooks/locusfusion_v4/binding_site_distance.ipynb`: gyrB QRDR-B is
   shifted −39 to the 675-aa grid, and eis E32/F393 are dropped. The distance is
   the closest heavy atom to any site residue on the AlphaFold monomer.
 - **Streptomycin, kanamycin, amikacin, capreomycin.** For rrs, rrl and rpsL, the
@@ -111,8 +111,8 @@ There are 24,085 candidates over the 17 coding loci.
 | `make_multidrug_split.py` | one lineage split for the multi-drug model |
 | `sbatch.py` | all experiment arms as SLURM jobs, run from a frozen snapshot |
 | `tests/` | `test_model` (synthetic, seconds), `test_parity` (real data, ~2 min, ~11 GB) |
-| `../scripts/build_tokenization_v4.py` | builds `notebooks/tokenization_v4.ipynb`: v4 vs v3, both tokenizers on the same isolates; tokenizes only, never trains |
-| `../scripts/build_locusfusion_v4_results.py` | builds `notebooks/locusfusion_v4_results.ipynb`: the sweep's results, coverage table first; reads JSONs and `sacct` only |
+| `../scripts/build_tokenization_v4.py` | builds `notebooks/locusfusion_v4/tokenization_v4.ipynb`: v4 vs v3, both tokenizers on the same isolates; tokenizes only, never trains |
+| `../scripts/build_locusfusion_v4_results.py` | builds `notebooks/locusfusion_v4/locusfusion_v4_results.ipynb`: the sweep's results, coverage table first; reads JSONs and `sacct` only |
 
 ## Running
 
@@ -126,7 +126,7 @@ python -m locusfusion_v4.make_multidrug_split            # rebuild the multi-dru
 
 python scripts/build_tokenization_v4.py                   # the v4-vs-v3 notebook
 python scripts/build_locusfusion_v4_results.py            # the results viewer
-jupyter nbconvert --to notebook --execute --inplace notebooks/locusfusion_v4_results.ipynb
+jupyter nbconvert --to notebook --execute --inplace notebooks/locusfusion_v4/locusfusion_v4_results.ipynb
 
 python -m locusfusion_v4.sbatch --arms tokens canary --dry-run
 python -m locusfusion_v4.sbatch --arms tokens                         # CPU, ~20 min

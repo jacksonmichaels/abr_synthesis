@@ -1,8 +1,8 @@
-"""Builds notebooks/locusfusion_v4_ablations.ipynb -- v4/v5 arms against v3, and
+"""Builds notebooks/locusfusion_v4/locusfusion_v4_ablations.ipynb -- v4/v5 arms against v3, and
 what each ablation is worth. Short companion to locusfusion_v4_results.ipynb.
 
     python scripts/build_locusfusion_v4_ablations.py
-    jupyter nbconvert --to notebook --execute --inplace notebooks/locusfusion_v4_ablations.ipynb
+    jupyter nbconvert --to notebook --execute --inplace notebooks/locusfusion_v4/locusfusion_v4_ablations.ipynb
 
 Reads result JSONs only; trains and scores nothing.
 """
@@ -52,7 +52,7 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from IPython.display import display
 
-PROJECT = next(p for p in [Path.cwd().parent, Path.cwd()]
+PROJECT = next(p for p in [Path.cwd(), *Path.cwd().parents]
                if (p / "paper_style.py").exists())
 sys.path.insert(0, str(PROJECT))
 import paper_style as PS
@@ -326,6 +326,6 @@ nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3",
                                    "language_info": {"name": "python"}},
       "nbformat": 4, "nbformat_minor": 5}
 
-out = Path(__file__).resolve().parents[1] / "notebooks" / "locusfusion_v4_ablations.ipynb"
+out = Path(__file__).resolve().parents[1] / "notebooks" / "locusfusion_v4" / "locusfusion_v4_ablations.ipynb"
 out.write_text(json.dumps(nb, indent=1))
 print(f"wrote {out}  ({len(cells)} cells)")

@@ -210,7 +210,7 @@ Standing gaps: single seed everywhere except one pair — but `seeds_19loci`
 (5 seeds, locusfusion and mdcnn, 19 loci) found seed noise is 0.7% of the test's
 variance, folds 6-12x noisier than seeds, so the fold-corrected tests already
 carry the noise that matters (how those tests work and how to read them:
-[`SIGNIFICANCE_TESTS.md`](SIGNIFICANCE_TESTS.md)); attribution is unconverged
+[`docs/SIGNIFICANCE_TESTS.md`](docs/SIGNIFICANCE_TESTS.md)); attribution is unconverged
 below `NSAMPLES` ~128; and alignment columns are not H37Rv coordinates outside
 protein blocks.
 
@@ -274,35 +274,46 @@ scripts/                  entry points (run from the project root). Kept
   run_multidrug.py        multi-drug CLI — all drugs in one MultiDrugNet
   sbatch_all_runs.py      submit the experiment grid — one job per (experiment ×
                           drug), or one per experiment with --multidrug
-  trace_models.py         push one real isolate through every net, diagram the dataflow
-  build_full_run_viewer.py  builds <run>/full_run_viewer.ipynb for any full_run-style
-                          sweep — ONE run, in depth
-  build_overview.py       builds notebooks/overview.ipynb — project status:
-                          one modality x model grid per task, across every run.
-                          Tasks/models/modality sets are derived from the result
-                          JSONs, so a new run needs no edit here
-  build_datasets_overview.py  regenerates notebooks/datasets_overview.ipynb
-  shap_attribution.py     per-drug SHAP for the single-drug models
-  shap_multidrug.py       per-output SHAP for the joint model (on-target scoring)
-  sbatch/trace_models.sh  standalone job script for the dataflow traces
+  build_lineage_splits.py lineage-grouped train/test + CV splits (the paper's base setting)
+  call_lineages.py        TB-Profiler barcode lineage calls for every isolate
+  fetch_af_structures.py  AlphaFold models for the structure modality
+  -- notebook builders (edit these, not the .ipynb) --
+  build_display_figures.py         notebooks/paper/display_figures.ipynb (manuscript figs + tables)
+  build_shap_alltest_notebook.py   notebooks/paper/shap_shapley_{v3,lineage}_alltest.ipynb
+  build_shapley_v3_notebook.py     notebooks/paper/shapley_locusfusion_v3.ipynb
+  build_locusfusion_v4_results.py  notebooks/locusfusion_v4/locusfusion_v4_results.ipynb
+  build_locusfusion_v4_ablations.py notebooks/locusfusion_v4/locusfusion_v4_ablations.ipynb
+  build_tokenization_v4.py         notebooks/locusfusion_v4/tokenization_v4.ipynb
+  build_bayes_ceiling.py           notebooks/analysis/bayes_ceiling.ipynb (data: bayes_ceiling.py)
+  build_modality_flips.py          notebooks/analysis/modality_flips.ipynb
+  -- LocusFusion v3 analysis (run from the frozen ../v3_snapshot) --
+  predict_locusfusion_v3.py        raw per-isolate outputs of every v3 checkpoint
+  shap_locusfusion_v3.py / shapley_locusfusion_v3.py / shap_locusfusion_v3_token_split.py
+  shap_v3_who_compare.py           v3 attribution by locus vs the WHO catalogue
+  shap_locusfusion.py / shap_attribution.py   helpers the v3 SHAP scripts import
+  pza_substitution_scan.py, missingness_check.py, token_census_v3.py
+  -- paper schematics --
+  locusfusion_schematic.py, pipeline_schematic.py, tokenization_example{,_extract}.py
+  sbatch/                 job scripts for the above
 
-notebooks/                all generated except one — edit the builder, not the .ipynb:
-                          overview (status: task x modality x model),
-                          datasets_overview (modality tour), shap_notebook (hand-
-                          written), biophysical_properties_rdkit
+notebooks/                paper/ (display_figures, lineage_split, shap_shapley_v3_alltest),
+                          locusfusion_v4/ (results, ablations, tokenization,
+                          binding_site_distance), analysis/ (bayes_ceiling,
+                          modality_flips). Every notebook finds the project root by
+                          walking up to bigtb_ref.py, so it runs from any folder.
 tests/                    test_baseline_alignment.py — SD-CNN protocol checks
                           test_checkpoint.py / test_setfusion.py / test_cisfusion.py
                           test_transformer_encoder.py / test_locusfusion.py
                           test_experimental_models.py
+locusfusion_v4/           LocusFusion v4 (tokenizer, binding-site distance, sweeps);
+                          its own README
 bigtb_ref.py              imports BIG-TB utilities + real data paths (REAL_*)
 bigtb_baselines.py        the two BIG-TB baseline tables — SD-CNN and
                           MD-CNN read from the authors' run log. Single source of
                           truth; both notebook builders import it, never copy it.
-TODO.md                   status, next steps, open questions
-PAPER.md                  the paper's current story, claims, numbers and framing
-                          rules (single source for the write-up; draft is
-                          ../paper/outline.tex)
-SIGNIFICANCE_TESTS.md     the test (Wilcoxon over 55 folds, Holm over 14)
+paper_style.py            the paper palette and figure style
+docs/                     SIGNIFICANCE_TESTS.md (Wilcoxon over 55 folds, Holm),
+                          biophysical_traits.md
 results/                  run outputs (git-ignored). One folder per run, each with its
                           own README.md + submit.sh; results/archive/ = superseded runs
 slurm_logs/               job logs (git-ignored); slurm_logs/manifests/ = the job_id →
@@ -561,6 +572,9 @@ python training/curves.py results/experiments/{run}/ISONIAZID__dna.json
 
 ### Seeing what a model does to a sample
 
+> Archived 2026-10-30: the script is now `../archive/2026-10-30/biophysical-fusion/scripts/trace_models.py` (restore with
+> `mv` to use it). The description below is unchanged.
+
 `scripts/trace_models.py` pushes ONE real isolate through every network we
 train and writes, per model, a flow diagram (`.png`) plus a complete text trace
 (`.txt`) into `diagrams/model_traces/`: input blocks -> per-branch stacks ->
@@ -614,7 +628,7 @@ tensorboard --logdir results/experiments      # loss curves per fold/test + HPAR
 
 ### Inspecting the data
 
-Open `notebooks/datasets_overview.ipynb` (runs on synthetic fixtures by default; set
+Open `../archive/2026-10-30/biophysical-fusion/notebooks/datasets_overview.ipynb` (archived 2026-10-30; runs on synthetic fixtures by default; set
 `USE_REAL = True` for cluster data) for per-modality shapes, class balance,
 one-hot heatmaps, gap/length distributions, and biophysical property histograms.
 
@@ -642,6 +656,6 @@ data.branch_specs()   # [(5, 3398), (3, 269), (3, 432)]
   metadata (a hook for true promoter-slicing later). Override with
   `--regulatory-loci`.
 - **Biophysical** property values are standard published tables (z-scored), a
-  stand-in until Kulkarni et al.'s exact table is confirmed (see `TODO.md`).
-- See `TODO.md` for status, the core DNA-vs-fusion comparison, and open
+  stand-in until Kulkarni et al.'s exact table is confirmed (see the archived `../archive/2026-10-30/biophysical-fusion/TODO.md`).
+- The archived `../archive/2026-10-30/biophysical-fusion/TODO.md` has the August status, the core DNA-vs-fusion comparison, and open
   methodological questions (lineage confounding, stratified CV).

@@ -1,8 +1,8 @@
-"""Builds notebooks/locusfusion_v4_results.ipynb -- the v4 sweep's results, with
+"""Builds notebooks/locusfusion_v4/locusfusion_v4_results.ipynb -- the v4 sweep's results, with
 a coverage table of what has run and what has not.
 
     python scripts/build_locusfusion_v4_results.py
-    jupyter nbconvert --to notebook --execute --inplace notebooks/locusfusion_v4_results.ipynb
+    jupyter nbconvert --to notebook --execute --inplace notebooks/locusfusion_v4/locusfusion_v4_results.ipynb
 
 Reads only what is on disk: the result JSONs under
 results/experiments/locusfusion_v4/, the sbatch manifests, and `sacct` for the
@@ -69,7 +69,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from IPython.display import display
 
-PROJECT = next(p for p in [Path.cwd().parent, Path.cwd(),
+PROJECT = next(p for p in [Path.cwd(), *Path.cwd().parents,
                            Path("/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion")]
                if (p / "training" / "checkpoint.py").exists())
 sys.path.insert(0, str(PROJECT))
@@ -450,7 +450,7 @@ nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3",
                                    "language_info": {"name": "python"}},
       "nbformat": 4, "nbformat_minor": 5}
 
-out = Path(__file__).resolve().parents[1] / "notebooks" / "locusfusion_v4_results.ipynb"
+out = Path(__file__).resolve().parents[1] / "notebooks" / "locusfusion_v4" / "locusfusion_v4_results.ipynb"
 out.parent.mkdir(exist_ok=True)
 out.write_text(json.dumps(nb, indent=1))
 print(f"wrote {out}  ({len(cells)} cells)")

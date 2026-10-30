@@ -1,10 +1,10 @@
-"""Builds notebooks/bayes_ceiling.ipynb -- the DNA AUC ceiling (with and without
+"""Builds notebooks/analysis/bayes_ceiling.ipynb -- the DNA AUC ceiling (with and without
 promoter windows) against our lineage-split results: LocusFusion v3, the v4/v5
 ablation arms, the stacked CNN and the LASSO, single-drug and multi-drug,
 per-drug loci and 19 loci.
 
     python scripts/build_bayes_ceiling.py
-    jupyter nbconvert --to notebook --execute --inplace notebooks/bayes_ceiling.ipynb
+    jupyter nbconvert --to notebook --execute --inplace notebooks/analysis/bayes_ceiling.ipynb
 
 Reads results/analysis/bayes_ceiling/ (written by scripts/bayes_ceiling.py,
 job scripts/sbatch/bayes_ceiling.sh) and the result JSONs / test-prediction
@@ -59,7 +59,7 @@ from scipy.stats import wilcoxon
 from sklearn.metrics import roc_auc_score
 from IPython.display import display
 
-PROJECT = next(p for p in [Path.cwd().parent, Path.cwd(),
+PROJECT = next(p for p in [Path.cwd(), *Path.cwd().parents,
                            Path("/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/biophysical-fusion")]
                if (p / "paper_style.py").exists())
 sys.path.insert(0, str(PROJECT))
@@ -472,6 +472,6 @@ nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "l
                                                   "name": "python3"},
                                    "language_info": {"name": "python"}},
       "nbformat": 4, "nbformat_minor": 5}
-out = Path(__file__).resolve().parent.parent / "notebooks" / "bayes_ceiling.ipynb"
+out = Path(__file__).resolve().parent.parent / "notebooks" / "analysis" / "bayes_ceiling.ipynb"
 out.write_text(json.dumps(nb, indent=1))
 print(f"wrote {out}")

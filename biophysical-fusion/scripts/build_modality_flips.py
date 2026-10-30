@@ -1,8 +1,8 @@
-"""Builds notebooks/modality_flips.ipynb -- when adding a modality changes a
+"""Builds notebooks/analysis/modality_flips.ipynb -- when adding a modality changes a
 LocusFusion v3 call, and why.
 
     python scripts/build_modality_flips.py
-    jupyter nbconvert --to notebook --execute --inplace notebooks/modality_flips.ipynb
+    jupyter nbconvert --to notebook --execute --inplace notebooks/analysis/modality_flips.ipynb
 
 Reads only raw model outputs: results/analysis/predictions_locusfusion_v3/
 (scripts/predict_locusfusion_v3.py) and results/analysis/pza_substitution_scan/
@@ -38,7 +38,7 @@ import matplotlib.pyplot as plt
 from IPython.display import display
 from sklearn.metrics import roc_auc_score
 
-ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
+ROOT = next(p for p in [Path.cwd(), *Path.cwd().parents] if (p / "bigtb_ref.py").exists())
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("ABR_GENBANK", str(ROOT.parent / "data_snapshot/genbank/genome.gbff"))
 import paper_style as ps
@@ -503,6 +503,6 @@ md(r"""
 nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
                                    "language_info": {"name": "python"}},
       "nbformat": 4, "nbformat_minor": 5}
-out = Path(__file__).resolve().parents[1] / "notebooks" / "modality_flips.ipynb"
+out = Path(__file__).resolve().parents[1] / "notebooks" / "analysis" / "modality_flips.ipynb"
 out.write_text(json.dumps(nb, indent=1))
 print(f"wrote {out}")

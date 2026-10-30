@@ -57,7 +57,7 @@ DROP_RUNS = {
     # The paper grid retrained on lineage-grouped CV folds (Beijing its own fold),
     # a different partition: its cells share folder names with the random-split
     # grid, so loading it here would pool unpaired folds into the paper cells. Read
-    # with results/analysis/lineage_split_significance/ and notebooks/lineage_split.ipynb.
+    # with results/analysis/lineage_split_significance/ and notebooks/paper/lineage_split.ipynb.
     "lineage_split",
 }
 

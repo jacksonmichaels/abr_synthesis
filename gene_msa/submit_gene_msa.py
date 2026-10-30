@@ -4,8 +4,8 @@ Submit one CPU SLURM job per WHO Table-21 tier 1+2 GENE BODY (gene_windows.json)
 (write-safe) make_aligned_msa.py extractor over all BIG-TB VCFs to build that
 region's per-isolate aligned FASTA in this workspace.
 
-Reads gene_windows.json (built by build_gene_windows.py). Everything
-written stays under regulatory_msa/ ; the pi_annagreen inputs are read-only
+Reads gene_windows.json (built by build_gene_windows.py), or --windows. Everything
+written stays in this workspace; the pi_annagreen inputs are read-only
 (VCF path list + reference GenBank).
 
     python submit_gene_msa.py --dry_run        # print scripts, submit nothing
@@ -31,16 +31,18 @@ GENBANK = os.path.join(MSA_SRC, "genbank_reference_data/genome.gbff")
 
 EXTRACTOR = os.path.join(HERE, "..", "regulatory_msa", "make_aligned_msa.py")   # write-safe copy
 WINDOWS_JSON = os.path.join(HERE, "gene_windows.json")
-OUT_DIR = os.path.join(HERE, "aligned")
+# aligned_fixed/ = re-extraction with the 2026-10-22 insertion fix in
+# make_aligned_msa.py; aligned/ (Sep 2026, insertion bug) is kept for the who_t12 results built on it
+OUT_DIR = os.path.join(HERE, "aligned_fixed")
 LOGS_DIR = os.path.join(HERE, "slurm_logs")
 
 
-def extract_command(gene, w):
+def extract_command(gene, w, out_dir):
     parts = [
         "python", EXTRACTOR,
         "-f", VCF_PATHS,
         "-start", str(w["start"]), "-end", str(w["end"]), "-sense", w["sense"],
-        "-o", os.path.join(OUT_DIR, f"{gene}.fasta"),
+        "-o", os.path.join(out_dir, f"{gene}.fasta"),
         "-g", GENBANK,
         "--gene", gene,
         "--resistance-groups", "who_t12",
@@ -51,7 +53,7 @@ def extract_command(gene, w):
 def sbatch_script(gene, w, args):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = os.path.join(LOGS_DIR, f"gene_{gene}_{ts}-%j.out")
-    command = extract_command(gene, w)
+    command = extract_command(gene, w, args.out_dir)
     return f"""#!/bin/bash
 #SBATCH -c {args.cpus}
 #SBATCH --mem={args.mem}
@@ -65,8 +67,10 @@ echo "Extracting {gene} gene body  (host $(hostname))  $(date)"
 
 source ~/.bashrc
 conda activate {ENV}
+set -euo pipefail
+which python && python --version
 cd {shlex.quote(HERE)}
-mkdir -p {shlex.quote(OUT_DIR)} {shlex.quote(LOGS_DIR)}
+mkdir -p {shlex.quote(args.out_dir)} {shlex.quote(LOGS_DIR)}
 
 {command}
 
@@ -91,6 +95,8 @@ def parse_args():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--genes", nargs="+", default=None, help="subset (default: all in json)")
     p.add_argument("--force", action="store_true", help="re-extract even if FASTA exists")
+    p.add_argument("--windows", default=WINDOWS_JSON, help="window JSON (default: %(default)s)")
+    p.add_argument("--out-dir", default=OUT_DIR, help="output FASTA dir (default: %(default)s)")
     p.add_argument("--mem", default="8G")
     p.add_argument("--cpus", type=int, default=2)
     p.add_argument("--partition", default="cpu")
@@ -102,18 +108,19 @@ def parse_args():
 
 def main():
     args = parse_args()
-    with open(WINDOWS_JSON) as f:
+    args.out_dir = os.path.abspath(args.out_dir)
+    with open(args.windows) as f:
         windows = json.load(f)["windows"]
     genes = args.genes or list(windows)
     unknown = [g for g in genes if g not in windows]
     if unknown:
         sys.exit(f"Unknown gene(s) {unknown}; choose from {list(windows)}")
-    os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(LOGS_DIR, exist_ok=True)
 
     todo = []
     for g in genes:
-        fasta = os.path.join(OUT_DIR, f"{g}.fasta")
+        fasta = os.path.join(args.out_dir, f"{g}.fasta")
         if os.path.isfile(fasta) and not args.force:
             print(f"  skip {g}: {fasta} exists (use --force to redo)")
             continue
@@ -121,7 +128,7 @@ def main():
 
     print(f"\n{len(todo)} region(s) to extract: {todo}")
     print(f"env={ENV} partition={args.partition} cpus={args.cpus} mem={args.mem} time={args.time}")
-    print(f"out={OUT_DIR}")
+    print(f"windows={args.windows}\nout={args.out_dir}")
     if args.dry_run:
         print("DRY RUN — nothing submitted.\n")
 

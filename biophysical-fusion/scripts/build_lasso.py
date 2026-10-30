@@ -74,7 +74,7 @@ md("""
 # The lasso runs, in detail
 
 L1-logistic regression on *M. tuberculosis* sequence, 11 drugs, against the same
-5-fold protocol as every network in this project. Three runs, nine arms, and the
+5-fold protocol as every network in this project. Six runs, the arms within each, and the
 per-drug numbers behind each one.
 
 | run | input | arms |
@@ -82,6 +82,9 @@ per-drug numbers behind each one.
 | `lasso_wholeseq_20260901` | the **aligned curated loci** — the same one-hot the convolutional models read | `onehot` / `delta` × per-drug loci / all 19, plus an ETHIONAMIDE locus ablation |
 | `lasso_wholegenome_20260903` | every variant called in the **4.41 Mb genome** | `delta` only — a wild-type indicator per site is dense at ~10⁶ sites |
 | `lasso_windows_20260903` | **200 bp windows** around the genome model's own top 50 coefficients | the 50 keys alone / every key in their windows / those keys plus a wild-type indicator per site |
+| `lasso_vcf_loci_20260929` | the genome run's **VCF calls, cut to the aligned loci** | 19 loci / per-drug loci — same input as `delta` above, different source |
+| `lasso_pooled_20260929` | VCF calls plus **pooled indicators** (any call at a site; any LoF / non-synonymous call in a gene) | site / gene / both on the whole genome, both on the 19 loci |
+| `lasso_wholegenome_sweep_20260929` | the whole genome at **18 C values × 5 L1/L2 mixes** | l1_ratio 1, 0.75, 0.5, 0.25, 0 (ridge) |
 
 **Why a lasso at all.** It is the control the networks should be quoted against.
 SHAP on the CNNs said the signal is sparse; the aggregator family said it is
@@ -132,6 +135,11 @@ AQUA = "#1baf7a"     # L1-logistic -- this notebook's subject
 # single-hue ordinal ramp rather than unrelated hues. Validated light->dark:
 # monotone L, adjacent dL >= 0.06, light end 2.24:1 against SURFACE.
 AQUA_RAMP = ["#0d5c43", "#1e9370", "#63bb9d"]
+# The same ramp at five steps, for the five L1/L2 mixes of the penalty sweep (§5).
+# Same endpoints; OKLab L .42 .51 .59 .67 .73 (adjacent dL >= 0.06), light end
+# 2.24:1 against SURFACE like AQUA_RAMP, so every chart using it has a legend and
+# a table beside it.
+AQUA_RAMP5 = ["#0d5c43", "#14765a", "#1e9370", "#3fab83", "#63bb9d"]
 # Table fills: text is INK on every one, so both ramps stop well short of
 # saturated. Sequential for magnitude, diverging (two hues, neutral midpoint)
 # for signed differences.
@@ -227,10 +235,18 @@ ARMS = [
     ("lasso_windows_20260903", "all_drugs", "delta-top50",   "delta · top-50 keys", "delta", "50 keys"),
     ("lasso_windows_20260903", "all_drugs", "delta-window",  "delta · 200bp windows", "delta", "windows"),
     ("lasso_windows_20260903", "all_drugs", "onehot-window", "onehot · 200bp windows", "onehot", "windows"),
+    ("lasso_vcf_loci_20260929", "perdrug",     None, "delta · VCF, per-drug loci", "delta", "2-3 loci"),
+    ("lasso_vcf_loci_20260929", "all19",       None, "delta · VCF, 19 loci", "delta", "19 loci"),
+    ("lasso_pooled_20260929",   "all19_both",  None, "pooled · VCF, 19 loci", "pooled", "19 loci"),
+    ("lasso_pooled_20260929",   "site",        None, "pooled site · whole genome", "pooled", "4.41 Mb"),
+    ("lasso_pooled_20260929",   "gene",        None, "pooled gene · whole genome", "pooled", "4.41 Mb"),
+    ("lasso_pooled_20260929",   "both",        None, "pooled both · whole genome", "pooled", "4.41 Mb"),
 ]
 RUN_LABEL = {"lasso_wholeseq_20260901": "aligned loci",
              "lasso_wholegenome_20260903": "whole genome",
-             "lasso_windows_20260903": "windows"}
+             "lasso_windows_20260903": "windows",
+             "lasso_vcf_loci_20260929": "VCF, loci",
+             "lasso_pooled_20260929": "pooled"}
 ARM_ORDER = [a[3] for a in ARMS]
 
 
@@ -340,7 +356,7 @@ DNA-only *convolutional* number instead, it is `mdcnn` at 19 loci, 0.9171, and i
 appears in the ladder below.
 
 ---
-## 1. The nine arms at a glance
+## 1. Every arm at a glance
 """)
 
 code('''
@@ -381,7 +397,7 @@ rows += [(BASE_SHORT[k], v.mean(), RUST if "best" in k else BLUE)
 rows += [("mdcnn, dna, 19 loci", _mdcnn_dna, BLUE)]
 rows = sorted(rows, key=lambda r: r[1])
 
-fig, ax = plt.subplots(figsize=(9.6, 6.0))
+fig, ax = plt.subplots(figsize=(9.6, 8.2))
 y = np.arange(len(rows))
 ax.barh(y, [r[1] for r in rows], height=0.66, color=[r[2] for r in rows],
         edgecolor="none", zorder=2)
@@ -390,8 +406,8 @@ for yi, (_, v, _c) in zip(y, rows):
 ax.set_yticks(y); ax.set_yticklabels([r[0] for r in rows], fontsize=8)
 ax.set_xlim(0.85, 0.95); ax.set_ylim(-0.7, len(rows) - 0.2)
 ax.set_xlabel("macro CV AUC")
-ax.set_title("Macro CV AUC by arm and baseline, aligned-locus and "
-             "whole-genome arms, 11 shared drugs", loc="left", fontsize=10.5)
+ax.set_title("Macro CV AUC by lasso arm and baseline, all arms except windows, "
+             "11 shared drugs", loc="left", fontsize=10.5)
 ax.legend([plt.Rectangle((0, 0), 1, 1, color=c) for c in (AQUA, BLUE, RUST)],
           ["L1-logistic", "convolutional baselines", "best cells in the project"],
           loc="lower right")
@@ -870,10 +886,241 @@ indicators are not idle — they absorb 30.5% of total coefficient mass — the
 reparametrisation just leaves the fitted function unchanged.
 
 ---
-## 5. Every arm, every drug
+## 5. Encoding, not source: VCF loci, pooled features, penalty sweep
+
+Three runs from 2026-09-29, asking why the whole genome (0.9174) sits below
+`onehot` at 19 loci (0.9241). The candidates were the data source (VCF calls
+vs. curated alignments), the encoding (one column per allele vs. a penalised
+wild-type column per site), and the penalty.
+
+### 5.1 Same loci, two sources
+
+The genome run's VCF calls cut to the aligned loci's H37Rv spans, against the
+`delta` arms of §2, which read the curated alignments. Same encoding, same
+model, same folds.
+""")
+
+code('''
+src = per_drug("cv", arms=["delta · per-drug loci", "delta · VCF, per-drug loci",
+                           "delta · 19 loci", "delta · VCF, 19 loci"], baselines=False)
+src.loc["MACRO"] = macro(src)
+src.loc["MACRO", "n"] = np.nan
+_num = [c for c in src.columns if c != "n"]
+show(src.style.format({"n": "{:,.0f}"}, na_rep="").format("{:.4f}", subset=_num, na_rep="—")
+     .background_gradient(cmap=CM_SEQ, axis=None, subset=pd.IndexSlice[DRUGS, _num]),
+     "CV AUC, alignment vs. VCF source, delta encoding, per-drug and 19 loci")
+''')
+
+md("""
+Macro 0.8613 vs. 0.8613 at per-drug loci and 0.9172 vs. 0.9152 at 19 loci: **the
+source does not matter.** The PASS filter, missing coverage reading as reference
+and the 20-nt indel truncation cost nothing measurable. VCF at 19 loci (0.9172)
+is also level with the whole genome (0.9174), so unpooled, the other 99% of the
+genome adds nothing on the macro.
+
+### 5.2 Pooled indicators
+
+Each pooled arm keeps every per-allele column and adds OR-columns over groups of
+at least 2 alleles. `site:` is any call covering a base, which is the variant-coded
+equivalent of the `onehot` wild-type column. `lof:` / `nonsyn:` is any snpEff
+HIGH / HIGH-or-MODERATE call in a gene.
+""")
+
+code('''
+POOL_ARMS = ["delta · whole genome", "pooled site · whole genome",
+             "pooled gene · whole genome", "pooled both · whole genome",
+             "delta · VCF, 19 loci", "pooled · VCF, 19 loci", "onehot · 19 loci"]
+pool = per_drug("cv", arms=POOL_ARMS, baselines=False)[["n"] + POOL_ARMS]
+pool.loc["MACRO"] = macro(pool)
+pool.loc["MACRO", "n"] = np.nan
+show(pool.style.format({"n": "{:,.0f}"}, na_rep="").format("{:.4f}", subset=POOL_ARMS, na_rep="—")
+     .background_gradient(cmap=CM_SEQ, axis=None, subset=pd.IndexSlice[DRUGS, POOL_ARMS]),
+     "CV AUC with and without pooled indicators, whole genome and 19 loci")
+''')
+
+code('''
+# Fold-level tests: exact Wilcoxon over the 55 (drug, fold) AUCs, each arm at its
+# own CV-selected C. The folds are identical across arms (split seed 42, kfold seed 42).
+from scipy.stats import wilcoxon
+
+def fold_aucs(run, cell):
+    out = {}
+    for f in (EXP / run / cell).glob("*.json"):
+        j = json.loads(f.read_text())
+        if "c_path" not in j:
+            continue
+        e = next(p for p in j["c_path"] if p["C"] == j["best_C"])
+        out[j["drug"]] = np.asarray(e["fold_aucs"])
+    return out
+
+FOLDS = {"delta · whole genome": ("lasso_wholegenome_20260903", "all_drugs"),
+         "pooled site · whole genome": ("lasso_pooled_20260929", "site"),
+         "pooled gene · whole genome": ("lasso_pooled_20260929", "gene"),
+         "pooled both · whole genome": ("lasso_pooled_20260929", "both"),
+         "delta · VCF, 19 loci": ("lasso_vcf_loci_20260929", "all19"),
+         "pooled · VCF, 19 loci": ("lasso_pooled_20260929", "all19_both"),
+         "delta · 19 loci": ("lasso_wholeseq_20260901", "delta_all"),
+         "onehot · 19 loci": ("lasso_wholeseq_20260901", "onehot_all")}
+FA = {k: fold_aucs(*v) for k, v in FOLDS.items()}
+
+CONTRASTS = [("delta · VCF, 19 loci", "delta · 19 loci"),
+             ("pooled site · whole genome", "delta · whole genome"),
+             ("pooled gene · whole genome", "delta · whole genome"),
+             ("pooled both · whole genome", "delta · whole genome"),
+             ("pooled · VCF, 19 loci", "delta · VCF, 19 loci"),
+             ("pooled · VCF, 19 loci", "onehot · 19 loci"),
+             ("pooled both · whole genome", "pooled · VCF, 19 loci"),
+             ("pooled both · whole genome", "onehot · 19 loci")]
+rows = []
+for a, b in CONTRASTS:
+    ds = sorted(set(FA[a]) & set(FA[b]))
+    x = np.concatenate([FA[a][d] for d in ds]); y = np.concatenate([FA[b][d] for d in ds])
+    rows.append({"arm": a, "vs": b, "folds": len(x), "mean Δ AUC": (x - y).mean(),
+                 "folds better": f"{(x > y).sum()}/{len(x)}",
+                 "p (exact Wilcoxon)": wilcoxon(x, y, method="exact").pvalue})
+TESTS = pd.DataFrame(rows).set_index(["arm", "vs"])
+show(TESTS.style.format({"mean Δ AUC": "{:+.4f}", "p (exact Wilcoxon)": "{:.2g}"})
+     .background_gradient(cmap=CM_DIV, vmin=-0.012, vmax=0.012, subset=["mean Δ AUC"]),
+     "fold-level contrasts, 55 (drug, fold) pairs each, uncorrected p")
+''')
+
+code('''
+# Per-drug change from pooling, both universes, one row per drug (sorted by n).
+# Points, not bars: the quantity is a signed difference around zero.
+d_wg = pool["pooled both · whole genome"] - pool["delta · whole genome"]
+d_19 = pool["pooled · VCF, 19 loci"] - pool["delta · VCF, 19 loci"]
+d_wg, d_19 = d_wg.reindex(DRUGS), d_19.reindex(DRUGS)
+
+fig, ax = plt.subplots(figsize=(7.2, 4.6))
+y = np.arange(len(DRUGS))
+ax.axvline(0, color=AXIS, lw=0.9, zorder=1)
+for yi, a, b in zip(y, d_19.values, d_wg.values):
+    ax.plot([a, b], [yi, yi], color=GRID, lw=1.6, zorder=2)
+ax.scatter(d_19.values, y, s=42, color=AQUA_RAMP[2], edgecolor=SURFACE, lw=1.5, zorder=3,
+           label="19 loci: pooled − unpooled")
+ax.scatter(d_wg.values, y, s=42, color=AQUA_RAMP[0], edgecolor=SURFACE, lw=1.5, zorder=4,
+           label="whole genome: pooled − unpooled")
+ax.set_yticks(y)
+ax.set_yticklabels([f"{d}  (n={int(NVAL[d]):,})" for d in DRUGS], fontsize=8)
+ax.set_xlabel("Δ CV AUC, site + gene pooling minus per-allele columns only")
+ax.set_title("Change in CV AUC from pooled indicators, by drug and locus universe",
+             loc="left", fontsize=10.5)
+ax.legend(loc="upper right")
+tidy(ax)
+plt.tight_layout(); plt.show()
+''')
+
+md("""
+- **Pooling recovers `onehot`.** At 19 loci, pooled VCF reaches 0.9230 against
+  `onehot` 0.9241 (fold p ≈ 0.97). The one-hot advantage of §2.3 was the
+  per-site pooling of rare alleles.
+- **Once pooled, the whole genome adds something.** 0.9265, +0.0091 over its
+  unpooled self (42/55 folds) and +0.0035 over pooled 19 loci. It is level with
+  `onehot` 19 loci (+0.0024, not resolved) and with the project's best cells.
+- **Gene pooling carries the loss-of-function drugs:**
+  - PYRAZINAMIDE: 0.9325 → 0.9503
+  - ETHIONAMIDE: 0.8084 → 0.8397
+  - KANAMYCIN: 0.9294 → 0.9394
+  - STREPTOMYCIN: 0.9257 → 0.9379
+
+  Site pooling rescues LEVOFLOXACIN (0.8937 → 0.9267). AMIKACIN is the one
+  drug that loses (−0.003).
+- This does not contradict §4.4, where a wild-type column per site bought
+  nothing. There the columns were fixed to 50 already-selected neighbourhoods;
+  here pooling also brings in rare alleles that L1 never selected one by one.
+
+### 5.3 Penalty sweep
+
+The whole genome, unpooled, at 18 C values from 1e-4 to 30 and l1_ratio
+1 (L1), 0.75, 0.5, 0.25, 0 (ridge). Elastic net uses saga and ridge uses
+liblinear. **Partial at the time of writing:** the table counts the cells that
+have landed, and the figure shows whatever exists per drug.
+""")
+
+code('''
+SWEEP = EXP / "lasso_wholegenome_sweep_20260929"
+RATIOS = ["1", "0.75", "0.5", "0.25", "0"]
+SW = {}
+for r in RATIOS:
+    for f in (SWEEP / f"l1r{r}").glob("*.json"):
+        j = json.loads(f.read_text())
+        SW[(r, j["drug"])] = j
+
+L1_0903 = L[L.arm == "delta · whole genome"].set_index("drug")
+rows = []
+for r in RATIOS:
+    js = [SW[k] for k in SW if k[0] == r]
+    if not js:
+        continue
+    ds = [j["drug"] for j in js]
+    unconv = []
+    for j in js:
+        e = next(p for p in j["c_path"] if p["C"] == j["best_C"])
+        if "n_iter_per_fold" in e and max(e["n_iter_per_fold"]) >= e["max_iter"]:
+            unconv.append(j["drug"])
+    rows.append({"l1_ratio": r, "drugs done": len(js),
+                 "macro CV": np.mean([j["cv_auc_mean"] for j in js]),
+                 "Δ CV vs 09-03 L1, same drugs": np.mean([j["cv_auc_mean"] for j in js]) - L1_0903.loc[ds, "cv"].mean(),
+                 "macro test": np.mean([j["test"]["auc"] for j in js]),
+                 "Δ test vs 09-03 L1": np.mean([j["test"]["auc"] for j in js]) - L1_0903.loc[ds, "test"].mean(),
+                 "best C range": f"{min(j['best_C'] for j in js):g}–{max(j['best_C'] for j in js):g}",
+                 "unconverged at best C": ", ".join(unconv) or "—",
+                 "missing": ", ".join(sorted(set(DRUGS) - set(ds))) or "—"})
+SWT = pd.DataFrame(rows).set_index("l1_ratio")
+show(SWT.style.format({"macro CV": "{:.4f}", "macro test": "{:.4f}",
+                       "Δ CV vs 09-03 L1, same drugs": "{:+.4f}", "Δ test vs 09-03 L1": "{:+.4f}"})
+     .background_gradient(cmap=CM_DIV, vmin=-0.015, vmax=0.015,
+                          subset=["Δ CV vs 09-03 L1, same drugs", "Δ test vs 09-03 L1"]),
+     "penalty sweep, macro over the drugs finished per l1_ratio")
+''')
+
+code('''
+# CV AUC along the C path, one panel per drug (sorted by n), one line per
+# l1_ratio, darkest = L1. Panels share the x-axis (log C) but not y: the drugs
+# span 0.80-0.98 and a shared y would flatten every curve.
+fig, axes = plt.subplots(3, 4, figsize=(11.5, 7.6), sharex=True)
+for ax, d in zip(axes.flat, DRUGS):
+    for r, col in zip(RATIOS, AQUA_RAMP5):
+        j = SW.get((r, d))
+        if j is None:
+            continue
+        cs = np.array([p["C"] for p in j["c_path"]])
+        au = np.array([p["cv_auc_mean"] for p in j["c_path"]])
+        ok = au > 0.5                     # all-zero fits sit at exactly 0.5
+        ax.plot(cs[ok], au[ok], color=col, lw=1.6, marker="o", ms=2.6, zorder=3)
+    ax.set_xscale("log")
+    ax.set_title(f"{d} (n={int(NVAL[d]):,})", loc="left", fontsize=8.5)
+    tidy(ax, xgrid=False, ygrid=True)
+    ax.tick_params(labelsize=7)
+for ax in axes.flat[len(DRUGS):]:
+    ax.axis("off")
+axes.flat[-1].legend([plt.Line2D([], [], color=c, lw=2) for c in AQUA_RAMP5],
+                     [f"l1_ratio {r}" + (" (L1)" if r == "1" else " (ridge)" if r == "0" else "")
+                      for r in RATIOS], loc="center", fontsize=8)
+for ax in axes[-1]:
+    ax.set_xlabel("C (inverse penalty)", fontsize=8)
+for ax in axes[:, 0]:
+    ax.set_ylabel("CV AUC", fontsize=8)
+fig.suptitle("Whole-genome CV AUC along the C path, by drug and L1/L2 mix",
+             x=0.01, ha="left", fontsize=10.5, fontweight="bold")
+plt.tight_layout(); plt.show()
+''')
+
+md("""
+- **The penalty is not the lever.** Every L1/elastic-net mix lands within about
+  ±0.002 of the original L1, on CV and on test.
+- **Pure ridge is clearly worse,** about −0.014, which settles the old "no ridge
+  arm" caveat: sparsity does matter here.
+- **The 18-value grid moves L1 by +0.0017 CV and nothing on test.** The 09-03
+  8-value grid was not leaving anything on the table.
+- Pooling (§5.2, +0.0091) is worth several times any penalty choice.
+
+---
+## 6. Every arm, every drug
 
 The two tables the rest of the notebook is slices of.
 """)
+
 
 code('''
 for metric, label in (("cv", "CV AUC"), ("test", "held-out test AUC")):
@@ -939,8 +1186,18 @@ md("""
   deterministic functions of the DNA at the same positions and would be nearly
   collinear with the one-hot columns, so for a linear model they mostly buy
   penalty. That makes "best DNA-only" the fairer of the two derived baselines.
-- **No ridge arm**, so "sparsity is doing the work" is not established here —
-  only that a sparse model suffices.
+- **Ridge is now measured (§5.3) and loses ~0.014**, so sparsity does matter.
+  But the sweep is unpooled and partial: re-read §5.3 once every cell has
+  landed. saga was unconverged at the best C for a few elastic-net cells
+  (flagged in the table).
+- **§5.2's p-values are uncorrected** and use the same CV that selected each
+  arm's C. That applies to every arm alike, but it is not the Holm-corrected
+  family the paper uses.
+- **Pooled arms hit the grid edge:** LEVOFLOXACIN chose C = 3 in two pooled
+  arms, and ISONIAZID C = 0.001 at 19 loci. A wider grid could move them slightly.
+- **Coefficient mass (§3.2) is for the unpooled model.** `who_mass.py` does not
+  yet read `site:` / `lof:` / `nonsyn:` features, so the "62% outside WHO"
+  figure has not been re-measured with gene-level pooling.
 """)
 
 # ================================================================== write

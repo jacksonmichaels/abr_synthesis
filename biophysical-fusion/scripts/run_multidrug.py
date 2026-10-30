@@ -315,6 +315,22 @@ def main():
                     help="--arch locusfusion_v2 with --modalities structure: decay "
                          "length in A of the closeness channels exp(-d/L) "
                          "(default: 10).")
+    lf.add_argument("--lf-struct-dist", choices=["ca", "heavy"], default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: the "
+                         "token-token distance, C-alpha (default) or closest heavy atoms.")
+    lf.add_argument("--lf-struct-gate", choices=["none", "contact"], default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: 'contact' "
+                         "keeps a pair only within C-alpha reach of a heavy-atom contact "
+                         "(datasets.structure.CONTACT_REACH) and with AlphaFold PAE <= "
+                         "PAE_MAX (default: none).")
+    lf.add_argument("--lf-struct-invalid", type=float, default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: the value "
+                         "a pair with no geometry (or failing the gate) reads "
+                         "(default: 0, which is also 'far'; -1 keeps them apart).")
+    lf.add_argument("--lf-unknown-symbols", action="store_true", default=None,
+                    help="--arch locusfusion_v2: an uncalled base (N) and an unreadable "
+                         "or deleted codon get their own channels, and an uncalled base "
+                         "makes a token. Default off. Same as run_experiment.py's flag.")
     lf.add_argument("--lf-carry-variants", type=int, default=None,
                     help="how many of each locus's own variant tokens are handed "
                          "up to stage 2 alongside its summary (default: 0). >0 "
@@ -402,9 +418,14 @@ def main():
 
     drugs = _resolve_drugs(args.drugs, ap)
     modalities = _resolve_modalities(args.modalities, ap)
-    if args.lf_struct_length is not None and "structure" not in modalities:
-        ap.error("--lf-struct-length sets the structure closeness channels; without "
-                 "--modalities structure it would change nothing and the run would "
+    struct_flags = [f for f, v in (("--lf-struct-length", args.lf_struct_length),
+                                   ("--lf-struct-dist", args.lf_struct_dist),
+                                   ("--lf-struct-gate", args.lf_struct_gate),
+                                   ("--lf-struct-invalid", args.lf_struct_invalid))
+                    if v is not None]
+    if struct_flags and "structure" not in modalities:
+        ap.error(f"{struct_flags} set the structure closeness channels; without "
+                 "--modalities structure they would change nothing and the run would "
                  "be the control under another name")
     if "structure" in modalities and args.arch not in STRUCTURE_ARCHS:
         ap.error(f"--modalities structure is read at a variant token's codon and "
@@ -445,7 +466,13 @@ def main():
         "summary_norm": args.lf_summary_norm,
         "carry_variants": args.lf_carry_variants,
         "struct_length": args.lf_struct_length,
+        "struct_dist": args.lf_struct_dist, "struct_gate": args.lf_struct_gate,
+        "struct_invalid": args.lf_struct_invalid,
+        "unknown_symbols": args.lf_unknown_symbols,
     }.items() if v is not None}
+    if args.lf_unknown_symbols and args.arch != "locusfusion_v2":
+        ap.error("--lf-unknown-symbols is a locusfusion_v2 tokenizer option; "
+                 f"--arch {args.arch} would ignore it")
     experimental = {k: v for k, v in {
         "d_model": args.xm_d_model, "max_variants": args.xm_max_variants,
         "pos_dims": args.xm_pos_dims, "uncovered_frac": args.xm_uncovered_frac,
@@ -559,7 +586,8 @@ def main():
                                       regulatory_dir=reg, loci=loci,
                                       per_modality_branch=not per_locus,
                                       all_regulatory=args.all_regulatory,
-                                      delta=delta, protein_frame=protein_frame)
+                                      delta=delta, protein_frame=protein_frame,
+                                      unknown_symbols=bool(args.lf_unknown_symbols))
         result = run_multidrug_cv(data, epochs=epochs, n_splits=args.n_splits,
                                   batch_size=args.batch_size, device=args.device,
                                   tb_dir=tb_dir, seed=args.seed,
@@ -593,6 +621,7 @@ def main():
                                       "extra_loci": args.extra_loci,
                                       "per_drug_loci": args.per_drug_loci,
                                       "protein_frame": protein_frame,
+                                      "unknown_symbols": bool(args.lf_unknown_symbols),
                                                                             # the resolved region list is recoverable
                                       # from the 'regulatory:*' block names
                                   })

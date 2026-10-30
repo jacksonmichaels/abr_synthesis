@@ -24,14 +24,17 @@ caller falls back to translating the whole record. There is no protein there to
 get right; the fallback only keeps those blocks existing and unchanged.
 """
 import functools
+import os
 from pathlib import Path
 
 from Bio import SeqIO
 from Bio.Seq import Seq
 
 # read-only reference used to build the alignments in the first place
-GENBANK = ("/project/pi_annagreen_umass_edu/saishradha/project_data_curation/"
-           "make_msa/genbank_reference_data/genome.gbff")
+# ($ABR_GENBANK overrides it, as $ABR_GENOTYPE_DIR does in bigtb_ref)
+GENBANK = os.environ.get("ABR_GENBANK") or (
+    "/project/pi_annagreen_umass_edu/saishradha/project_data_curation/"
+    "make_msa/genbank_reference_data/genome.gbff")
 REFERENCE_IDS = ("MT_H37Rv", "H37Rv", "NC_000962.3")
 
 

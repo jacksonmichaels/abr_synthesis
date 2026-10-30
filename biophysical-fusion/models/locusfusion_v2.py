@@ -117,7 +117,8 @@ import torch.nn.functional as F
 from .locusfusion import _select_variants
 from .net import NO_LOCUS, KeyedTokenNorm, parse_block_key
 from datasets.biochem import AA_PROPERTY, N_PROPERTIES, RESIDUES_WITH_STOP
-from datasets.structure import meta_arrays, pair_distances
+from datasets.structure import (CONTACT_REACH, heavy_min_distances, meta_arrays,
+                                meta_heavy, meta_pae_bad, pair_distances)
 
 # --- the token feature vector ----------------------------------------------
 # One fixed layout whatever subset of modalities a run loads: a modality that is
@@ -141,6 +142,46 @@ F_IS_NULL = 37                  # the per-locus [NULL] token (see the module doc
 F_PHASE = 38                    # 3 dims: position within the codon (0/1/2)
 C_TOK = 41
 
+
+
+def token_layout(unknown_symbols=False, ref_bio=False):
+    """The token feature layout for one model. Both options are opt-in
+    (2026-10-01, the ablation of the 2026-09-24 48-channel draft); with both off
+    this is exactly the module constants above (C_TOK = 41).
+
+      unknown_symbols  dna / regulatory slots gain an N channel (6), protein gains
+                       '-' deleted and 'X' unreadable (23) -- the blocks must be
+                       loaded with load_dataset(unknown_symbols=True), and an
+                       uncalled base then makes a token
+      ref_bio          the H37Rv residue's three properties get their own slot,
+                       right before D_BIO (both on = the draft's 48 channels)
+    """
+    nt = 6 if unknown_symbols else 5
+    pr = 23 if unknown_symbols else 21
+    o, slots = 0, {}
+    for name, width in (("dna", nt), ("protein", pr), ("biophysical", 3),
+                        ("regulatory", nt)):
+        slots[name] = (o, o + width)
+        o += width
+    ref = None
+    if ref_bio:
+        ref = (o, o + 3)
+        o += 3
+    d_bio = (o, o + 3)
+    o += 3
+    f_null = o
+    f_phase = o + 1
+    o += 4
+    order = list(RESIDUES_WITH_STOP) + (["-", "X"] if unknown_symbols else [])
+    props = np.zeros((pr, N_PROPERTIES), dtype=np.float32)
+    for i, r in enumerate(order):
+        if r in AA_PROPERTY:
+            props[i] = AA_PROPERTY[r]
+    return {"slots": slots, "ref_bio": ref, "d_bio": d_bio, "f_is_null": f_null,
+            "f_phase": f_phase, "c_tok": o, "nt_channels": nt, "protein_channels": pr,
+            "unknown_symbols": bool(unknown_symbols), "residue_properties": props}
+
+
 # --- the structure channels, appended when a `structure` block is loaded -----
 # The locus's C-alpha geometry over its own variant tokens, SLOT-ALIGNED: token i
 # carries row i of the (V x V) matrix, V = max_variants, so channel C_TOK + j of
@@ -160,6 +201,19 @@ C_TOK = 41
 # Appended, not slotted into the fixed layout above, so a model built without
 # structure keeps C_TOK = 41.
 STRUCT_LENGTH = 10.0            # A; the decay length of the proximity channels
+#
+# Three opt-in knobs (2026-10-01); the defaults are the behaviour above.
+#   struct_dist     'ca' (C-alpha) | 'heavy' (closest heavy atoms of the two
+#                   residues, FeatureBlock.meta['heavy'])
+#   struct_gate     'none' | 'contact': a pair is real only if its C-alpha are
+#                   within CONTACT_REACH (2 x the longest side chain + a 5 A
+#                   heavy-atom window) AND AlphaFold's PAE for it is <= PAE_MAX
+#                   (datasets/structure.py)
+#   struct_invalid  the value a non-real entry reads. 0 by default, which is
+#                   also "very far"; -1 keeps "no geometry / failed the gate"
+#                   apart from both "far" (-> 0) and "same residue" (1).
+STRUCT_DISTS = ("ca", "heavy")
+STRUCT_GATES = ("none", "contact")
 
 
 def c_tok(max_variants, structure):
@@ -222,6 +276,11 @@ LOCUSFUSION_V2_DEFAULTS = {
     #    exp(-d / struct_length). Read only when a `structure` block is loaded.
     #    A config that does not record it rebuilds at this default.
     "struct_length": STRUCT_LENGTH,
+    #    ...which distance, which gate, and what a non-real entry reads (see
+    #    STRUCT_LENGTH). The defaults reproduce the 2026-09-24 encoding.
+    "struct_dist": "ca", "struct_gate": "none", "struct_invalid": 0.0,
+    # I  opt-in tokenizer ablations (token_layout); both off = C_TOK 41
+    "unknown_symbols": False, "ref_bio": False,
 }
 
 def _sinusoid(coord, dims, min_wavelength=1 / 3, max_wavelength=4096.0):
@@ -286,6 +345,8 @@ class LocusFusionV2Net(nn.Module):
                  max_variants=16, pos_dims=32,
                  locus_encoder="adapter", summary_norm="keyed", carry_variants=0,
                  struct_length=STRUCT_LENGTH,
+                 struct_dist="ca", struct_gate="none", struct_invalid=0.0,
+                 unknown_symbols=False, ref_bio=False,
                  block_frames=None,
                  hidden=256, head_dropout=0.0, per_drug_hidden=0, out_bias=None):
         super().__init__()
@@ -304,11 +365,17 @@ class LocusFusionV2Net(nn.Module):
                              f"choose from {list(SUMMARY_NORMS)}")
         if not struct_length > 0:
             raise ValueError(f"struct_length must be > 0 A, got {struct_length}")
+        if struct_dist not in STRUCT_DISTS:
+            raise ValueError(f"unknown struct_dist {struct_dist!r}; choose from {list(STRUCT_DISTS)}")
+        if struct_gate not in STRUCT_GATES:
+            raise ValueError(f"unknown struct_gate {struct_gate!r}; choose from {list(STRUCT_GATES)}")
         if pos_dims % 2:
             raise ValueError(f"pos_dims must be even, got {pos_dims}")
         if drug_names:
             n_drugs = len(drug_names)
 
+        self.layout = token_layout(unknown_symbols, ref_bio)
+        self.unknown_symbols, self.ref_bio = bool(unknown_symbols), bool(ref_bio)
         block_keys = [(m, l or NO_LOCUS) for m, l in block_keys]
         known = set(SLOTS) | set(STRUCTURE_MODALITIES)
         unknown = sorted({m for m, _ in block_keys} - known)
@@ -405,6 +472,23 @@ class LocusFusionV2Net(nn.Module):
                 has_ca = np.zeros(1, bool)
             self.register_buffer(f"struct_ca_{li}", torch.as_tensor(ca), persistent=False)
             self.register_buffer(f"struct_has_{li}", torch.as_tensor(has_ca), persistent=False)
+            # heavy atoms and the PAE half of the gate, only when asked for
+            for need, key in ((struct_dist == "heavy", "heavy"),
+                              (struct_gate == "contact", "pae_bad")):
+                if need and sb is not None and sb["frame"].get(key) is None:
+                    raise ValueError(
+                        f"{p['locus']}: struct_dist={struct_dist!r} / struct_gate="
+                        f"{struct_gate!r} needs FeatureBlock.meta[{key!r}], which this "
+                        "structure block does not carry. Re-run "
+                        "scripts/fetch_af_structures.py (heavy atoms + PAE).")
+            if struct_dist == "heavy":
+                atoms, atom_ok = (meta_heavy(sb["frame"]) if sb is not None
+                                  else (np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), bool)))
+                self.register_buffer(f"struct_atoms_{li}", torch.as_tensor(atoms), persistent=False)
+                self.register_buffer(f"struct_atom_ok_{li}", torch.as_tensor(atom_ok), persistent=False)
+            if struct_gate == "contact":
+                bad = meta_pae_bad(sb["frame"], len(ca)) if sb is not None else np.zeros((1, 1), bool)
+                self.register_buffer(f"struct_pae_bad_{li}", torch.as_tensor(bad), persistent=False)
             self.register_buffer(f"coord_map_{li}", torch.as_tensor(coord), persistent=False)
             self.register_buffer(f"codon_map_{li}", torch.as_tensor(codon), persistent=False)
             self.register_buffer(f"phase_map_{li}", torch.as_tensor(phase), persistent=False)
@@ -426,13 +510,25 @@ class LocusFusionV2Net(nn.Module):
                        if note["genome_anchored"] and note["has_cds"]
                        else "has no genome-anchored CDS")
                     + " — the fold is not on the tokenizer's H37Rv codon grid.")
+            for b in p["nt"]:
+                if b["channels"] != self.layout["nt_channels"]:
+                    raise ValueError(
+                        f"{p['locus']}: {b['modality']} block has {b['channels']} channels, "
+                        f"this model reads {self.layout['nt_channels']} -- "
+                        + ("A C T G - N: load with unknown_symbols=True."
+                           if self.unknown_symbols else
+                           "A C T G -: this block was loaded with unknown_symbols=True; "
+                           "build the model with unknown_symbols=True too."))
             for b in p["aa"]:
-                if b["modality"] == "protein" and b["channels"] != PROTEIN_CHANNELS:
+                want = self.layout["protein_channels"]
+                if b["modality"] == "protein" and b["channels"] != want:
                     raise ValueError(
                         f"{p['locus']}: protein block has {b['channels']} channels, this "
-                        f"model reads {PROTEIN_CHANNELS} (20 residues + STOP) on the H37Rv "
-                        "codon grid. Load with protein_frame='reference' — the runners "
-                        "imply it for --arch locusfusion_v2.")
+                        f"model reads {want} (20 residues + STOP"
+                        + (" + deleted + unreadable" if self.unknown_symbols else "")
+                        + ") on the H37Rv codon grid. Load with protein_frame='reference' "
+                        "(the runners imply it for --arch locusfusion_v2)"
+                        + (" and unknown_symbols=True." if self.unknown_symbols else "."))
                 # a frame-anchored coding record says how many reference codons
                 # there are; an isolate-frame block is as wide as its longest
                 # translation instead, which is the silent failure worth catching
@@ -463,13 +559,17 @@ class LocusFusionV2Net(nn.Module):
         self.tokens_per_locus = 1 + self.max_variants
         self.carry_variants = min(int(carry_variants), self.max_variants)
         self.struct_length = float(struct_length)
+        self.struct_dist, self.struct_gate = struct_dist, struct_gate
+        self.struct_invalid = float(struct_invalid)
 
         self._has_ref = has_ref
         self.use_structure = any(p["structure"] is not None for p in plan)
-        self.c_tok = c_tok(self.max_variants, self.use_structure)
-        self.f_struct = C_TOK                                   # proximity row
+        self.c_tok = (self.layout["c_tok"]
+                      + (self.max_variants if self.use_structure else 0))
+        self.f_struct = self.layout["c_tok"]                    # proximity row
         self.register_buffer("residue_properties",
-                             torch.as_tensor(RESIDUE_PROPERTIES), persistent=False)
+                             torch.as_tensor(self.layout["residue_properties"]),
+                             persistent=False)
 
         # --- token embedding -------------------------------------------------
         n_loci = len(self.loci)
@@ -701,6 +801,7 @@ class LocusFusionV2Net(nn.Module):
         valid = torch.zeros(B, n_loci, T, dtype=torch.bool, device=dev)
         stats = torch.zeros(B, n_loci, 2, device=dev, dtype=dt)
 
+        SL = self.layout["slots"]
         for li, p in enumerate(self._plan):
             # occupancy over the merged axis, from the NUCLEOTIDE blocks only
             occ = torch.cat([xs[b["index"]].abs().sum(1) > 0 for b in p["nt"]], dim=1)
@@ -717,7 +818,7 @@ class LocusFusionV2Net(nn.Module):
 
             f = feat[:, li, 1:1 + k]
             for b in p["nt"]:                       # the base that changed
-                lo, hi = SLOTS[b["modality"]]
+                lo, hi = SL[b["modality"]]
                 x = xs[b["index"]]
                 here = (idx >= b["offset"]) & (idx < b["offset"] + b["length"])
                 local = (idx - b["offset"]).clamp_(0, b["length"] - 1)
@@ -769,17 +870,19 @@ class LocusFusionV2Net(nn.Module):
                 # unchanged codon at a deletion. Substitutions only; the deleted
                 # codon keeps empty residue slots and a delta of -ref_props, the
                 # same "the reference residue is gone" a stop gain reports.
-                base = f[:, :, SLOTS["dna"][0]:SLOTS["dna"][1]]
+                base = f[:, :, SL["dna"][0]:SL["dna"][1]]
                 sub = (base.sum(-1) > 0) & (base[..., GAP_CHANNEL] == 0)
+                if self.unknown_symbols:            # an uncalled base is no substitution
+                    sub &= base[..., NT_CHANNELS] == 0
                 fill = ~changed & known.unsqueeze(-1) & sub.unsqueeze(-1)
                 if "protein" in got:
-                    ref_oh = F.one_hot(ref_id, num_classes=PROTEIN_CHANNELS).to(dt)
+                    ref_oh = F.one_hot(ref_id, num_classes=self.layout["protein_channels"]).to(dt)
                     got["protein"] = torch.where(
                         fill, ref_oh * known.unsqueeze(-1).to(dt), got["protein"])
                 if "biophysical" in got:
                     got["biophysical"] = torch.where(fill, ref_props, got["biophysical"])
             for mod, v in got.items():
-                lo, hi = SLOTS[mod]
+                lo, hi = SL[mod]
                 f[:, :, lo:hi] = v
             if "biophysical" in got:
                 alt_props = got["biophysical"]
@@ -791,10 +894,14 @@ class LocusFusionV2Net(nn.Module):
             # make a token read as a CHANGE rather than as a state. The reference
             # values themselves are not carried: they are a constant of the
             # position, and the isolate's own properties are already on the token.
+            db, fp = self.layout["d_bio"], self.layout["f_phase"]
             if has_ref and alt_props is not None:
-                f[:, :, D_BIO[0]:D_BIO[1]] = (alt_props - ref_props) * \
+                f[:, :, db[0]:db[1]] = (alt_props - ref_props) * \
                     known.unsqueeze(-1).to(dt)
-            f[:, :, F_PHASE:F_PHASE + 3] = F.one_hot(
+            if self.layout["ref_bio"] is not None and has_ref and coding.any():
+                rb = self.layout["ref_bio"]         # --lf-ref-bio: H37Rv's own properties
+                f[:, :, rb[0]:rb[1]] = ref_props * known.unsqueeze(-1).to(dt)
+            f[:, :, fp:fp + 3] = F.one_hot(
                 ph.clamp(0, 2), num_classes=3).to(dt) * coding.unsqueeze(-1).to(dt)
 
             # Where this token sits on the fold, relative to the locus's other
@@ -803,11 +910,12 @@ class LocusFusionV2Net(nn.Module):
             # token j -- the same 5'->3' token order on both axes. `ok` keeps
             # padding out of it.
             if p["structure"] is not None:
-                dist, mask, _ = pair_distances(
-                    codon, ok, getattr(self, f"struct_ca_{li}").to(dt),
-                    getattr(self, f"struct_has_{li}"))
+                dist, mask = self._struct_pairs(li, codon, ok, dt)
                 a = self.f_struct
-                f[:, :, a:a + k] = torch.exp(-dist / self.struct_length) * mask.to(dt)
+                f[:, :, a:a + self.max_variants] = self.struct_invalid
+                f[:, :, a:a + k] = torch.where(
+                    mask, torch.exp(-dist / self.struct_length),
+                    torch.full_like(dist, self.struct_invalid))
 
             feat[:, li, 1:1 + k] = f * ok.unsqueeze(-1).to(dt)
             coord[:, li, 1:1 + k] = coord[:, li, 1:1 + k] * ok.to(dt)
@@ -817,10 +925,25 @@ class LocusFusionV2Net(nn.Module):
             # from the reference at EVERY column and must not read as a locus
             # that matches it.
             valid[:, li, 0] = True
-            feat[:, li, 0, F_IS_NULL] = 1.0
+            feat[:, li, 0, self.layout["f_is_null"]] = 1.0
             stats[:, li, 0] = torch.log1p(n_occ.to(dt))
             stats[:, li, 1] = n_occ.to(dt) / max(p["kept"], 1)
         return feat, coord, valid, stats
+
+    def _struct_pairs(self, li, codon, ok, dt):
+        """(dist (B, k, k) in A, mask (B, k, k)): what the proximity rows are cut
+        from, under this model's struct_dist and struct_gate."""
+        dist, mask, located = pair_distances(
+            codon, ok, getattr(self, f"struct_ca_{li}").to(dt),
+            getattr(self, f"struct_has_{li}"))
+        if self.struct_gate == "contact":
+            bad = getattr(self, f"struct_pae_bad_{li}")
+            cc = codon.clamp(0, bad.shape[0] - 1)
+            mask = mask & (dist <= CONTACT_REACH) & ~bad[cc.unsqueeze(2), cc.unsqueeze(1)]
+        if self.struct_dist == "heavy":
+            dist = heavy_min_distances(codon, located, getattr(self, f"struct_atoms_{li}").to(dt),
+                                       getattr(self, f"struct_atom_ok_{li}")) * mask.to(dt)
+        return dist, mask
 
     def _check_occupancy(self, valid):
         """Warn once if the input does not look delta-encoded.
@@ -919,8 +1042,7 @@ class LocusFusionV2Net(nn.Module):
             codon = getattr(self, f"codon_map_{li}")[idx]
             extra = {}
             if p["structure"] is not None:
-                dist, mask, _ = pair_distances(codon, ok, getattr(self, f"struct_ca_{li}"),
-                                               getattr(self, f"struct_has_{li}"))
+                dist, mask = self._struct_pairs(li, codon, ok, torch.float32)
                 extra = {"struct_dist": dist, "struct_mask": mask}
             out.append({
                 "locus": p["locus"],

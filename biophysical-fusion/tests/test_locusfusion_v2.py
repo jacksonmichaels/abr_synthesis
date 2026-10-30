@@ -35,6 +35,7 @@ did not, or a failure it was built to avoid:
     is off for promoter, rRNA, stop and [NULL]; the base 48 channels -- and so
     every existing checkpoint -- are untouched, and the fold survives config.json.
 """
+import math
 import sys
 import traceback
 import warnings
@@ -768,6 +769,124 @@ def _test_structure_length_scale():
 
 # --- the real reference rows, when mounted ---------------------------------
 
+# --- structure knobs: heavy atoms, the contact gate, the invalid value ---------
+# gA as above, plus one side-chain atom per residue 1 A up in z -- except codons
+# 5 and 12 (C-alpha 5 A apart), whose side chains point at each other and end
+# 2 A apart. The pair (5, 12) is listed as failing PAE.
+def _heavy_frame(frame, bad=()):
+    heavy = []
+    for k, xyz in enumerate(frame["ca"]):
+        if xyz is None:
+            heavy.append(None)
+        elif k == 5:
+            heavy.append([xyz, [xyz[0], 1.5, 0.0]])
+        elif k == 12:
+            heavy.append([xyz, [xyz[0], 3.5, 0.0]])
+        else:
+            heavy.append([xyz, [xyz[0], xyz[1], 1.0]])
+    return {**frame, "heavy": heavy, "pae_bad": [list(b) for b in bad]}
+
+
+H_FRAMES = FRAMES + [_heavy_frame(_fold(20), bad=[(5, 12)]), _heavy_frame(_fold(20, False))]
+
+
+def h_net(**kw):
+    torch.manual_seed(0)
+    m = LocusFusionV2Net(S_KEYS, S_SPECS, block_frames=H_FRAMES, **kw)
+    m.eval()
+    return m
+
+
+def _rows(m, xs, locus="gA"):
+    feat = m._locus_tokens(xs)[0][0, m.loci.index(locus), 1:1 + m.max_variants]
+    return feat[:, m.f_struct:m.f_struct + m.max_variants]
+
+
+def _test_structure_invalid_value():
+    """-1 for every entry with no geometry -- the promoter token, the stop codon,
+    padding -- while the same residue still reads 1 and a real pair exp(-d/L)."""
+    xs = s_put(s_put(s_put(s_batch(), ("regulatory", "gA"), 0), ("dna", "gA"), 48),
+               ("dna", "gA"), 67)
+    base, neg = _rows(s_net(), xs), _rows(s_net(struct_invalid=-1.0), xs)
+    real = base > 0
+    assert torch.equal(base[real], neg[real]), "a real entry changed"
+    assert (neg[:3][~real[:3]] == -1).all(), neg[:3]
+    assert torch.allclose(neg[1, 1], torch.tensor(1.0)), "same residue is not 1"
+    assert abs(float(neg[1, 2]) - math.exp(-0.5)) < 1e-5
+    assert (neg[1, 3:] == -1).all(), "padding partners of a real token are not -1"
+    assert not neg[3:].any(), "a padding token's own row is not zeroed"
+
+
+def _test_structure_heavy_atoms():
+    """Closest heavy atoms: codon 5 -> 12 is 2 A (side chains), not 5 A (C-alpha),
+    and never more than the C-alpha distance."""
+    xs = s_put(s_put(s_put(s_batch(), ("dna", "gA"), 48), ("dna", "gA"), 67),
+               ("dna", "gA"), 51)
+    ca, hv = h_net(), h_net(struct_dist="heavy")
+    rc = {r["locus"]: r for r in ca.variant_report(xs)}["gA"]
+    rh = {r["locus"]: r for r in hv.variant_report(xs)}["gA"]
+    assert rc["codon"][0, :3].tolist() == [5, 6, 12], rc["codon"][0, :3]
+    dc, dh = rc["struct_dist"][0], rh["struct_dist"][0]
+    assert abs(float(dc[0, 2]) - 5.0) < 1e-4 and abs(float(dh[0, 2]) - 2.0) < 1e-4, (dc, dh)
+    assert abs(float(dh[0, 1]) - 3.8) < 1e-4, "neighbours' heavy distance is not 3.8 A"
+    assert (dh <= dc + 1e-5).all() and float(dh[0, 0]) == 0.0
+    try:
+        LocusFusionV2Net(S_KEYS, S_SPECS, block_frames=S_FRAMES, struct_dist="heavy")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("struct_dist='heavy' built without heavy atoms on the meta")
+
+
+def _test_structure_contact_gate():
+    """The gate drops a pair failing PAE (5, 12) and a pair beyond CONTACT_REACH
+    (codon 0 -> 6, 22.8 A C-alpha) but keeps a near, confident one (5 -> 6)."""
+    from datasets.structure import CONTACT_REACH
+    assert abs(CONTACT_REACH - 19.82) < 1e-6
+    xs = s_put(s_put(s_put(s_put(s_batch(), ("dna", "gA"), 30), ("dna", "gA"), 48),
+                     ("dna", "gA"), 51), ("dna", "gA"), 67)
+    m = h_net(struct_gate="contact", struct_invalid=-1.0)
+    rep = {r["locus"]: r for r in m.variant_report(xs)}["gA"]
+    assert rep["codon"][0, :4].tolist() == [0, 5, 6, 12], rep["codon"][0, :4]
+    mk = rep["struct_mask"][0]
+    assert not mk[1, 3] and not mk[3, 1], "the PAE-failing pair passed"
+    assert not mk[0, 2], "a pair beyond CONTACT_REACH passed"
+    assert mk[1, 2] and mk[0, 0] and mk[0, 1], "a near confident pair was gated"
+    rows = _rows(m, xs)
+    assert float(rows[1, 3]) == -1.0 and float(rows[1, 2]) > 0
+    # ungated, every located pair is real
+    assert {r["locus"]: r for r in h_net().variant_report(xs)}["gA"]["struct_mask"][0, :4, :4].all()
+
+
+def _test_structure_knobs_round_trip():
+    import json
+
+    class _B:
+        def __init__(self, key, spec, meta):
+            self.name = f"{key[0]}:{key[1]}"
+            self._spec, self.meta, self.channel_names = spec, meta, []
+
+        def spec(self):
+            return self._spec
+
+    blocks = [_B(k, s, f) for k, s, f in zip(S_KEYS, S_SPECS, H_FRAMES)]
+    knobs = {"struct_dist": "heavy", "struct_gate": "contact", "struct_invalid": -1.0,
+             "struct_length": 30.0}
+    torch.manual_seed(0)
+    a = LocusFusionV2Net.from_blocks(blocks, drug_names=["A", "B"], **knobs)
+    cfg = json.loads(json.dumps(model_config(
+        arch="locusfusion_v2", blocks=blocks, encoder_types=["cnn"] * len(S_KEYS),
+        drug_names=["A", "B"], out_bias=None,
+        head={"hidden": 256, "dropout": 0.0, "per_drug_hidden": 0},
+        locusfusion=knobs), allow_nan=False))
+    b = build_model_from_config({"model": cfg})
+    b.load_state_dict(a.state_dict(), strict=True)
+    assert (b.struct_dist, b.struct_gate, b.struct_invalid) == ("heavy", "contact", -1.0)
+    xs = s_put(s_put(s_batch(3), ("dna", "gA"), 48), ("dna", "gA"), 67)
+    a.eval(); b.eval()
+    assert torch.allclose(a(xs), b(xs), atol=1e-6), "rebuilt model gives different logits"
+
+
 def _test_real_frames_all_loci():
     try:
         from bigtb_ref import REAL_GENOTYPE_DIR as GD, REAL_REGULATORY_DIR as RD, tb
@@ -803,7 +922,123 @@ def _test_real_frames_all_loci():
     assert m.frames["gid"]["duplicate_columns"] == 102
 
 
+
+
+# --- opt-in tokenizer ablations: unknown symbols, reference properties -------
+# (2026-10-01; models.locusfusion_v2.token_layout). Defaults must stay C_TOK 41.
+from models.locusfusion_v2 import token_layout  # noqa: E402
+from datasets.sequences import delta_one_hot_nt  # noqa: E402
+from datasets.biochem import one_hot_aa  # noqa: E402
+
+U_SPECS = [(6 if k[0] in ("dna", "regulatory") else 23 if k[0] == "protein" else c, n)
+           for k, (c, n) in zip(KEYS, SPECS)]
+
+
+def unet(**kw):
+    torch.manual_seed(0)
+    kw.setdefault("block_frames", FRAMES)
+    m = LocusFusionV2Net(KEYS, U_SPECS, unknown_symbols=True, **kw)
+    m.eval()
+    return m
+
+
+def _test_default_layout_is_unchanged():
+    L = token_layout()
+    assert L["slots"] == SLOTS and L["d_bio"] == D_BIO and L["c_tok"] == C_TOK == 41
+    assert L["f_is_null"] == F_IS_NULL and L["f_phase"] == F_PHASE and L["ref_bio"] is None
+    assert np.array_equal(L["residue_properties"], RESIDUE_PROPERTIES)
+    assert net().tok_proj.in_features == 41
+    assert LOCUSFUSION_V2_DEFAULTS["unknown_symbols"] is False
+    assert LOCUSFUSION_V2_DEFAULTS["ref_bio"] is False
+
+
+def _test_layout_widths():
+    assert token_layout(True, False)["c_tok"] == 45      # +N dna, +N reg, +"-" +"X" protein
+    assert token_layout(False, True)["c_tok"] == 44
+    assert token_layout(True, True)["c_tok"] == 48, "both on must be the draft's 48"
+    assert net(ref_bio=True).tok_proj.in_features == 44
+    assert unet(ref_bio=True).tok_proj.in_features == 48
+
+
+def _test_encoders_give_unknowns_a_channel():
+    a = delta_one_hot_nt("ACNT", "ACGT", with_unknown=True)
+    assert a.shape == (4, 6) and a[2, 5] == 1 and a[2, :5].sum() == 0
+    assert a[[0, 1, 3]].sum() == 0, "matching bases must still be zeroed"
+    b = delta_one_hot_nt("ACNT", "ACGT")
+    assert b.shape == (4, 5) and b.sum() == 0, "default: an N still reads as reference"
+    aa = one_hot_aa("AX-", with_stop=True, with_unknown=True)
+    assert aa.shape == (23, 3) and aa[22, 1] == 1 and aa[21, 2] == 1
+    assert one_hot_aa("AX-", with_stop=True).shape == (21, 3)
+
+
+def _test_uncalled_base_makes_a_token():
+    m = unet()
+    L = m.layout
+    xs = [torch.zeros(1, c, n) for c, n in U_SPECS]
+    xs[B[("dna", "gA")]][0, 5, 48] = 1.0                       # N at a coding column
+    f, _, valid = token(m, xs, "gA", 1)
+    assert valid, "an uncalled base produced no token"
+    assert float(f[L["slots"]["dna"][0] + 5]) == 1.0
+    pr = f[L["slots"]["protein"][0]:L["slots"]["protein"][1]]
+    assert float(pr.abs().sum()) == 0, "an uncalled base restated the reference residue"
+
+
+def _test_ref_bio_carries_the_reference_properties():
+    m = net(ref_bio=True)
+    rb = m.layout["ref_bio"]
+    xs = put(reference_batch(1), ("dna", "gA"), 48, channel=2)  # synonymous at codon 5
+    f, _, valid = token(m, xs, "gA", 1)
+    ser = _RES_ORDER.index("S")
+    assert valid and torch.allclose(f[rb[0]:rb[1]], torch.as_tensor(RESIDUE_PROPERTIES[ser]),
+                                    atol=1e-6)
+    db = m.layout["d_bio"]
+    assert float(f[db[0]:db[1]].abs().sum()) == 0
+
+
+def _test_channel_mismatch_is_refused():
+    for build in (lambda: LocusFusionV2Net(KEYS, U_SPECS, block_frames=FRAMES),
+                  lambda: LocusFusionV2Net(KEYS, SPECS, block_frames=FRAMES,
+                                           unknown_symbols=True)):
+        try:
+            build()
+        except ValueError:
+            continue
+        raise AssertionError("a model / data channel mismatch was not refused")
+
+
+def _test_ablation_knobs_round_trip():
+    import json
+
+    class _B:
+        def __init__(self, key, spec, meta):
+            self.name = f"{key[0]}:{key[1]}"
+            self._spec, self.meta, self.channel_names = spec, meta, []
+
+        def spec(self):
+            return self._spec
+
+    blocks = [_B(k, s, f) for k, s, f in zip(KEYS, U_SPECS, FRAMES)]
+    knobs = {"unknown_symbols": True, "ref_bio": True}
+    torch.manual_seed(0)
+    a = LocusFusionV2Net.from_blocks(blocks, drug_names=["A"], **knobs)
+    cfg = json.loads(json.dumps(model_config(
+        arch="locusfusion_v2", blocks=blocks, encoder_types=["cnn"] * len(KEYS),
+        drug_names=["A"], out_bias=None,
+        head={"hidden": 256, "dropout": 0.0, "per_drug_hidden": 0},
+        locusfusion=knobs), allow_nan=False))
+    b = build_model_from_config({"model": cfg})
+    b.load_state_dict(a.state_dict(), strict=True)
+    assert b.unknown_symbols and b.ref_bio and b.tok_proj.in_features == 48
+
+
 if __name__ == "__main__":
+    check("ablation: default layout is unchanged (C_TOK 41)", _test_default_layout_is_unchanged)
+    check("ablation: layout widths 45 / 44 / 48", _test_layout_widths)
+    check("ablation: encoders give N / '-' / 'X' a channel", _test_encoders_give_unknowns_a_channel)
+    check("ablation: an uncalled base makes a token", _test_uncalled_base_makes_a_token)
+    check("ablation: ref_bio carries H37Rv's properties", _test_ref_bio_carries_the_reference_properties)
+    check("ablation: model/data channel mismatch is refused", _test_channel_mismatch_is_refused)
+    check("ablation: knobs survive a JSON config", _test_ablation_knobs_round_trip)
     check("a locus matching H37Rv presents only [NULL]", _test_reference_matching_locus_is_null_only)
     check("nothing is named for wild type", _test_nothing_is_called_wild_type)
     check("only nucleotide blocks make tokens", _test_only_nucleotides_make_tokens)
@@ -846,6 +1081,10 @@ if __name__ == "__main__":
     check("structure: the decay length is a knob, default 10 A", _test_structure_length_scale)
     check("structure: backward, and a JSON config rebuilds it",
           _test_structure_backward_and_round_trip)
+    check("structure: invalid entries read struct_invalid", _test_structure_invalid_value)
+    check("structure: heavy-atom distances", _test_structure_heavy_atoms)
+    check("structure: the contact gate", _test_structure_contact_gate)
+    check("structure: new knobs survive a JSON config", _test_structure_knobs_round_trip)
     check("real frames, all loci (skipped without data)", _test_real_frames_all_loci)
     n_fail = _RESULTS.count(False)
     print(f"\n{len(_RESULTS) - n_fail}/{len(_RESULTS)} passed")

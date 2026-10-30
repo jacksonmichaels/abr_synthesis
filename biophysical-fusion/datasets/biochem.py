@@ -164,8 +164,15 @@ def biophysical_matrix(protein_seq: str, pad_to: int = None) -> np.ndarray:
     return out
 
 
+# Opt-in residue channels for locusfusion_v2 --lf-unknown-symbols: a deleted codon
+# ('-') and an unreadable one (anything else outside the alphabet, e.g. a codon
+# with an N) each get a channel instead of the all-zero column.
+RESIDUE_GAP, RESIDUE_OTHER = "-", "X"
+EXTRA_RESIDUE_CHANNELS = (RESIDUE_GAP, RESIDUE_OTHER)
+
+
 def one_hot_aa(protein_seq: str, pad_to: int = None,
-               with_stop: bool = False) -> np.ndarray:
+               with_stop: bool = False, with_unknown: bool = False) -> np.ndarray:
     """
     (20, K) one-hot amino-acid matrix, K = pad_to (if given) else
     len(protein_seq). Unknown residues / padding are the all-zero column (same
@@ -177,17 +184,22 @@ def one_hot_aa(protein_seq: str, pad_to: int = None,
     """
     k = pad_to if pad_to is not None else len(protein_seq)
     alphabet = RESIDUE_WITH_STOP_TO_INDEX if with_stop else AA_TO_INDEX
-    out = np.zeros((len(alphabet), k), dtype=np.float32)
+    n = len(alphabet)
+    out = np.zeros((n + (len(EXTRA_RESIDUE_CHANNELS) if with_unknown else 0), k),
+                   dtype=np.float32)
     for i, aa in enumerate(protein_seq[:k]):
         j = alphabet.get(aa)
         if j is not None:
             out[j, i] = 1.0
+        elif with_unknown:
+            out[n if aa == RESIDUE_GAP else n + 1, i] = 1.0
     return out
 
 
-def residue_channels(with_stop: bool = False):
+def residue_channels(with_stop: bool = False, with_unknown: bool = False):
     """The channel names `one_hot_aa` emits, in order."""
-    return list(RESIDUES_WITH_STOP if with_stop else AMINO_ACIDS)
+    names = list(RESIDUES_WITH_STOP if with_stop else AMINO_ACIDS)
+    return names + list(EXTRA_RESIDUE_CHANNELS) if with_unknown else names
 
 
 def upsample_to_nt(bio: np.ndarray) -> np.ndarray:

@@ -190,6 +190,10 @@ def main():
                          "before 2026-09-18). The held-out test split stays seed 42, "
                          "so this is repeated CV on a fixed test set; --seed is the "
                          "separate training randomness.")
+    ap.add_argument("--split-dir", default=None,
+                    help="directory of per-drug split files {DRUG}.csv (New_ID, role, "
+                         "fold), e.g. results/experiments/lineage_split/splits; fixes "
+                         "the test split and CV folds, overriding --cv-seed")
     ap.add_argument("--monitor", default="auc", choices=["auc", "loss"],
                     help="early-stopping metric (default: auc — 'loss' stalls at "
                          "the majority-class collapse on imbalanced drugs)")
@@ -345,6 +349,25 @@ def main():
                     help="--arch locusfusion_v2 with --modalities structure: decay "
                          "length in A of the closeness channels exp(-d/L) "
                          "(default: 10).")
+    lf.add_argument("--lf-struct-dist", choices=["ca", "heavy"], default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: the "
+                         "token-token distance, C-alpha (default) or closest heavy atoms.")
+    lf.add_argument("--lf-struct-gate", choices=["none", "contact"], default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: 'contact' "
+                         "keeps a pair only within C-alpha reach of a heavy-atom contact "
+                         "(datasets.structure.CONTACT_REACH) and with AlphaFold PAE <= "
+                         "PAE_MAX (default: none).")
+    lf.add_argument("--lf-struct-invalid", type=float, default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: the value "
+                         "a pair with no geometry (or failing the gate) reads "
+                         "(default: 0, which is also 'far'; -1 keeps them apart).")
+    lf.add_argument("--lf-unknown-symbols", action="store_true", default=None,
+                    help="--arch locusfusion_v2: an uncalled base (N) and an unreadable "
+                         "or deleted codon get their own channels, and an uncalled base "
+                         "makes a token (the 2026-09-24 draft's behaviour). Default off.")
+    lf.add_argument("--lf-ref-bio", action="store_true", default=None,
+                    help="--arch locusfusion_v2: carry the H37Rv residue's three "
+                         "properties as their own channels next to the delta. Default off.")
     lf.add_argument("--lf-carry-variants", type=int, default=None,
                     help="how many of each locus's own variant tokens are handed "
                          "up to stage 2 alongside its summary (default: 0). >0 "
@@ -480,6 +503,9 @@ def main():
         "summary_norm": args.lf_summary_norm,
         "carry_variants": args.lf_carry_variants,
         "struct_length": args.lf_struct_length,
+        "struct_dist": args.lf_struct_dist, "struct_gate": args.lf_struct_gate,
+        "struct_invalid": args.lf_struct_invalid,
+        "unknown_symbols": args.lf_unknown_symbols, "ref_bio": args.lf_ref_bio,
     }.items() if v is not None}
     experimental = {k: v for k, v in {
         "d_model": args.xm_d_model, "max_variants": args.xm_max_variants,
@@ -511,9 +537,17 @@ def main():
         ap.error("--genotype-dir reads real FASTAs; add --real")
     modalities = _resolve_choices(args.modalities, ALL_MODALITIES, "modality", ap,
                                   extra=STATIC_MODALITIES)
-    if args.lf_struct_length is not None and "structure" not in modalities:
-        ap.error("--lf-struct-length sets the structure closeness channels; without "
-                 "--modalities structure it would change nothing and the run would "
+    struct_flags = [f for f, v in (("--lf-struct-length", args.lf_struct_length),
+                                   ("--lf-struct-dist", args.lf_struct_dist),
+                                   ("--lf-struct-gate", args.lf_struct_gate),
+                                   ("--lf-struct-invalid", args.lf_struct_invalid))
+                    if v is not None]
+    if (args.lf_unknown_symbols or args.lf_ref_bio) and args.arch != "locusfusion_v2":
+        ap.error("--lf-unknown-symbols / --lf-ref-bio are locusfusion_v2 tokenizer "
+                 f"options; --arch {args.arch} would ignore them")
+    if struct_flags and "structure" not in modalities:
+        ap.error(f"{struct_flags} set the structure closeness channels; without "
+                 "--modalities structure they would change nothing and the run would "
                  "be the control under another name")
     if "structure" in modalities and args.arch not in STRUCTURE_ARCHS:
         ap.error(f"--modalities structure is read at a variant token's codon and "
@@ -607,11 +641,14 @@ def main():
                                     extra_loci=args.extra_loci,
                                     all_regulatory=args.all_regulatory,
                                     delta=delta, protein_frame=protein_frame,
-                                    locus_set=args.locus_set)
+                                    locus_set=args.locus_set,
+                                    unknown_symbols=bool(args.lf_unknown_symbols))
                 result = run_modal_cv(data, epochs=epochs, n_splits=args.n_splits,
                                       batch_size=args.batch_size, device=args.device,
                                       tb_dir=tb_dir, seed=args.seed,
                                       cv_seed=args.cv_seed,
+                                      split_file=(None if args.split_dir is None else
+                                                  str(Path(args.split_dir) / f"{drug}.csv")),
                                       branch_models=branch_models,
                                       default_encoder=args.default_encoder,
                                       monitor=args.monitor, patience=args.patience,
@@ -643,6 +680,7 @@ def main():
                                           # the RESOLVED value, unlike "delta"
                                           # above, which records the raw flag
                                           "protein_frame": protein_frame,
+                                          "unknown_symbols": bool(args.lf_unknown_symbols),
                                                                                     "loci_override": args.loci,
                                           "regulatory_loci_override": args.regulatory_loci,
                                       })

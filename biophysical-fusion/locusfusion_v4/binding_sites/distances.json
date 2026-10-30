@@ -1,0 +1,221 @@
+{
+ "STREPTOMYCIN|rrs": {
+  "to": "streptomycin atoms",
+  "structure": "4DR3 (drug-bound)",
+  "ligand_copies": [
+   "V"
+  ],
+  "alignment_identity": 0.788,
+  "index": "nucleotide offset from gene start",
+  "n": 1537,
+  "n_with_distance": 1493
+ },
+ "STREPTOMYCIN|rpsL": {
+  "to": "streptomycin atoms",
+  "structure": "4DR3 (drug-bound)",
+  "ligand_copies": [
+   "V"
+  ],
+  "alignment_identity": 0.718,
+  "index": "residue (0-based)",
+  "n": 124,
+  "n_with_distance": 123
+ },
+ "KANAMYCIN|rrs": {
+  "to": "kanamycin atoms",
+  "structure": "8EV7 (drug-bound)",
+  "ligand_copies": [
+   "FEB"
+  ],
+  "alignment_identity": 0.789,
+  "index": "nucleotide offset from gene start",
+  "n": 1537,
+  "n_with_distance": 1481
+ },
+ "KANAMYCIN|rrl": {
+  "to": "kanamycin atoms",
+  "structure": "8EV7 (drug-bound)",
+  "ligand_copies": [
+   "FEB"
+  ],
+  "alignment_identity": 0.752,
+  "index": "nucleotide offset from gene start",
+  "n": 3138,
+  "n_with_distance": 2833
+ },
+ "KANAMYCIN|rpsL": {
+  "to": "kanamycin atoms",
+  "structure": "8EV7 (drug-bound)",
+  "ligand_copies": [
+   "FEB"
+  ],
+  "alignment_identity": 0.726,
+  "index": "residue (0-based)",
+  "n": 124,
+  "n_with_distance": 122
+ },
+ "AMIKACIN|rrs": {
+  "to": "amikacin atoms",
+  "structure": "8EV6 (drug-bound)",
+  "ligand_copies": [
+   "BDB"
+  ],
+  "alignment_identity": 0.789,
+  "index": "nucleotide offset from gene start",
+  "n": 1537,
+  "n_with_distance": 1481
+ },
+ "AMIKACIN|rrl": {
+  "to": "amikacin atoms",
+  "structure": "8EV6 (drug-bound)",
+  "ligand_copies": [
+   "BDB"
+  ],
+  "alignment_identity": 0.752,
+  "index": "nucleotide offset from gene start",
+  "n": 3138,
+  "n_with_distance": 2833
+ },
+ "AMIKACIN|rpsL": {
+  "to": "amikacin atoms",
+  "structure": "8EV6 (drug-bound)",
+  "ligand_copies": [
+   "BDB"
+  ],
+  "alignment_identity": 0.726,
+  "index": "residue (0-based)",
+  "n": 124,
+  "n_with_distance": 122
+ },
+ "CAPREOMYCIN|rrs": {
+  "to": "capreomycin atoms",
+  "structure": "5V93 (drug-bound)",
+  "ligand_copies": [
+   "GA"
+  ],
+  "alignment_identity": 1.0,
+  "index": "nucleotide offset from gene start",
+  "n": 1537,
+  "n_with_distance": 1519
+ },
+ "CAPREOMYCIN|rrl": {
+  "to": "capreomycin atoms",
+  "structure": "5V93 (drug-bound)",
+  "ligand_copies": [
+   "GA"
+  ],
+  "alignment_identity": 1.0,
+  "index": "nucleotide offset from gene start",
+  "n": 3138,
+  "n_with_distance": 3118
+ },
+ "CAPREOMYCIN|rpsL": {
+  "to": "capreomycin atoms",
+  "structure": "5V93 (drug-bound)",
+  "ligand_copies": [
+   "GA"
+  ],
+  "alignment_identity": 1.0,
+  "index": "residue (0-based)",
+  "n": 124,
+  "n_with_distance": 123
+ },
+ "RIFAMPICIN|rpoB": {
+  "to": "rifampicin pocket",
+  "structure": "AlphaFold; site from 5UHB/5UHC",
+  "index": "residue (0-based)",
+  "n": 1172,
+  "n_with_distance": 1172
+ },
+ "ISONIAZID|katG": {
+  "to": "heme access channel (INH activation)",
+  "structure": "AlphaFold; site from 1SJ2/2CCA",
+  "index": "residue (0-based)",
+  "n": 740,
+  "n_with_distance": 740
+ },
+ "ISONIAZID|inhA": {
+  "to": "INH-/ETH-NAD adduct pocket",
+  "structure": "AlphaFold; site from 1ZID/2NTJ",
+  "index": "residue (0-based)",
+  "n": 269,
+  "n_with_distance": 269
+ },
+ "ETHIONAMIDE|inhA": {
+  "to": "INH-/ETH-NAD adduct pocket",
+  "structure": "AlphaFold; site from 1ZID/2NTJ",
+  "index": "residue (0-based)",
+  "n": 269,
+  "n_with_distance": 269
+ },
+ "ETHIONAMIDE|ethR": {
+  "to": "ligand tunnel (EthR inhibitors, not ETH)",
+  "structure": "AlphaFold; site from 1U9N",
+  "index": "residue (0-based)",
+  "n": 216,
+  "n_with_distance": 216
+ },
+ "PYRAZINAMIDE|pncA": {
+  "to": "PZA active site + Fe2+",
+  "structure": "AlphaFold; site from 3PL1",
+  "index": "residue (0-based)",
+  "n": 186,
+  "n_with_distance": 186
+ },
+ "ETHAMBUTOL|embB": {
+  "to": "ethambutol / DPA pocket",
+  "structure": "AlphaFold; site from 7BVF",
+  "index": "residue (0-based)",
+  "n": 1098,
+  "n_with_distance": 1098
+ },
+ "LEVOFLOXACIN|gyrA": {
+  "to": "QRDR-A water-Mg2+ bridge",
+  "structure": "AlphaFold; site from 5BS8/5BTG",
+  "index": "residue (0-based)",
+  "n": 838,
+  "n_with_distance": 838
+ },
+ "LEVOFLOXACIN|gyrB": {
+  "to": "TOPRIM C7 pocket + Mg2+",
+  "structure": "AlphaFold; site from 5BS8/5BTG",
+  "index": "residue (0-based)",
+  "n": 675,
+  "n_with_distance": 675
+ },
+ "MOXIFLOXACIN|gyrA": {
+  "to": "QRDR-A water-Mg2+ bridge",
+  "structure": "AlphaFold; site from 5BS8/5BTG",
+  "index": "residue (0-based)",
+  "n": 838,
+  "n_with_distance": 838
+ },
+ "MOXIFLOXACIN|gyrB": {
+  "to": "TOPRIM C7 pocket + Mg2+",
+  "structure": "AlphaFold; site from 5BS8/5BTG",
+  "index": "residue (0-based)",
+  "n": 675,
+  "n_with_distance": 675
+ },
+ "STREPTOMYCIN|gid": {
+  "to": "SAM pocket (enzyme, not drug)",
+  "structure": "AlphaFold; site from model",
+  "index": "residue (0-based)",
+  "n": 224,
+  "n_with_distance": 224
+ },
+ "AMIKACIN|eis": {
+  "to": "aminoglycoside acetylation cleft",
+  "structure": "AlphaFold; site from 3R1K",
+  "index": "residue (0-based)",
+  "n": 402,
+  "n_with_distance": 402
+ },
+ "KANAMYCIN|eis": {
+  "to": "aminoglycoside acetylation cleft",
+  "structure": "AlphaFold; site from 3R1K",
+  "index": "residue (0-based)",
+  "n": 402,
+  "n_with_distance": 402
+ }
+}

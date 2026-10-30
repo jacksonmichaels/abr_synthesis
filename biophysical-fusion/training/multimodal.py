@@ -41,6 +41,7 @@ import math
 import time
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 from sklearn.metrics import average_precision_score, roc_auc_score
@@ -341,7 +342,7 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  save_weights="best", weights_dir=None, data_config=None,
                  setfusion=None, lr_schedule="none", warmup_epochs=0,
                  transformer=None, locusfusion=None, experimental=None,
-                 cv_seed=42):
+                 cv_seed=42, split_file=None):
     """Train/eval a MultiModalNet on a DrugData bundle, following BIG-TB's
     SD-CNN protocol (run_SDCNN_ccp_crossval / _assess). Returns a result dict.
 
@@ -379,6 +380,11 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                        42, every run before 2026-09-18). The held-out TEST split
                        is seed 42 regardless, so varying this is repeated CV on
                        a fixed test set. Each fold records `val_ids_sha1`.
+    split_file       : optional CSV (New_ID, role in {train,test}, fold 0..k-1) that
+                       fixes the held-out test split AND the CV folds, e.g. the
+                       lineage-grouped splits of scripts/build_lineage_splits.py.
+                       Every isolate kept after the missing-phenotype filter must
+                       appear in it. Overrides the stratified split and cv_seed.
     """
     t0 = time.time()
     branch_models = branch_models or {}
@@ -426,8 +432,26 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     # --- #5: stratified held-out split, seed 42 (paper's seed; also matches the
     # baseline train_test_split random_state=42, and adds stratification as the
     # baseline assess script does) --------------------------------------------
-    train_idx, test_idx = train_test_split(
-        np.arange(n), test_size=0.2, random_state=42, stratify=y)
+    kept_ids = [str(data.isolate_ids[i]) for i in keep]
+    if split_file is None:
+        train_idx, test_idx = train_test_split(
+            np.arange(n), test_size=0.2, random_state=42, stratify=y)
+        split_folds = None
+    else:
+        sp = pd.read_csv(split_file, dtype={"New_ID": str}).set_index("New_ID")
+        missing = [i for i in kept_ids if i not in sp.index]
+        if missing:
+            raise ValueError(f"{split_file}: {len(missing)} of {n} isolates have no split "
+                             f"(e.g. {missing[:3]})")
+        sp = sp.loc[kept_ids]
+        test_idx = np.nonzero((sp.role == "test").values)[0]
+        train_idx = np.nonzero((sp.role == "train").values)[0]
+        fold_of = sp.fold.values[train_idx]
+        split_folds = [(np.nonzero(fold_of != k)[0], np.nonzero(fold_of == k)[0])
+                       for k in sorted(set(fold_of))]
+        assert len(split_folds) == n_splits, (len(split_folds), n_splits)
+        print(f"[{drug}/{tag}] split from {split_file}: train={len(train_idx)} "
+              f"test={len(test_idx)} folds={[len(v) for _, v in split_folds]}", flush=True)
 
     # --- #2: alpha fit on the TRAINING split only -----------------------------
     # tb.alpha_mat's magnitude is n_R/(n_R+n_S) over the rows it sees; the
@@ -457,10 +481,12 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     # `cv_seed` moves the CV partition and nothing else: the held-out TEST split
     # above stays seed 42, and `seed` (training randomness) is separate. 42 is
     # every run before 2026-09-18, byte for byte.
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=cv_seed)
+    if split_folds is None:
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=cv_seed)
+        split_folds = list(skf.split(train_idx, y[train_idx]))
     folds = []
     best_auc, best_model, best_fold = -np.inf, None, None
-    for fold, (tr, va) in enumerate(skf.split(train_idx, y[train_idx])):
+    for fold, (tr, va) in enumerate(split_folds):
         writer = _new_writer(tb_root, f"cv_fold{fold}")
         model = _build_model(arch, data.blocks, specs, encoder_types, 1, out_bias,
                              branch_models, default_encoder, head=head,
@@ -535,6 +561,7 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "split": {"test_size": 0.2, "split_seed": 42, "stratified": True,
                   "n_splits": n_splits, "kfold": "StratifiedKFold",
                   "kfold_seed": cv_seed, "kfold_shuffle": True,
+                  "split_file": None if split_file is None else str(split_file),
                   "isolate_order": "isolates.txt (post missing-phenotype filter)",
                   "test_isolate_ids": [kept_isolates[i] for i in test_idx]},
         "training": {"epochs": epochs, "batch_size": batch_size, "seed": seed,
@@ -585,6 +612,7 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "cv_auc_std": cv_std,
         "cv_auc_pr_mean": float(np.mean(prs)) if prs else float("nan"),
         "test_model_fold": best_fold,
+        "split_file": None if split_file is None else str(split_file),
         "test": test_m,
         "seconds": round(time.time() - t0, 1),
     }

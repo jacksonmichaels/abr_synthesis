@@ -50,6 +50,15 @@ DROP_RUNS = {
     # names are `cv<seed>_<modset>__<arch>`, and pooling a partition into the
     # seed-42 grid would mix folds that are not paired. Read with its compare.py.
     "repartition_19loci",
+    # locusfusion_v2 + --lf-unknown-symbols, the full sweep (2026-10-01). Its
+    # result JSONs say arch=locusfusion_v2, so loading it here would pool it into
+    # the v2 cells. Read with locusfusion_v3/compare.py.
+    "locusfusion_v3",
+    # The paper grid retrained on lineage-grouped CV folds (Beijing its own fold),
+    # a different partition: its cells share folder names with the random-split
+    # grid, so loading it here would pool unpaired folds into the paper cells. Read
+    # with results/analysis/lineage_split_significance/ and notebooks/lineage_split.ipynb.
+    "lineage_split",
 }
 
 # Some runs put the TASK in the cell name rather than the run name --

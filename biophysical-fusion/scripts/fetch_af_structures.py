@@ -1,5 +1,6 @@
 """Download AlphaFold DB models for every protein-coding locus and put their
-C-alpha coordinates on the H37Rv codon grid ``locusfusion_v2`` tokenizes on.
+C-alpha coordinates, heavy atoms and PAE on the H37Rv codon grid
+``locusfusion_v2`` tokenizes on.
 
     python scripts/fetch_af_structures.py                 # all coding loci on disk
     python scripts/fetch_af_structures.py --loci katG pncA
@@ -112,6 +113,37 @@ def read_ca(pdb_path):
     return "".join(seq), np.asarray(xyz, np.float32), np.asarray(bf, np.float32)
 
 
+def read_heavy(pdb_path):
+    """Per model residue, its heavy-atom coordinates (n_atoms, 3), in residue
+    order -- the same order as ``read_ca``. AlphaFold writes no hydrogens; any
+    that are present are dropped."""
+    res, key = [], None
+    for line in Path(pdb_path).read_text().splitlines():
+        if not line.startswith("ATOM") or line[76:78].strip() == "H":
+            continue
+        k = (line[21], line[22:27])
+        if k != key:
+            res.append([])
+            key = k
+        res[-1].append([float(line[30:38]), float(line[38:46]), float(line[46:54])])
+    return [np.asarray(a, np.float32) for a in res]
+
+
+def afdb_pae(entry, raw_dir, force=False):
+    """(L, L) predicted aligned error in A, model-residue indexed, or None."""
+    url = entry.get("paeDocUrl")
+    if not url:
+        return None
+    path = raw_dir / Path(urllib.parse.urlparse(url).path).name
+    if force or not path.exists():
+        f = requests.get(url, timeout=120)
+        f.raise_for_status()
+        path.write_bytes(f.content)
+    doc = json.loads(path.read_text())
+    doc = doc[0] if isinstance(doc, list) else doc
+    return np.asarray(doc["predicted_aligned_error"], np.float32)
+
+
 def _same(ref, i, model, j):
     """Residue identity, where a GTG/TTG start codon (V/L at codon 0) counts as
     the Met the protein actually begins with."""
@@ -177,9 +209,27 @@ def build_locus(locus, cds, raw_dir, out_dir, force=False):
     plddt[idx[ok]] = pl_m[ok]
     model_residue = np.full(n_codons, "", dtype="<U1")
     model_residue[idx[ok]] = np.array(list(mseq))[ok]
+    # heavy atoms, NaN-padded to the largest residue (Trp, 14)
+    atoms_m = read_heavy(pdb_path)
+    if len(atoms_m) != len(mseq):
+        raise RuntimeError(f"{locus}: {len(atoms_m)} residues with heavy atoms, "
+                           f"{len(mseq)} with a C-alpha")
+    heavy = np.full((n_codons, max(len(a) for a in atoms_m), 3), np.nan, np.float32)
+    for j in np.nonzero(ok)[0]:
+        heavy[idx[j], :len(atoms_m[j])] = atoms_m[j]
+    # AlphaFold's 2D confidence, on the codon grid; NaN where unmapped
+    pae_m = afdb_pae(entry, raw_dir, force)
+    extra = {"heavy": heavy}
+    if pae_m is not None:
+        if pae_m.shape != (len(mseq), len(mseq)):
+            raise RuntimeError(f"{locus}: PAE is {pae_m.shape}, model has {len(mseq)} residues")
+        pae = np.full((n_codons, n_codons), np.nan, np.float16)
+        mi = np.nonzero(ok)[0]
+        pae[np.ix_(idx[mi], idx[mi])] = pae_m[np.ix_(mi, mi)]
+        extra["pae"] = pae
 
     np.savez_compressed(
-        out_dir / f"{locus}.npz", ca=ca, plddt=plddt, ref_protein=ref,
+        out_dir / f"{locus}.npz", **extra, ca=ca, plddt=plddt, ref_protein=ref,
         model_residue=model_residue, uniprot=acc, model_id=entry["modelEntityId"],
         afdb_version=int(entry["latestVersion"]), pdb_file=pdb_path.name)
     row.update(status="ok", uniprot=acc, reviewed=reviewed, model_id=entry["modelEntityId"],

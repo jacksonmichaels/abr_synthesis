@@ -306,12 +306,15 @@ def _pshort(v):
     return "p < 0.0001" if v < 1e-4 else f"p = {v:.4f}"
 
 
-def plot_sig_by_claim(sig, drop=FIG_DROP):
+def plot_sig_by_claim(sig, drop=FIG_DROP, labels=None):
     """Forest plot of a paper_family() table, one panel per claim. Filled marker =
-    significant after Holm. Returns the figure; the caller saves and shows it."""
+    significant after Holm. `labels` maps a comparison to its display name.
+    Returns the figure; the caller saves and shows it."""
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
     s = sig[~sig.comparison.isin(drop)]
+    if labels:
+        s = s.assign(comparison=s.comparison.map(lambda c: labels.get(c, c)))
     groups = list(dict.fromkeys(s.group))
     fig, axes = plt.subplots(
         len(groups), 1, sharex=True,

@@ -143,7 +143,7 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
                            regulatory_dir=None, loci=None, regulatory_loci=None,
                            per_modality_branch=True, dna_per_locus=True,
                            extra_loci=False, all_regulatory=False, delta=False,
-                           protein_frame="isolate",
+                           protein_frame="isolate", unknown_symbols=False,
                            verbose=True):
     """Build a MultiDrugData bundle predicting ``drugs`` (default: all) from the
     union of their loci.
@@ -196,6 +196,9 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
     mods = [MODALITIES[m]() for m in modalities]
     for m in mods:
         m.delta = delta
+        # an uncalled base / unreadable codon gets its own channel, exactly as in
+        # load_dataset; off by default -- locusfusion_v2 --lf-unknown-symbols
+        m.unknown_symbols = unknown_symbols
         if hasattr(m, "frame"):          # protein, biophysical
             m.frame = protein_frame
         if m.name == "dna":

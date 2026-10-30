@@ -68,11 +68,24 @@ def residue_distances(locus, root=None):
 # JSON has no NaN, so a codon with no coordinate is None in meta.
 
 def structure_meta(s):
-    """The ``FeatureBlock.meta`` of one locus's structure block."""
+    """The ``FeatureBlock.meta`` of one locus's structure block.
+
+    With heavy atoms and PAE in the file (fetched since 2026-10-01) it also
+    carries ``heavy`` (per codon, its heavy-atom coordinates, or None) and
+    ``pae_bad`` ([i, j] codon pairs inside CONTACT_REACH whose PAE fails the
+    gate) -- the sparse form, so config.json stays small. Older files give
+    neither, and a model that asks for them refuses to build."""
     ok = ~np.isnan(s["ca"]).any(1)
-    return {"ca": [[round(float(v), 3) for v in xyz] if good else None
+    meta = {"ca": [[round(float(v), 3) for v in xyz] if good else None
                    for xyz, good in zip(s["ca"], ok)],
             "model_id": str(s["model_id"]), "afdb_version": int(s["afdb_version"])}
+    if "heavy" in s:
+        meta["heavy"] = [[[round(float(v), 3) for v in xyz] for xyz in atoms
+                          if not np.isnan(xyz).any()] if good else None
+                         for atoms, good in zip(s["heavy"], ok)]
+    if "pae" in s:
+        meta["pae_bad"] = pae_bad_pairs(s["ca"], s["pae"])
+    return meta
 
 
 def meta_arrays(meta):
@@ -81,6 +94,68 @@ def meta_arrays(meta):
     has = np.array([x is not None for x in ca], dtype=bool)
     xyz = np.array([x if x is not None else (0.0, 0.0, 0.0) for x in ca], dtype=np.float32)
     return xyz.reshape(-1, 3), has
+
+
+# --- heavy atoms and the contact gate (2026-10-01) ------------------------------
+# Two residues can only touch if some heavy atom of one is within CONTACT_WINDOW
+# of some heavy atom of the other. No heavy atom sits further than
+# SIDECHAIN_REACH from its own C-alpha, so beyond CONTACT_REACH (C-alpha to
+# C-alpha) no contact is possible -- that is the distance half of the gate. The
+# other half is AlphaFold's own 2D confidence: the pair's predicted aligned
+# error, the larger of PAE[i, j] and PAE[j, i], must be <= PAE_MAX.
+SIDECHAIN_REACH = 7.41          # A; Arg NH, the furthest over all 17 AFDB v6 models
+                                # (then Trp 6.85, Tyr 6.62, Lys 6.52)
+CONTACT_WINDOW = 5.0            # A; heavy-atom contact distance
+CONTACT_REACH = 2 * SIDECHAIN_REACH + CONTACT_WINDOW     # 19.82 A
+PAE_MAX = 10.0                  # A
+
+
+def pae_bad_pairs(ca, pae):
+    """[i, j] (i <= j) codon pairs within CONTACT_REACH whose PAE > PAE_MAX.
+
+    Pairs beyond the reach fail the gate on distance alone, so they are not
+    listed; the model checks the reach itself from the C-alpha."""
+    D = np.linalg.norm(ca[:, None] - ca[None], axis=-1)
+    P = np.fmax(pae, pae.T)
+    i, j = np.nonzero(np.triu((D <= CONTACT_REACH) & ~(P <= PAE_MAX)))
+    return [[int(a), int(b)] for a, b in zip(i, j) if not np.isnan(D[a, b])]
+
+
+def meta_heavy(meta):
+    """(atoms (n, A, 3) float32 zero-padded, atom_ok (n, A) bool), A = the most
+    heavy atoms any residue has (14 for Trp)."""
+    heavy = meta["heavy"]
+    A = max((len(a) for a in heavy if a), default=1)
+    atoms = np.zeros((len(heavy), A, 3), np.float32)
+    atom_ok = np.zeros((len(heavy), A), bool)
+    for k, a in enumerate(heavy):
+        if a:
+            atoms[k, :len(a)] = a
+            atom_ok[k, :len(a)] = True
+    return atoms, atom_ok
+
+
+def meta_pae_bad(meta, n):
+    """(n, n) bool, True where the pair fails the PAE half of the gate."""
+    bad = np.zeros((n, n), bool)
+    for i, j in meta["pae_bad"]:
+        bad[i, j] = bad[j, i] = True
+    return bad
+
+
+def heavy_min_distances(codon, located, atoms, atom_ok):
+    """(B, K, K) closest heavy-atom distance in A between the tokens' residues,
+    0 where either is not ``located`` (``pair_distances``'s mask still decides
+    what is real). The same residue is 0 A."""
+    n, A, _ = atoms.shape
+    B, K = codon.shape
+    cc = codon.clamp(0, n - 1)
+    xyz = atoms[cc].reshape(B, K * A, 3)
+    ok = (atom_ok[cc] & located.unsqueeze(-1)).reshape(B, K * A)
+    d = torch.cdist(xyz, xyz)
+    d = d.masked_fill(~(ok.unsqueeze(2) & ok.unsqueeze(1)), float("inf"))
+    d = d.reshape(B, K, A, K, A).amin(dim=(2, 4))
+    return torch.where(torch.isfinite(d), d, torch.zeros_like(d))
 
 
 # --- token distances ------------------------------------------------------------

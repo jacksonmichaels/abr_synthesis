@@ -10,6 +10,7 @@ exactly what the 2026-08-13 cleanup deleted; do not reintroduce one.)
 ``MD_BASE_*`` is read from the BIG-TB authors' own run output on the
 ``pi_annagreen`` volume at import time, so this module needs cluster access.
 """
+import os
 import pandas as pd
 from pathlib import Path
 
@@ -60,10 +61,12 @@ SDCNN_CV_SD = {
 # KFold(5) -- the SAME as run_multidrug_cv, so CV-vs-CV is the matched
 # comparison. Their `assess` trains on a predefined cohort and tests on every
 # other isolate, so test-vs-test stays indicative only. Judge on CV.
-MDCNN_RUN_DIR = Path(
+# ABR_MDCNN_RUN_DIR points at a copy of the two CSVs (data_snapshot/mdcnn_baseline)
+# for jobs on nodes where the /project mount is unreliable.
+MDCNN_RUN_DIR = Path(os.environ.get("ABR_MDCNN_RUN_DIR",
     "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
     "/benchmarking/MTB-CNN/training_output"
-    "/results_ccp_filter12_epoch150_sbatch_18_Nov")
+    "/results_ccp_filter12_epoch150_sbatch_18_Nov"))
 
 
 def load_mdcnn_baseline(run_dir=MDCNN_RUN_DIR, drugs=None):

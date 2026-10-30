@@ -1,0 +1,36 @@
+{
+  "_about": "Drug binding sites for the LocusFusion v4 site-distance channel. Protein sites are residues in H37Rv GenBank numbering (the tokenizer's codon grid), from mtb_drug_binding_sites_literature_review.pdf (repo root), with two corrections checked against H37Rv in notebooks/binding_site_distance.ipynb: the review's gyrB QRDR-B residues (R485 D500 N538 T539 E540) are 714-aa numbering and are shifted -39 here; eis E32 and F393 do not match H37Rv and are dropped. Every residue listed is asserted against the AlphaFold model's sequence by build_distances.py. Ribosome drugs use the distance to the drug's own atoms in a drug-bound structure (structures/ribosome/raw, fetched 2026-10-22) for rrs / rrl / rpsL.",
+  "protein_sites": {
+    "rpoB": {"residues": "V170 Q429 L430 S431 Q432 F433 D435 H445 R448 S450 L452 R459 P483 I491", "site": "rifampicin pocket", "source": "5UHB/5UHC"},
+    "katG": {"residues": "R104 W107 H108 D137 N138 H270 S315", "site": "heme access channel (INH activation)", "source": "1SJ2/2CCA"},
+    "inhA": {"residues": "G14 I15 I21 S94 I95 F149 M155 Y158 M161 P193 I194 M199 L218 W222", "site": "INH-/ETH-NAD adduct pocket", "source": "1ZID/2NTJ"},
+    "ethR": {"residues": "W103 F110 F114 W138 W145 Y148 N176 N179 W207", "site": "ligand tunnel (EthR inhibitors, not ETH)", "source": "1U9N"},
+    "pncA": {"residues": "D8 F13 D49 H51 H57 W68 H71 K96 I133 A134 H137 C138", "site": "PZA active site + Fe2+", "source": "3PL1"},
+    "embB": {"residues": "D299 Y302 I303 N318 E327 Y334 Q445 R509 H594", "site": "ethambutol / DPA pocket", "source": "7BVF"},
+    "gyrA": {"residues": "G88 A90 S91 D94 Y129", "site": "QRDR-A water-Mg2+ bridge", "source": "5BS8/5BTG"},
+    "gyrB": {"residues": "R446 D461 N499 T500 E501 E459 D532 D534", "site": "TOPRIM C7 pocket + Mg2+", "source": "5BS8/5BTG"},
+    "rpsL": {"residues": "K43 K88", "site": "streptomycin contacts", "source": "4DR3"},
+    "gid": {"residues": "G69 S70 G71 L74 E92 P93 L94 R97 G117 R118 A119 E120 R137 A138", "site": "SAM pocket (enzyme, not drug)", "source": "model"},
+    "eis": {"residues": "D26 W36 F84 V85 H119 Y126 E203 D211 S239 E401 F402", "site": "aminoglycoside acetylation cleft", "source": "3R1K"}
+  },
+  "drug_protein_sites": {
+    "RIFAMPICIN": ["rpoB"],
+    "ISONIAZID": ["katG", "inhA"],
+    "ETHIONAMIDE": ["inhA", "ethR"],
+    "PYRAZINAMIDE": ["pncA"],
+    "ETHAMBUTOL": ["embB"],
+    "LEVOFLOXACIN": ["gyrA", "gyrB"],
+    "MOXIFLOXACIN": ["gyrA", "gyrB"],
+    "STREPTOMYCIN": ["rpsL", "gid"],
+    "AMIKACIN": ["eis"],
+    "KANAMYCIN": ["eis"],
+    "CAPREOMYCIN": []
+  },
+  "ribosome": {
+    "_about": "drug: pdb id, {H37Rv locus: label_asym_id of the first ribosome copy}, the drug's asym ids, and an anchor (locus, 1-based position) that picks the drug copy nearest it when several are bound. A ribosome distance wins over a protein site for the same locus (rpsL for streptomycin).",
+    "STREPTOMYCIN": {"pdb": "4DR3", "chains": {"rrs": "A", "rpsL": "L"}, "ligands": ["V"], "anchor": null},
+    "KANAMYCIN": {"pdb": "8EV7", "chains": {"rrs": "FA", "rrl": "A", "rpsL": "QA"}, "ligands": ["ACC", "BCC", "ENA", "FEB", "FNA", "GNA", "JMC"], "anchor": ["rrs", 1401]},
+    "AMIKACIN": {"pdb": "8EV6", "chains": {"rrs": "FA", "rrl": "A", "rpsL": "QA"}, "ligands": ["BBC", "BDB", "CDB", "GCC", "HNA", "INA", "MPA", "XOC"], "anchor": ["rrs", 1401]},
+    "CAPREOMYCIN": {"pdb": "5V93", "chains": {"rrs": "FA", "rrl": "G", "rpsL": "QA"}, "ligands": ["GA"], "anchor": null}
+  }
+}

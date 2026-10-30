@@ -36,11 +36,13 @@ import tb_cnn_codebase as tb  # noqa: E402  (import after sys.path edit, by desi
 # does: phenotype indexed on New_ID, intersected with the FASTA record IDs
 # (sample accessions like SAMN…/SAMEA…). Verified 2026-07-07: 17,942/17,943
 # rpoB isolates intersect (only the MT_H37Rv reference row drops out).
-REAL_GENOTYPE_DIR = (
+# $ABR_GENOTYPE_DIR / $ABR_PHENOTYPE_CSV override both, for jobs run against a
+# local copy because the /project mount is missing on some compute nodes.
+REAL_GENOTYPE_DIR = os.environ.get("ABR_GENOTYPE_DIR") or (
     "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
     "/genomic_data/aligned"
 )
-REAL_PHENOTYPE_CSV = (
+REAL_PHENOTYPE_CSV = os.environ.get("ABR_PHENOTYPE_CSV") or (
     "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
     "/phenotype_data/master_resistance_table.csv"
 )

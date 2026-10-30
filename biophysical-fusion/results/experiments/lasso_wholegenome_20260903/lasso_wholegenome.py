@@ -85,13 +85,15 @@ sys.path.insert(0, str(PROJECT_DIR / "results" / "experiments"
 
 import numpy as np  # noqa: E402
 import scipy.sparse as sp  # noqa: E402
+from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.model_selection import StratifiedKFold, train_test_split  # noqa: E402
 
 # The parent run is the protocol. Importing it means the metrics, the solver
 # call and the summary schema cannot drift apart from the arm this is compared
 # against.
 import lasso_wholeseq as ws  # noqa: E402
-from bigtb_ref import REAL_PHENOTYPE_CSV, tb  # noqa: E402
+from bigtb_ref import REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, tb  # noqa: E402
+from datasets.loader import drug_loci, loci_on_disk  # noqa: E402
 from datasets.sequences import load_phenotype, numeric_labels  # noqa: E402
 
 VCF_TSV_DIR = ("/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
@@ -191,7 +193,170 @@ def build_cohort(tsv_dir, cache, procs):
             dict(zip(keys, gene_ids)))
 
 
-def drug_design(X_all, iso_all, keys_all, rows, min_count):
+def _parse_annot(arg):
+    """{key: (Annotation, Annotation_Impact)} for one isolate's PASS calls, keyed
+    exactly as _parse_one keys them."""
+    tsv_dir, iso = arg
+    out = {}
+    with open(os.path.join(tsv_dir, iso + SUFFIX)) as fh:
+        hdr = fh.readline().rstrip("\n").split("\t")
+        iP, iR, iA, iF, iN, iM = (hdr.index(c) for c in (
+            "POSITION", "REFERENCE_ALLELE", "ALTERED_ALLELE", "FILTER_STATUS",
+            "Annotation", "Annotation_Impact"))
+        for line in fh:
+            c = line.rstrip("\n").split("\t")
+            if len(c) <= iF or c[iF] != "PASS":
+                continue
+            k = f"{c[iP]}:{c[iR][:20]}>{c[iA][:20]}"
+            if k not in out:
+                out[k] = (c[iN] if len(c) > iN else "", c[iM] if len(c) > iM else "")
+    return out
+
+
+def build_annotation(tsv_dir, keys, cache, procs):
+    """snpEff Annotation / Annotation_Impact per cohort key, aligned to `keys`.
+
+    A sidecar to the cohort cache (which predates this and stores no effects),
+    parsed once over every isolate and cached. The first annotation seen for a
+    key wins; snpEff's call for a given POS:REF>ALT does not vary by isolate."""
+    cache = Path(cache)
+    if cache.is_file():
+        z = np.load(cache, allow_pickle=False)
+        if z["keys"].shape[0] != len(keys):
+            raise RuntimeError(f"{cache} has {z['keys'].shape[0]} keys, cohort has "
+                               f"{len(keys)}: stale sidecar, delete and rebuild")
+        print(f"  [annot] loaded {cache}", flush=True)
+        return list(z["annotation"]), list(z["impact"])
+    col = {k: i for i, k in enumerate(keys)}
+    ann, imp = [""] * len(keys), [""] * len(keys)
+    seen = np.zeros(len(keys), bool)
+    isolates = sorted(isolates_on_disk(tsv_dir))
+    t0, unknown = time.time(), 0
+    with Pool(procs) as pool:
+        it = pool.imap_unordered(_parse_annot, [(tsv_dir, i) for i in isolates],
+                                 chunksize=16)
+        for done, d in enumerate(it, 1):
+            for k, (a, m) in d.items():
+                j = col.get(k)
+                if j is None:
+                    unknown += 1
+                elif not seen[j]:
+                    ann[j], imp[j], seen[j] = a, m, True
+            if done % 2000 == 0:
+                print(f"  [annot] {done}/{len(isolates)} isolates, "
+                      f"{seen.mean():.1%} keys annotated, {time.time() - t0:.0f}s",
+                      flush=True)
+    if unknown:
+        raise RuntimeError(f"{unknown} PASS keys not in the cohort cache: stale cache")
+    print(f"  [annot] {seen.sum()}/{len(keys)} keys annotated in "
+          f"{time.time() - t0:.0f}s", flush=True)
+    np.savez(cache, keys=np.array(keys), annotation=np.array(ann),
+             impact=np.array(imp))
+    print(f"  [annot] wrote {cache}", flush=True)
+    return ann, imp
+
+
+def _key_span(k):
+    """0-based [start, end) of the reference bases a key actually changes.
+
+    VCF indels carry an unchanged anchor base (TC>T deletes the C, not the T),
+    so the shared prefix is stripped, and for equal-length alleles the shared
+    suffix too. An insertion changes no reference base and returns an empty
+    span. (Before 2026-10-01 the whole REF allele was used, so every indel also
+    marked its anchor base; lasso_pooled_20260929 ran with that.)"""
+    pos, alle = k.split(":", 1)
+    ref, alt = alle.split(">", 1)
+    p0 = int(pos) - 1
+    pre = 0
+    while pre < min(len(ref), len(alt)) and ref[pre] == alt[pre]:
+        pre += 1
+    end = len(ref)
+    if len(ref) == len(alt):
+        while end > pre and ref[end - 1] == alt[end - 1]:
+            end -= 1
+    return p0 + pre, p0 + max(end, pre)
+
+
+def _group_or(X, groups, prefix, min_members=2):
+    """One column per group: 1 where the isolate carries ANY key in the group.
+    `groups` is a list of (key column, group label) pairs. Groups with fewer
+    than `min_members` keys would duplicate a key column, so they are dropped."""
+    if not groups:
+        return None, []
+    j, lab = zip(*groups)
+    uniq, inv = np.unique(np.array(lab), return_inverse=True)
+    M = sp.csr_matrix((np.ones(len(j), np.float32), (np.array(j), inv)),
+                      shape=(X.shape[1], len(uniq)))
+    size = np.bincount(inv, minlength=len(uniq))
+    keep = np.nonzero(size >= min_members)[0]
+    G = (X @ M[:, keep]).tocsr()
+    G.data[:] = 1.0
+    G.eliminate_zeros()
+    return G.astype(np.float32), [f"{prefix}:{u}" for u in uniq[keep]]
+
+
+def pooled_features(X, names, pool, geneid_of, impact_of, scale=1.0):
+    """Append pooled indicators to the per-key design, so L1 can pay once for a
+    site or a gene instead of once per rare allele.
+
+      site    : any non-reference call covering this H37Rv base (a deletion
+                covers every base of its REF allele) -- the variant-coded
+                equivalent of the one-hot arm's penalised wild-type column
+      gene    : per Gene_ID, any HIGH-impact call (frameshift, stop gained,
+                start/stop lost, splice) = lof:, and any HIGH or MODERATE call
+                (adds missense, in-frame indels) = nonsyn:
+    Only groups of >= 2 distinct keys are added. The per-key columns are kept.
+    Everything here is a function of the isolate's own calls plus the key
+    vocabulary, never of a label."""
+    blocks, bnames = [X], list(names)
+    if pool in ("site", "both"):
+        # labelled by 1-based H37Rv position, as VCF POS is
+        pairs = [(j, s + 1) for j, k in enumerate(names) for s in range(*_key_span(k))]
+        G, g = _group_or(X, pairs, "site")
+        if G is not None:
+            blocks.append(G); bnames += g
+    if pool in ("gene", "both"):
+        for prefix, allowed in (("lof", {"HIGH"}), ("nonsyn", {"HIGH", "MODERATE"})):
+            pairs = [(j, geneid_of.get(k, "")) for j, k in enumerate(names)
+                     if impact_of.get(k, "") in allowed and geneid_of.get(k, "")]
+            G, g = _group_or(X, pairs, prefix)
+            if G is not None:
+                blocks.append(G); bnames += g
+    # Scaling a column by s divides its effective L1 penalty by s: --pooled-scale
+    # makes L1 prefer a pooled site/gene column over the single alleles in it.
+    if scale != 1.0:
+        blocks = blocks[:1] + [b * np.float32(scale) for b in blocks[1:]]
+    return sp.hstack(blocks, format="csr", dtype=np.float32), bnames
+
+
+def locus_spans(loci, genotype_dir):
+    """{locus: (start, end)} half-open 0-based H37Rv spans of each locus's aligned
+    reference row -- exactly the bases the 19-locus lasso arms saw."""
+    from datasets.cds import genome_span
+    spans = {}
+    for g in loci:
+        sp_ = genome_span(genotype_dir, g)
+        if sp_ is None:
+            raise RuntimeError(f"no genome span for locus {g} in {genotype_dir}")
+        spans[g] = sp_[:2]
+    return spans
+
+
+def in_spans_mask(keys, spans):
+    """True for a key POS:REF>ALT whose reference allele overlaps any span.
+    VCF POS is 1-based and a deletion's REF starts at POS, so the key covers
+    [POS-1, POS-1+len(REF)). REF was truncated to 20 nt at parse time, so a
+    deletion starting > 20 nt before a span that reaches into it is missed."""
+    pos = np.fromiter((int(k.split(":", 1)[0]) - 1 for k in keys), np.int64, len(keys))
+    rlen = np.fromiter((len(k.split(":", 1)[1].split(">", 1)[0]) for k in keys),
+                       np.int64, len(keys))
+    m = np.zeros(len(keys), bool)
+    for a, b in spans.values():
+        m |= (pos < b) & (pos + np.maximum(rlen, 1) > a)
+    return m
+
+
+def drug_design(X_all, iso_all, keys_all, rows, min_count, col_mask=None):
     """The drug's rows, and only the columns its own cohort actually varies at.
 
     Same rule as the parent run: a column that is zero over the fitted cohort is
@@ -200,11 +365,29 @@ def drug_design(X_all, iso_all, keys_all, rows, min_count):
     """
     X = X_all[rows]
     counts = np.asarray(X.sum(axis=0)).ravel()
-    cols = np.nonzero(counts >= min_count)[0]
+    keep = counts >= min_count
+    if col_mask is not None:
+        keep &= col_mask
+    cols = np.nonzero(keep)[0]
     return X[:, cols].tocsr(), [keys_all[j] for j in cols]
 
 
-def run_drug(drug, args, cohort):
+def _fit(C, X_tr, y_tr, args):
+    """The parent's pure-L1 fit when --l1-ratio is 1 (so the 2026-09-03 run is
+    reproduced exactly); otherwise the elastic-net family, l1_ratio * ||w||_1 +
+    (1 - l1_ratio)/2 * ||w||_2^2, with 0 = ridge. Only saga does 0 < r < 1;
+    liblinear does ridge faster, so it keeps that end."""
+    if args.l1_ratio == 1.0:
+        return ws._fit(C, X_tr, y_tr, args.solver, args.max_iter)
+    solver = "liblinear" if args.l1_ratio == 0.0 else "saga"
+    clf = LogisticRegression(solver=solver, l1_ratio=args.l1_ratio, C=C,
+                             class_weight="balanced", max_iter=args.max_iter,
+                             tol=1e-4)
+    clf.fit(X_tr, y_tr)
+    return clf
+
+
+def run_drug(drug, args, cohort, cohort_impact=None):
     t0 = time.time()
     X_all, iso_all, keys_all, gene_of, geneid_of = cohort
     row_of = {iso: i for i, iso in enumerate(iso_all)}
@@ -215,28 +398,58 @@ def run_drug(drug, args, cohort):
     y = y_all[keep]
     isolates = [isolates[i] for i in keep]
 
+    col_mask, spans = None, None
+    if args.restrict_loci != "none":
+        loci = (loci_on_disk(REAL_GENOTYPE_DIR) if args.restrict_loci == "all19"
+                else drug_loci(drug))
+        spans = locus_spans(loci, REAL_GENOTYPE_DIR)
+        col_mask = in_spans_mask(keys_all, spans)
     X, names = drug_design(X_all, iso_all, keys_all,
-                           [row_of[i] for i in isolates], args.min_count)
+                           [row_of[i] for i in isolates], args.min_count, col_mask)
+    n_keys = X.shape[1]
+    if args.pool != "none":
+        X, names = pooled_features(X, names, args.pool, geneid_of, cohort_impact,
+                                   args.pooled_scale)
+        print(f"[{drug}] pool={args.pool}: {n_keys} key columns + "
+              f"{X.shape[1] - n_keys} pooled", flush=True)
     n = X.shape[0]
+    where = ("whole genome" if spans is None else
+             f"restricted to {len(spans)} loci ({sum(b - a for a, b in spans.values())} nt)")
     print(f"[{drug}] {n} isolates, {X.shape[1]} columns, "
-          f"{X.nnz / max(n, 1):.0f} nnz per isolate, whole genome", flush=True)
+          f"{X.nnz / max(n, 1):.0f} nnz per isolate, {where}", flush=True)
 
     train_idx, test_idx = train_test_split(np.arange(n), test_size=0.2,
                                            random_state=42, stratify=y)
     skf = StratifiedKFold(n_splits=args.n_splits, shuffle=True, random_state=42)
     folds = list(skf.split(train_idx, y[train_idx]))
 
+    # --fold-min-count: per fold, keep only columns seen in >= k TRAINING isolates
+    # of that fold. Decided on training rows alone, so leak-free (unlike
+    # --min-count, which counts the whole cohort).
+    fold_cols = [None] * len(folds)
+    if args.fold_min_count > 1:
+        for f, (tr, _va) in enumerate(folds):
+            fold_cols[f] = np.nonzero(X[train_idx[tr]].getnnz(axis=0)
+                                      >= args.fold_min_count)[0]
+        print(f"[{drug}] fold-min-count {args.fold_min_count}: "
+              f"{np.mean([len(c) for c in fold_cols]):,.0f} of {X.shape[1]:,} "
+              f"columns kept per fold", flush=True)
+
+    def _cols(M, f):
+        return M if fold_cols[f] is None else M[:, fold_cols[f]]
+
     path, best = [], None
     for C in args.c_grid:
-        fold_auc, fold_models, nnz_coef = [], [], []
-        for tr, va in folds:
+        fold_auc, fold_models, nnz_coef, n_iter = [], [], [], []
+        for f, (tr, va) in enumerate(folds):
             i_tr, i_va = train_idx[tr], train_idx[va]
             tc = time.time()
-            clf = ws._fit(C, X[i_tr], y[i_tr], args.solver, args.max_iter)
-            m = ws._metrics(y[i_va], clf.predict_proba(X[i_va])[:, 1])
+            clf = _fit(C, _cols(X[i_tr], f), y[i_tr], args)
+            m = ws._metrics(y[i_va], clf.predict_proba(_cols(X[i_va], f))[:, 1])
             fold_auc.append(m["auc"])
             fold_models.append(clf)
             nnz_coef.append(int((clf.coef_ != 0).sum()))
+            n_iter.append(int(np.max(clf.n_iter_)))
             print(f"  [{drug}] C={C:<6g} fold {len(fold_auc)}/{len(folds)} "
                   f"AUC {m['auc']:.4f} support {nnz_coef[-1]} "
                   f"[{time.time() - tc:.0f}s]", flush=True)
@@ -244,17 +457,23 @@ def run_drug(drug, args, cohort):
                  "cv_auc_std": float(np.std(fold_auc)),
                  "fold_aucs": [float(a) for a in fold_auc],
                  "support_mean": float(np.mean(nnz_coef)),
-                 "support_per_fold": nnz_coef}
+                 "support_per_fold": nnz_coef,
+                 # == --max-iter means that fold's fit stopped unconverged
+                 "n_iter_per_fold": n_iter, "max_iter": args.max_iter}
         path.append(entry)
         if best is None or entry["cv_auc_mean"] > best[0]["cv_auc_mean"]:
             best = (entry, fold_models, fold_auc)
 
     entry, fold_models, fold_auc = best
     best_fold = int(np.argmax(fold_auc))
-    test = ws._metrics(y[test_idx],
-                       fold_models[best_fold].predict_proba(X[test_idx])[:, 1])
+    test = ws._metrics(y[test_idx], fold_models[best_fold].predict_proba(
+        _cols(X[test_idx], best_fold))[:, 1])
 
-    coef = fold_models[best_fold].coef_.ravel()
+    coef = np.zeros(X.shape[1])
+    if fold_cols[best_fold] is None:
+        coef[:] = fold_models[best_fold].coef_.ravel()
+    else:
+        coef[fold_cols[best_fold]] = fold_models[best_fold].coef_.ravel()
     nz = np.nonzero(coef)[0]
     order = nz[np.argsort(-np.abs(coef[nz]))][:args.top_k]
     top = [{"feature": names[i], "gene": gene_of.get(names[i], ""),
@@ -263,17 +482,35 @@ def run_drug(drug, args, cohort):
 
     cv_pr = float(np.mean([
         ws._metrics(y[train_idx[va]],
-                    fold_models[i].predict_proba(X[train_idx[va]])[:, 1])["auc_pr"]
+                    fold_models[i].predict_proba(_cols(X[train_idx[va]], i))[:, 1])["auc_pr"]
         for i, (tr, va) in enumerate(folds)]))
 
+    tag = f"dna-genome-mc{args.min_count}"
+    if args.l1_ratio != 1.0:
+        tag += f"-l1r{args.l1_ratio:g}"
+    if args.restrict_loci != "none":
+        tag += f"-{args.restrict_loci}"
+    if args.pool != "none":
+        tag += f"-pool{args.pool}"
+    if args.pooled_scale != 1.0:
+        tag += f"-ps{args.pooled_scale:g}"
+    if args.fold_min_count > 1:
+        tag += f"-fmc{args.fold_min_count}"
     return {
         "drug": drug, "arch": "lasso_wholegenome", "modalities": ["dna"],
-        "tag": f"dna-genome-mc{args.min_count}",
-        "encoding": "delta", "locus_set": "wholegenome",
-        "solver": args.solver, "min_count": args.min_count,
-        "genes": ["WHOLE_GENOME"], "n_valid": int(n),
+        "tag": tag, "l1_ratio": args.l1_ratio,
+        "encoding": "delta",
+        "locus_set": ("wholegenome" if spans is None
+                      else f"vcf_{args.restrict_loci}"),
+        "locus_spans": spans,
+        "solver": (args.solver if args.l1_ratio == 1.0 else
+                   "liblinear" if args.l1_ratio == 0.0 else "saga"), "min_count": args.min_count,
+        "genes": ["WHOLE_GENOME"] if spans is None else sorted(spans), "n_valid": int(n),
         "n_resistant": int((y == 0).sum()), "n_susceptible": int((y == 1).sum()),
         "n_features": int(X.shape[1]),
+        "pool": args.pool, "n_key_features": int(n_keys),
+        "pooled_scale": args.pooled_scale, "fold_min_count": args.fold_min_count,
+        "site_span_rule": "anchor-stripped (2026-10-01)",
         "nnz_per_isolate": float(X.nnz / max(n, 1)),
         "n_params": int(X.shape[1] + 1),
         "split": {"test_size": 0.2, "split_seed": 42, "stratified": True,
@@ -300,8 +537,34 @@ def main():
     ap.add_argument("--solver", choices=("liblinear", "saga"),
                     default="liblinear")
     ap.add_argument("--max-iter", type=int, default=2000)
+    ap.add_argument("--l1-ratio", type=float, default=1.0,
+                    help="penalty mix: 1 = L1 (lasso, the default and the "
+                         "2026-09-03 run), 0 = L2 (ridge), between = elastic net "
+                         "(saga). --solver applies only at 1")
     ap.add_argument("--c-grid", type=float, nargs="+", default=list(ws.C_GRID))
     ap.add_argument("--n-splits", type=int, default=5)
+    ap.add_argument("--pool", choices=("none", "site", "gene", "both"),
+                    default="none",
+                    help="append pooled indicators: site = any call covering "
+                         "the base; gene = any HIGH-impact (lof:) / HIGH or "
+                         "MODERATE (nonsyn:) call per gene; both = all three")
+    ap.add_argument("--pooled-scale", type=float, default=1.0,
+                    help="multiply pooled columns by this; s > 1 divides their "
+                         "effective L1 penalty by s")
+    ap.add_argument("--fold-min-count", type=int, default=1,
+                    help="per fold, drop columns carried by < k TRAINING isolates "
+                         "(leak-free); 1 = keep all")
+    ap.add_argument("--annot-cache", default=str(Path.home() / "abr_workspace"
+                                                / "wholegenome_annot.npz"),
+                    help="snpEff effect per cohort key; built on first use")
+    ap.add_argument("--build-annotation-only", action="store_true",
+                    help="build --annot-cache and exit (run once before a grid)")
+    ap.add_argument("--restrict-loci", choices=("none", "all19", "perdrug"),
+                    default="none",
+                    help="keep only variant columns inside the aligned loci's "
+                         "H37Rv spans: all19 = the 19 FASTAs on disk (matches "
+                         "lasso_wholeseq delta_all), perdrug = the drug's own "
+                         "loci (matches delta_perdrug)")
     ap.add_argument("--top-k", type=int, default=100000,
                     help="how many nonzero coefficients to record; the default "
                          "keeps all of them, which is what a mass split over "
@@ -315,6 +578,8 @@ def main():
     ap.add_argument("--phenotype-csv", default=REAL_PHENOTYPE_CSV)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    if not 0.0 <= args.l1_ratio <= 1.0:
+        ap.error(f"--l1-ratio must be in [0, 1], got {args.l1_ratio}")
 
     drugs = (ALL_DRUGS if any(d.lower() == "all" for d in args.drugs)
              else [d.upper() for d in args.drugs])
@@ -323,11 +588,20 @@ def main():
         ap.error(f"unknown drug(s) {unknown}; choose from {ALL_DRUGS} or 'all'")
 
     cohort = build_cohort(args.tsv_dir, args.cache, args.procs)
+    impact_of = None
+    if args.pool in ("gene", "both") or args.build_annotation_only:
+        _ann, imp = build_annotation(args.tsv_dir, cohort[2], args.annot_cache,
+                                     args.procs)
+        impact_of = dict(zip(cohort[2], imp))
+        if args.build_annotation_only:
+            from collections import Counter as _C
+            print("  [annot] impact counts:", dict(_C(imp)), flush=True)
+            return
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for drug in drugs:
-        r = run_drug(drug, args, cohort)
+        r = run_drug(drug, args, cohort, impact_of)
         (out / f"{drug}__{r['tag']}.json").write_text(json.dumps(r, indent=2))
         print(f"[{drug}] CV {r['cv_auc_mean']:.4f} +/- {r['cv_auc_std']:.4f} "
               f"@ C={r['best_C']} (support {r['cv_support_mean']:.0f} of "

@@ -1,4 +1,4 @@
-import argparse, subprocess, glob, os, vcf, tracemalloc, pickle, time
+import argparse, subprocess, glob, os, sys, vcf, tracemalloc, pickle, time
 import numpy as np
 import pandas as pd
 from Bio import SeqIO
@@ -341,12 +341,18 @@ def introduce_snps_indels_single_seq(fName, h37Rv_region, START, END, qualThresh
                         # do this with a dummy character, X, which will be later removed. 
                         # This is generalizable to even the case where REF == 1 because it will just replace the first index
 
-                        end_len = idx + len(alt_allele)
                         # replace everything with X first
                         new_seq[idx:idx+len(ref_allele)] = ["X"] * len(ref_allele)
 
-                        # Assign replacement allele properly
-                        new_seq[idx:idx+len(alt_allele)] = list(alt_allele)
+                        # BUGFIX 2026-10-22: the WHOLE ALT goes into the single
+                        # element at idx (as in the pre-Jul-2025 upstream script);
+                        # step 3 pads that element to the insertion width and
+                        # strips the Xs. The Jul-2025 upstream form
+                        #   new_seq[idx:idx+len(alt_allele)] = list(alt_allele)
+                        # overwrote len(ALT)-len(REF) downstream reference bases
+                        # instead of inserting, and left every insertion column
+                        # all-gap.
+                        new_seq[idx] = alt_allele
 
                         # stores the maximum length of insertions at the corresponding index
                         insertion_dict[idx] = np.max([insertion_dict[idx], len(alt_allele) - len(ref_allele)])
@@ -445,19 +451,23 @@ insertion_sites.to_csv(insertion_sites_fName, index=False)
 #################################### STEP 2: FILL IN GAP CHARACTERS IN THE REFERENCE SEQUENCE ####################################
 
     
-new_ref_seq = h37Rv_region.copy()
+# BUGFIX 2026-10-28: the width of a position is what the CELLS need, not what
+# insertion_dict's bookkeeping predicts. Where two variants' REF spans overlap,
+# both ALTs land inside one span, neither is counted against the other, and the
+# isolate overflows the padded reference -- which killed the embB / ethA / rrs
+# re-extractions on `assert len(seq) == len(new_ref_seq)`. See aln_widths.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from aln_widths import pad_cells, pad_reference, realized_widths
 
-for _, row in insertion_sites.iterrows():
-    
-    # number of gap characters to add
-    add_gap = row["len_insertion"]
-    new_ref_seq[row["aln_idx"]] = new_ref_seq[row["aln_idx"]] + "-" * add_gap
-        
+aln_widths_per_pos = realized_widths(seq_dict.values(), len(h37Rv_region))
+new_ref_seq = list(pad_reference(h37Rv_region, aln_widths_per_pos))
+
 # get the reverse complement if negative sense. This function returns the joined sequence. If not, 
 if SENSE in ["NEG", "neg"]:
     new_ref_seq = reverse_complement(new_ref_seq)
 else:
     new_ref_seq = "".join(new_ref_seq)
+assert len(new_ref_seq) == sum(aln_widths_per_pos)
 
 print(f"Aligned region size: {len(new_ref_seq)}")
     
@@ -482,28 +492,10 @@ with open(OUT_FILE, "w+") as file:
 
         assert len(seq) == (END - START)
 
-        for _, row in insertion_sites.iterrows():
-
-            # the numbers in insertion_sites are the number of nucleotides to insert, i.e. len(alt) - len(ref)
-            # for nearly all insertions, the length of the REF allele is 1 so add 1 to this.
-            site_length = row["len_insertion"] + 1
-            print(f"Site length: {site_length}")
-
-            # if the length of the site in a given isolate is smaller than the number of inserted nucleotides, then pad the end with gap characters
-            if len(seq[row["aln_idx"]]) < site_length:
-                seq[row["aln_idx"]] = seq[row["aln_idx"]] + "-" * int(site_length - len(seq[row["aln_idx"]]))
-
-            # these are the few cases where len(REF) > 1, so they would fail a check here. But the final sequence length will be checked against the reference below
-            elif len(seq[row["aln_idx"]]) > site_length:
-                continue
-                
-        # remove X characters, which are used for some insertions
-        # check that the new length matches with the reference sequence, which has already had gap characters inserted
-        seq = "".join(seq).replace("X", "")
-
-        print("Length of sequence after removing Xs:", len(seq))
-        print("Length of new reference sequence:", len(new_ref_seq))
-        assert len(seq) == len(new_ref_seq)
+        # pad every cell to its position's width and strip the X placeholders
+        seq = pad_cells(seq, aln_widths_per_pos)
+        assert len(seq) == len(new_ref_seq), (
+            f"{isolate}: {len(seq)} vs reference {len(new_ref_seq)}")
     
         # get the reverse complement if negative sense
         if SENSE in ["NEG", "neg"]:

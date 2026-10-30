@@ -76,9 +76,32 @@ reference_docs/
 # CC-BY 4.0 data): tracked so a fresh clone runs. raw/ PDBs are a re-fetchable cache.
 !/structures/alphafold/*.npz
 !/structures/alphafold/manifest.json
+# LocusFusion v4: its README, the binding-site definitions and the distance table
+# built from them (small), and the augmentation exclusion list -- inputs, not output
+!/biophysical-fusion/locusfusion_v4/README.md
+!/biophysical-fusion/locusfusion_v4/augment_exclusions.json
+!/biophysical-fusion/locusfusion_v4/binding_sites/sites.json
+!/biophysical-fusion/locusfusion_v4/binding_sites/distances.npz
+!/biophysical-fusion/locusfusion_v4/binding_sites/distances.json
 /structures/alphafold/raw/
 # gene_msa window definitions (config, not data); aligned/ and slurm_logs/ stay out
 !/gene_msa/gene_windows.json
 /gene_msa/aligned/
 /gene_msa/slurm_logs/
 /gene_msa/who_t12_genotypes/
+
+# --- workspace data, weights and frozen code snapshots ----------------------
+# Inputs and outputs that live on /scratch only: model weights, token caches,
+# genotype snapshots, the repaired MSAs, and the frozen code copies that sweep
+# jobs run from (each holds its own BASE_COMMIT + working_tree.patch).
+/model_weights_*/
+/token_cache_*/
+/data_snapshot/
+/v3_snapshot/
+/v3md_snapshot/
+/v4_snapshot/
+/lineage_snapshot/
+/curated_fix/
+/gene_msa/aligned_fixed/
+/structures/ribosome/
+*.pdf

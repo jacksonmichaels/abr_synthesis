@@ -9,7 +9,7 @@ import numpy as np
 
 from . import cds
 from .base import FeatureBlock, LoadContext, Modality
-from .sequences import (NT_CHANNELS, delta_one_hot_nt, one_hot_nt,
+from .sequences import (NT_CHANNELS, NT_CHANNELS_WITH_UNKNOWN, delta_one_hot_nt, one_hot_nt,
                         reference_row, stack_padded)
 
 
@@ -43,8 +43,12 @@ class DNAModality(Modality):
                 print(f"  [load] delta encoding: no H37Rv row for {missing} — "
                       f"those loci stay plain one-hot")
 
+        unk = self.unknown_symbols
+        channels = NT_CHANNELS_WITH_UNKNOWN if unk else NT_CHANNELS
+
         def encode(seq, ref):
-            return (delta_one_hot_nt(seq, ref) if self.delta else one_hot_nt(seq)).T
+            return (delta_one_hot_nt(seq, ref, with_unknown=unk) if self.delta
+                    else one_hot_nt(seq, with_unknown=unk)).T
 
         suffix = " (delta vs H37Rv)" if self.delta else ""
         if self.per_locus:
@@ -56,7 +60,7 @@ class DNAModality(Modality):
                     name=f"dna:{g}",
                     modality=self.name,
                     array=array,
-                    channel_names=list(NT_CHANNELS),
+                    channel_names=list(channels),
                     note=f"locus {g}{suffix}",
                     meta=cds.block_frame(ctx.genotype_dir, g, array.shape[2],
                                         translated=True),
@@ -81,7 +85,7 @@ class DNAModality(Modality):
             name="dna",
             modality=self.name,
             array=array,
-            channel_names=list(NT_CHANNELS),
+            channel_names=list(channels),
             note=f"genes concatenated: {'+'.join(gene_cols)}{suffix}",
         )]
 

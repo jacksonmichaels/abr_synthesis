@@ -112,6 +112,34 @@ def _build_grid():
         grid[f"all_modalities_structure_L{L}__locusfusion_v2"] = {
             "modalities": list(MODALITY_SETS["all_modalities"]) + ["structure"],
             "arch": "locusfusion_v2", "extra_args": ["--lf-struct-length", str(L)]}
+    # Add-one-modality ladder from v2's best base, dna_protein (2026-09-29). In v2
+    # adding regulatory/biophysical lowers macro CV (dna_protein 0.9007 ->
+    # all_modalities 0.8924) where in v1 it raises it; these two say which one
+    # does it. Explicit v2-only entries, not MODALITY_SETS rows, so a bare
+    # `--experiments all` does not grow by one per arch.
+    for extra in ("regulatory", "biophysical"):
+        grid[f"dna_protein_{extra}__locusfusion_v2"] = {
+            "modalities": ["dna", "protein", extra], "arch": "locusfusion_v2"}
+    # Structure on that base rather than on all_modalities, at the 30 A decay
+    # length (the only one not below its control). Matched control:
+    # locusfusion_v2/sd_dna_protein__locusfusion_v2.
+    grid["dna_protein_structure_L30__locusfusion_v2"] = {
+        "modalities": ["dna", "protein", "structure"], "arch": "locusfusion_v2",
+        "extra_args": ["--lf-struct-length", "30"]}
+    # Structure sweep v2 (2026-10-01), same base and length: a pair with no
+    # geometry reads -1 instead of 0 (so it is neither "far" nor "same residue"),
+    # then closest heavy atoms instead of C-alpha, then the contact gate (C-alpha
+    # within 2 x the longest side chain + 5 A, AlphaFold PAE <= 10 A). Each arm
+    # changes one thing from the one before; the first's control is the L30 arm
+    # above, all three share locusfusion_v2/sd41_dna_protein__locusfusion_v2.
+    neg1 = ["--lf-struct-length", "30", "--lf-struct-invalid", "-1"]
+    for name, extra in (("L30_neg1", []),
+                        ("L30_heavy_neg1", ["--lf-struct-dist", "heavy"]),
+                        ("L30_heavy_gate_neg1", ["--lf-struct-dist", "heavy",
+                                                 "--lf-struct-gate", "contact"])):
+        grid[f"dna_protein_structure_{name}__locusfusion_v2"] = {
+            "modalities": ["dna", "protein", "structure"], "arch": "locusfusion_v2",
+            "extra_args": neg1 + extra}
     # WHO 2023 Table-21 tier 1 + 2 candidate genes per drug instead of BIG-TB's
     # DRUG_TO_LOCI (2026-09-24). The 35 genes with no curated alignment were
     # extracted by gene_msa/ (gene body +/- 100 bp); the folder symlinks the 19
@@ -120,6 +148,24 @@ def _build_grid():
     grid["all_modalities_who_t12__locusfusion_v2"] = {
         "modalities": list(MODALITY_SETS["all_modalities"]), "arch": "locusfusion_v2",
         "extra_args": ["--locus-set", "who_t12", "--genotype-dir", WHO_T12_GENOTYPE_DIR]}
+    # The 2x2 ablation of the 2026-09-24 48-channel draft against the final
+    # 41-channel tokenizer (2026-10-01): each opt-in feature alone, on dna. The
+    # other corners are locusfusion_v2/sd41_dna (neither) and the draft's own
+    # locusfusion_v2/sd_dna (both, on the draft code).
+    for name, flags in (("unk", ["--lf-unknown-symbols"]), ("refbio", ["--lf-ref-bio"]),
+                        ("unk_refbio", ["--lf-unknown-symbols", "--lf-ref-bio"])):
+        grid[f"dna_{name}__locusfusion_v2"] = {
+            "modalities": ["dna"], "arch": "locusfusion_v2", "extra_args": flags}
+    # locusfusion_v3 (2026-10-01) = locusfusion_v2 with the uncalled-base channel
+    # (--lf-unknown-symbols) on every modality set, the full v1-style sweep.
+    # Results go under results/experiments/locusfusion_v3/ (see its submit.sh).
+    # dna_unk above is the same command as the dna row here.
+    for mods, names in MODALITY_SETS.items():
+        if mods in ("dna", "dna_protein", "dna_biophysical", "dna_regulatory",
+                    "all_modalities"):
+            grid[f"{mods}_unk__locusfusion_v2"] = {
+                "modalities": list(names), "arch": "locusfusion_v2",
+                "extra_args": ["--lf-unknown-symbols"]}
     return grid
 
 
@@ -209,6 +255,8 @@ def run_experiment_command(exp_name, cfg, drug, args):
         parts += ["--arch", arch]
     if args.cv_seed != 42:
         parts += ["--cv-seed", str(args.cv_seed)]
+    if args.split_dir:
+        parts += ["--split-dir", args.split_dir]
     if cfg.get("extra_loci", args.extra_loci):
         parts += ["--extra-loci"]
     if args.per_locus_branches:
@@ -270,6 +318,8 @@ def create_sbatch_script(exp_name, cfg, drug, args, job_id):
                else run_experiment_command(exp_name, cfg, drug, args))
 
     constraint = f"#SBATCH --constraint={args.constraint}\n" if args.constraint else ""
+    env_lines = "".join(f"export {kv.split('=', 1)[0]}={shlex.quote(kv.split('=', 1)[1])}\n"
+                        for kv in args.env)
     script = f"""#!/bin/bash
 #SBATCH -c {args.cpus}                # cores
 #SBATCH --mem={args.mem}             # host memory (the knob that avoids the OOM kill)
@@ -293,7 +343,7 @@ mkdir -p {shlex.quote(args.logs_dir)}
 # 1.21 GiB. The branch-per-locus nets allocate many differently-sized activation
 # blocks per step, which is exactly the pattern expandable segments fix.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-
+{env_lines}
 {command}
 
 echo "Done: {exp_name} on {tag}"
@@ -361,6 +411,8 @@ def parse_args():
     p.add_argument("--cv-seed", type=int, default=42,
                    help="CV partition random_state for single-drug jobs (default 42, "
                         "emitted only when it differs); not wired for --multidrug")
+    p.add_argument("--split-dir", default=None,
+                   help="pass --split-dir to run_experiment.py (per-drug {DRUG}.csv split files)")
     p.add_argument("--run-prefix", default="", help="prefix for run-name folders, "
                    "e.g. 'permod_' -> results/experiments/permod_dna (default: none)")
     p.add_argument("--arch", default="late_fusion",
@@ -487,6 +539,9 @@ def parse_args():
     # bookkeeping
     p.add_argument("--project-dir", default=PROJECT_DIR, help=f"checkout to cd into (default: {PROJECT_DIR})")
     p.add_argument("--logs-dir", default=None, help="sbatch log dir (default: <project>/slurm_logs)")
+    p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
+                   help="export KEY=VALUE in every job script (repeatable), e.g. "
+                        "ABR_GENOTYPE_DIR=<local copy> while /project is flaky")
     p.add_argument("--delay", type=float, default=1.0, help="seconds between submissions")
     p.add_argument("--dry_run", action="store_true", help="print scripts, submit nothing")
     return p.parse_args()

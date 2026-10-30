@@ -157,7 +157,8 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                  regulatory_dir=None, loci=None, regulatory_loci=None,
                  per_modality_branch=True, dna_per_locus=True,
                  extra_loci=False, all_regulatory=False, delta=False,
-                 protein_frame="isolate", locus_set="bigtb", verbose=True):
+                 protein_frame="isolate", locus_set="bigtb", unknown_symbols=False,
+                 verbose=True):
     """Build a DrugData bundle for one drug over the requested modalities.
 
     loci                : which gene loci to load for dna/protein/biophysical.
@@ -225,6 +226,9 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
         if hasattr(m, "per_locus"):
             m.per_locus = (not per_modality_branch) and dna_per_locus
         m.delta = delta
+        # an uncalled base / unreadable codon gets its own channel (dna,
+        # regulatory, protein); off by default -- locusfusion_v2 --lf-unknown-symbols
+        m.unknown_symbols = unknown_symbols
         if hasattr(m, "frame"):          # protein, biophysical
             m.frame = protein_frame
     needs_genes = any(m.uses_genes for m in mods)

@@ -85,6 +85,8 @@ class Modality:
     its own region FASTAs)."""
     name: str = "modality"
     uses_genes: bool = True
+    # set by the loader; see datasets.sequences.NT_CHANNELS_WITH_UNKNOWN
+    unknown_symbols: bool = False
 
     def build(self, ctx: LoadContext) -> List[FeatureBlock]:
         raise NotImplementedError

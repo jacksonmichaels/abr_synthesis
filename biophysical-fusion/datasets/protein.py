@@ -91,16 +91,18 @@ class ProteinModality(Modality):
                 print(f"  [load] delta encoding: no usable H37Rv protein for {g} "
                       f"— stays plain one-hot")
             stop = frame == "reference"
+            unk = self.unknown_symbols
             array = stack_padded([
-                delta_zero_columns(biochem.one_hot_aa(p, pad_to=width, with_stop=stop),
-                                   p, ref_aa)
-                if self.delta else biochem.one_hot_aa(p, pad_to=width, with_stop=stop)
+                delta_zero_columns(biochem.one_hot_aa(p, pad_to=width, with_stop=stop,
+                                                      with_unknown=unk), p, ref_aa)
+                if self.delta else biochem.one_hot_aa(p, pad_to=width, with_stop=stop,
+                                                      with_unknown=unk)
                 for p in proteins])
             blocks.append(FeatureBlock(
                 name=f"protein:{g}",
                 modality=self.name,
                 array=array,
-                channel_names=biochem.residue_channels(with_stop=stop),
+                channel_names=biochem.residue_channels(with_stop=stop, with_unknown=unk),
                 note=(f"gene {g}, one residue per H37Rv codon (stops kept)" if stop
                       else f"gene {g}, CDS window translated + left-aligned")
                      + (" [delta vs H37Rv]" if self.delta else ""),

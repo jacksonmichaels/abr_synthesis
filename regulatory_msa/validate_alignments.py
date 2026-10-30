@@ -33,7 +33,7 @@ KNOWN = [
     f"{WORKSPACE}/curated_fix/aligned19",                   # 15 + 4, the repaired set
     f"{HOME_WS}/regulatory_msa/aligned",                    # old TSS-anchored promoters
     f"{HOME_WS}/regulatory_msa/aligned_atg",                # start-codon-anchored promoters
-    f"{WORKSPACE}/gene_msa/aligned",                        # who_t12, pre-fix
+    f"{WORKSPACE}/archive/2026-10-30/gene_msa/aligned",     # who_t12, pre-fix (archived)
     f"{WORKSPACE}/gene_msa/aligned_fixed",                  # who_t12, re-extracted
 ]
 REF_ID = "MT_H37Rv"

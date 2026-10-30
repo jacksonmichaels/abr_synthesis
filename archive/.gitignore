@@ -6,3 +6,10 @@
 !*.md
 !*.sh
 !*.py
+# Former git worktrees: their code is on the worktree-* branches; only the
+# run outputs that existed nowhere else are kept here, untracked.
+/2026-10-30/worktrees/*/tree/
+# Job logs and the per-job scripts generated beside them stay untracked, as they
+# were before being archived.
+slurm_logs/
+!*.patch

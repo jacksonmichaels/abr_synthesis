@@ -44,6 +44,7 @@ reference_docs/
 # reports, paper drafts — is working text that does not need a remote.
 *.md
 !/biophysical-fusion/README.md
+!/README.md
 *.tex
 
 # --- machine-readable output -------------------------------------------------

@@ -139,3 +139,14 @@ The whole-genome / VCF LASSO line is here pending a from-scratch redo.
 - `biophysical-fusion/results/figures/locusfusion_architecture.svg`
 - `biophysical-fusion/results/figures/locusfusion_shapes.png`
 - `biophysical-fusion/results/figures/locusfusion_shapes.svg`
+
+## Added later the same day: outside biophysical-fusion/
+
+- `gene_msa/aligned` (pre-insertion-fix WHO t12 MSAs; `aligned_fixed/` is current)
+- `gene_msa/slurm_logs`
+- `regulatory_msa/slurm_logs`
+- `worktrees/lf-token-offset-fix/` (former `.claude/worktrees/` checkout; see its README)
+
+Deleted: `regulatory_msa/promoter_windows.before_20261022.json` (byte-identical to
+`promoter_windows.json`), `regulatory_msa/__pycache__/`, and worktrees
+`.claude/worktrees/{lasso-wholeseq,token-census}` (nothing unique; their branches remain).

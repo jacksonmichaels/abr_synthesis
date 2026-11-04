@@ -143,6 +143,47 @@ def test_distance_channels():
     print("test_distance_channels: ok")
 
 
+def test_samplers():
+    """Both samplers must cover every row exactly once and respect the budget."""
+    from genomefusion.data import budget_batches, length_grouped_batches
+    rng = np.random.default_rng(0)
+    n_active = rng.integers(50, 2500, 5000)
+    rows = rng.permutation(5000)[:3000]
+    for name, chunks in (("train", length_grouped_batches(n_active, rows, 32, rng,
+                                                          locus_budget=32768)),
+                         ("eval", budget_batches(n_active, rows, 64, 32768))):
+        flat = np.concatenate(chunks)
+        assert len(flat) == len(rows), f"{name}: {len(flat)} rows for {len(rows)}"
+        assert set(flat.tolist()) == set(rows.tolist()), f"{name}: rows changed"
+        worst = max(len(c) * (int(n_active[c].max()) + 1) for c in chunks)
+        assert worst <= 32768 * 2, f"{name}: budget overshot at {worst}"
+        assert all(len(c) >= 1 for c in chunks)
+    print("test_samplers: ok (both cover every row once, batch x width bounded)")
+
+
+def test_predict_order():
+    """predict() must return rows in the order asked, not the order batched."""
+    from genomefusion.train import predict
+
+    class FakeBB:
+        n_active = np.arange(100) * 20 + 10
+
+        def build(self, rows):
+            return {"rows": np.asarray(rows)}
+
+    class FakeModel:
+        def eval(self):
+            pass
+
+        def __call__(self, b):
+            return torch.as_tensor(b["rows"], dtype=torch.float32).unsqueeze(1)
+
+    rows = np.random.default_rng(1).permutation(100)[:60]
+    got = predict(FakeModel(), FakeBB(), rows, 8, 1, locus_budget=512)
+    assert np.array_equal(got[:, 0], rows.astype(np.float32)), "predict reordered its output"
+    print("test_predict_order: ok")
+
+
 if __name__ == "__main__":
     test_forward()
     test_bucketing()
@@ -150,4 +191,6 @@ if __name__ == "__main__":
     test_reference_token_only()
     test_padding_invariance()
     test_distance_channels()
+    test_samplers()
+    test_predict_order()
     print("all model tests passed")

@@ -40,8 +40,8 @@ from training.core import EarlyStopper, masked_weighted_bce  # noqa: E402
 from training.multidrug import _alpha_matrix  # noqa: E402
 from training.multimodal import LR, _metrics, build_optimizer  # noqa: E402
 
-from genomefusion.data import (BatchBuilder, Labels, TokenStore, length_grouped_batches,  # noqa: E402
-                               split_rows)
+from genomefusion.data import (BatchBuilder, Labels, TokenStore, budget_batches,  # noqa: E402
+                               length_grouped_batches, split_rows)
 from genomefusion.layout import c_base, channel_names  # noqa: E402
 from genomefusion.model import GF_DEFAULTS, GenomeFusionNet  # noqa: E402
 from genomefusion.partition import CACHE, WORKSPACE, load_or_build  # noqa: E402
@@ -74,6 +74,11 @@ def parse_args(argv=None):
     ap.add_argument("--min-delta", type=float, default=1e-4)
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--eval-batch-size", type=int, default=64)
+    ap.add_argument("--locus-budget", type=int, default=32768,
+                    help="cap on batch x widest isolate's active loci. Isolates range from a "
+                         "few hundred to 2,466 active loci and the across-loci attention is "
+                         "quadratic in the widest one, so a fixed batch size would swing memory "
+                         "~12x and OOM on the worst batch. 0 disables.")
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--weight-decay", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
@@ -100,13 +105,17 @@ def locus_subset(partition, which):
     return np.flatnonzero(~is19)
 
 
-def predict(model, bb, rows, bs, n_drugs):
+def predict(model, bb, rows, bs, n_drugs, locus_budget=None):
+    """Predictions in the row order given, however the batches were cut."""
     model.eval()
-    out = []
+    chunks = budget_batches(bb.n_active, np.asarray(rows), bs, locus_budget)
+    out = np.zeros((len(rows), n_drugs), np.float32)
+    where = {int(r): i for i, r in enumerate(rows)}
     with torch.no_grad():
-        for s in range(0, len(rows), bs):
-            out.append(model(bb.build(rows[s:s + bs])).float().cpu().numpy())
-    return np.concatenate(out) if out else np.zeros((0, n_drugs))
+        for c in chunks:
+            p = model(bb.build(c)).float().cpu().numpy()
+            out[[where[int(r)] for r in c]] = p
+    return out
 
 
 def per_drug(Y, logits, drugs):
@@ -127,7 +136,8 @@ def train_fold(model, bb, Y, alpha, tr, va, args, fold):
     for ep in range(args.epochs):
         model.train()
         tot = seen = 0.0
-        for b in length_grouped_batches(bb.n_active, tr, args.batch_size, rng):
+        for b in length_grouped_batches(bb.n_active, tr, args.batch_size, rng,
+                                        locus_budget=args.locus_budget):
             x = bb.build(b)
             a = alpha_t[torch.as_tensor(b, device=args.device)]
             loss = masked_weighted_bce(model(x), a)
@@ -137,8 +147,8 @@ def train_fold(model, bb, Y, alpha, tr, va, args, fold):
             tot += float(loss) * len(b)
             seen += len(b)
         hist["train_loss"].append(tot / max(seen, 1))
-        _, val = per_drug(Y[va], predict(model, bb, va, args.eval_batch_size, len(args.drugs)),
-                          args.drugs)
+        _, val = per_drug(Y[va], predict(model, bb, va, args.eval_batch_size, len(args.drugs),
+                                         args.locus_budget), args.drugs)
         hist["val_auc"].append(val)
         if ep % 5 == 0 or ep == args.epochs - 1:
             print(f"  fold {fold} ep {ep + 1:3d} loss {tot / max(seen, 1):.4f} "
@@ -197,7 +207,7 @@ def main(argv=None):
             print(f"[gf] {n_params:,} parameters, token width {model.c_in}", flush=True)
         best_epoch, hist = train_fold(model, bb, Y, alpha, tr, va, args, fold)
         per, macro = per_drug(Y[va], predict(model, bb, va, args.eval_batch_size,
-                                             len(args.drugs)), args.drugs)
+                                             len(args.drugs), args.locus_budget), args.drugs)
         rec = {"fold": fold, "best_epoch": best_epoch, "macro_auc": macro, "per_drug": per,
                "history": hist,
                "val_ids_sha1": hashlib.sha1(
@@ -211,7 +221,8 @@ def main(argv=None):
     if best_model is None:
         best_fold, best_model = fold_recs[-1]["fold"], model
 
-    test_logits = predict(best_model, bb, test, args.eval_batch_size, len(args.drugs))
+    test_logits = predict(best_model, bb, test, args.eval_batch_size, len(args.drugs),
+                          args.locus_budget)
     test_per, test_macro = per_drug(Y[test], test_logits, args.drugs)
     macro_cv = [f["macro_auc"] for f in fold_recs if f["macro_auc"] == f["macro_auc"]]
     print(f"[gf] {tag} CV macro AUC {np.mean(macro_cv):.4f} | TEST {test_macro:.4f} "
@@ -240,7 +251,8 @@ def main(argv=None):
         "capacity": capacity,
         "protocol": {"epochs": args.epochs, "patience": args.patience,
                      "min_epochs": args.min_epochs, "min_delta": args.min_delta,
-                     "batch_size": args.batch_size, "monitor": "auc",
+                     "batch_size": args.batch_size, "locus_budget": args.locus_budget,
+                     "monitor": "auc",
                      "lr": LR if args.lr is None else args.lr,
                      "weight_decay": args.weight_decay, "seed": args.seed},
         "split_file": split_file, "cv_folds": fold_recs,

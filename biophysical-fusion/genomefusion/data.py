@@ -277,17 +277,43 @@ def _run_index_of_locus(tl, tki):
     return idx - base
 
 
-def length_grouped_batches(n_active, rows, batch_size, rng, bucket=8):
-    """Batches of `rows` grouped so each holds isolates of similar active-locus count."""
+def length_grouped_batches(n_active, rows, batch_size, rng, bucket=8, locus_budget=None):
+    """Batches of `rows` holding isolates of similar active-locus count.
+
+    Isolates differ enormously in how much of the genome they change: in this
+    cohort the mean is ~707 active loci and the maximum 2,466. The across-loci
+    attention is quadratic in the batch's widest isolate, so a fixed batch size
+    would make the memory swing by ~12x between batches and run out on the worst
+    one. `locus_budget` caps `batch x Lmax` instead, so a batch of unusually
+    broad isolates simply holds fewer of them.
+    """
     order = rows[np.argsort(n_active[rows], kind="stable")]
-    big = batch_size * bucket
+    big = max(batch_size * bucket, 1)
     chunks = []
     for s in range(0, len(order), big):
         c = order[s:s + big]
         c = c[rng.permutation(len(c))]
-        chunks.extend(c[i:i + batch_size] for i in range(0, len(c), batch_size))
+        bs = batch_size
+        if locus_budget:
+            widest = int(n_active[c].max()) + 1
+            bs = int(np.clip(locus_budget // max(widest, 1), 1, batch_size))
+        chunks.extend(c[i:i + bs] for i in range(0, len(c), bs))
     rng.shuffle(chunks)
     return chunks
+
+
+def budget_batches(n_active, rows, batch_size, locus_budget=None):
+    """Evaluation batches: sorted by width, so padding and memory stay bounded."""
+    order = rows[np.argsort(n_active[rows], kind="stable")]
+    out, i = [], 0
+    while i < len(order):
+        bs = batch_size
+        if locus_budget:
+            widest = int(n_active[order[i:i + batch_size]].max()) + 1
+            bs = int(np.clip(locus_budget // max(widest, 1), 1, batch_size))
+        out.append(order[i:i + bs])
+        i += bs
+    return out
 
 
 class Labels:

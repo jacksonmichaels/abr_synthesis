@@ -106,3 +106,13 @@ reference_docs/
 /gene_msa/aligned_fixed/
 /structures/ribosome/
 *.pdf
+
+# GenomeFusion: derived caches and large re-downloadable inputs
+genomefusion_cache/
+genomefusion_tokens/
+gf_snapshot/
+model_weights_gf/
+genomefusion_refs/essentiality/dejesus_supp/
+genomefusion_refs/essentiality/supp.zip
+genomefusion_refs/mycobrowser/releases.html
+genomefusion_refs/mycobrowser/H37Rv_r2.txt

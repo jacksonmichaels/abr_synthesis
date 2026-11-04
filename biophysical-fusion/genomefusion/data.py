@@ -75,6 +75,10 @@ class BatchBuilder:
         self.population = bool(population)
         self.c_tok = C_BASE + (2 if population else 0)
 
+        # per-locus lookups, so nothing below loops in Python over 15.8M tokens
+        self.locus_start = np.asarray([L.start for L in partition.loci], np.int64)
+        self.locus_len = np.maximum(
+            np.asarray([L.end - L.start for L in partition.loci], np.float32), 1.0)
         keep = np.zeros(len(partition.loci), bool)
         keep[np.asarray(list(loci), np.int64) if loci is not None
              else np.arange(len(partition.loci))] = True
@@ -128,8 +132,7 @@ class BatchBuilder:
         self.t_within = torch.as_tensor(within, device=device)
 
         # --- the [NULL] stats, per active locus -------------------------------
-        lens = np.asarray([max(partition.loci[i].end - partition.loci[i].start, 1)
-                           for i in sl], np.float32)
+        lens = self.locus_len[sl]
         nn = store.sum_n[self.sum_rows].astype(np.float32)
         st = np.stack([np.log1p(nn), nn / lens,
                        store.sum_frame[self.sum_rows] / 3.0,
@@ -188,9 +191,7 @@ class BatchBuilder:
         fl = T["flags"][rows].astype(np.int64)
         for j in range(3):
             feat[:, a + j] = (fl >> j) & 1
-        starts = np.asarray([self.partition.loci[i].start for i in self.partition_idx(rows)],
-                            np.int64)
-        coord = (T["pos"][rows] - starts).astype(np.float32)
+        coord = (T["pos"][rows] - self.locus_start[T["locus"][rows]]).astype(np.float32)
         site = (site_index[T["pos"][rows]].astype(np.int64) if site_index is not None
                 else np.full(n, -1, np.int64))
         return feat, coord, site

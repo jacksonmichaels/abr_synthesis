@@ -83,6 +83,11 @@ def parse_args(argv=None):
     ap.add_argument("--weight-decay", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--folds", type=int, nargs="+", default=None)
+    ap.add_argument("--max-hours", type=float, default=None,
+                    help="wall-clock budget. Training stops cleanly at the end of the current "
+                         "epoch once it is spent and the run is written with the folds it "
+                         "finished, instead of being killed at the SLURM limit with nothing "
+                         "to show. Set it below the job's --time.")
     for k, v in GF_DEFAULTS.items():
         ap.add_argument("--" + k.replace("_", "-"), type=type(v), default=v)
     args = ap.parse_args(argv)
@@ -126,14 +131,19 @@ def per_drug(Y, logits, drugs):
     return per, (float(np.mean(aucs)) if aucs else float("nan"))
 
 
-def train_fold(model, bb, Y, alpha, tr, va, args, fold):
+def train_fold(model, bb, Y, alpha, tr, va, args, fold, deadline=None):
     torch.manual_seed(args.seed + fold)
     rng = np.random.default_rng(args.seed + fold)
     opt = build_optimizer(model, lr=args.lr, weight_decay=args.weight_decay)
     stopper = EarlyStopper(args.patience, args.min_delta, mode="max", min_epochs=args.min_epochs)
     alpha_t = torch.as_tensor(alpha, device=args.device)
     hist = {"train_loss": [], "val_auc": []}
+    stopped_early = None
     for ep in range(args.epochs):
+        if deadline and time.time() > deadline:
+            stopped_early = f"wall-clock budget spent after {ep} epochs"
+            print(f"  fold {fold}: {stopped_early}", flush=True)
+            break
         model.train()
         tot = seen = 0.0
         for b in length_grouped_batches(bb.n_active, tr, args.batch_size, rng,
@@ -158,7 +168,7 @@ def train_fold(model, bb, Y, alpha, tr, va, args, fold):
         if stopper.step(ep + 1, val, model):
             break
     stopper.restore(model)
-    return stopper.best_epoch, hist
+    return stopper.best_epoch, hist, stopped_early
 
 
 def main(argv=None):
@@ -197,15 +207,21 @@ def main(argv=None):
         return GenomeFusionNet(feats, args.drugs, c_tok=bb.c_tok, **capacity).to(args.device)
 
     alpha = _alpha_matrix(Y, train, len(args.drugs))
-    run_folds = args.folds if args.folds is not None else range(len(folds))
+    run_folds = list(args.folds if args.folds is not None else range(len(folds)))
+    deadline = t0 + args.max_hours * 3600 if args.max_hours else None
     fold_recs, best, n_params = [], (-np.inf, None, None), None
+    skipped = []
     for fold in run_folds:
+        if deadline and time.time() > deadline:
+            skipped = [f for f in run_folds if f >= fold]
+            print(f"[gf] wall-clock budget spent; folds {skipped} not run", flush=True)
+            break
         tr, va = folds[fold]
         model = build()
         if n_params is None:
             n_params = sum(p.numel() for p in model.parameters())
             print(f"[gf] {n_params:,} parameters, token width {model.c_in}", flush=True)
-        best_epoch, hist = train_fold(model, bb, Y, alpha, tr, va, args, fold)
+        best_epoch, hist, cut = train_fold(model, bb, Y, alpha, tr, va, args, fold, deadline)
         per, macro = per_drug(Y[va], predict(model, bb, va, args.eval_batch_size,
                                              len(args.drugs), args.locus_budget), args.drugs)
         rec = {"fold": fold, "best_epoch": best_epoch, "macro_auc": macro, "per_drug": per,
@@ -213,6 +229,7 @@ def main(argv=None):
                "val_ids_sha1": hashlib.sha1(
                    "\n".join(sorted(store.ids[i] for i in va)).encode()).hexdigest()[:12]}
         rec.update(per[tag])
+        rec["stopped_early"] = cut
         fold_recs.append(rec)
         print(f"[gf] {tag} fold {fold}: val AUC {macro:.4f} (best epoch {best_epoch})", flush=True)
         if macro == macro and macro > best[0]:
@@ -256,6 +273,9 @@ def main(argv=None):
                      "lr": LR if args.lr is None else args.lr,
                      "weight_decay": args.weight_decay, "seed": args.seed},
         "split_file": split_file, "cv_folds": fold_recs,
+        "folds_requested": run_folds, "folds_skipped": skipped,
+        "complete": not skipped and not any(f.get("stopped_early") for f in fold_recs),
+        "max_hours": args.max_hours,
         "cv_auc_mean": float(np.mean(macro_cv)) if macro_cv else float("nan"),
         "cv_auc_std": float(np.std(macro_cv)) if macro_cv else float("nan"),
         "test_model_fold": best_fold, "test_macro_auc": test_macro,

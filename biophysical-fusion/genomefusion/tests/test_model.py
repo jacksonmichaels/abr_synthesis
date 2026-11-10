@@ -66,7 +66,7 @@ def test_bucketing():
     m, b = net(), fake_batch(seed=3)
     with torch.no_grad():
         got = m.encode_pairs(b)
-        import genomefusion.model as M
+        import canonical.genomefusion as M
         saved = M.BUCKETS
         try:                                   # one bucket wide enough for every pair
             M.BUCKETS = (int(b["pair_n"].max()),)

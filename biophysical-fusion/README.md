@@ -9,6 +9,8 @@ protein, biophysical, and regulatory inputs can be combined in any subset.
 Nothing here modifies `../Big-TB-benchmark/`; reference code is only *read*
 (single point of contact: `bigtb_ref.py`).
 
+**Model code:** the LocusFusion and GenomeFusion networks are in `canonical/` (see `canonical/README.md`).
+
 ## Overview
 
 **The task.** Per-drug binary resistance (R/S) prediction for *M. tuberculosis*

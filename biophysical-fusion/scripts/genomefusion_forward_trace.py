@@ -41,7 +41,7 @@ import pandas as pd  # noqa: E402
 import torch  # noqa: E402
 from sklearn.metrics import roc_auc_score  # noqa: E402
 
-from genomefusion import model as gf_model  # noqa: E402
+from canonical import genomefusion as gf_model  # noqa: E402
 from genomefusion.data import TOKEN_FIELDS, BatchBuilder  # noqa: E402
 from genomefusion.layout import C_BASE  # noqa: E402
 from genomefusion.model import GenomeFusionNet, _sinusoid  # noqa: E402

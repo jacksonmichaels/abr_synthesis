@@ -36,11 +36,13 @@ import tb_cnn_codebase as tb  # noqa: E402  (import after sys.path edit, by desi
 # does: phenotype indexed on New_ID, intersected with the FASTA record IDs
 # (sample accessions like SAMN…/SAMEA…). Verified 2026-07-07: 17,942/17,943
 # rpoB isolates intersect (only the MT_H37Rv reference row drops out).
-REAL_GENOTYPE_DIR = (
+# $ABR_GENOTYPE_DIR / $ABR_PHENOTYPE_CSV override both, for jobs run against a
+# local copy because the /project mount is missing on some compute nodes.
+REAL_GENOTYPE_DIR = os.environ.get("ABR_GENOTYPE_DIR") or (
     "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
     "/genomic_data/aligned"
 )
-REAL_PHENOTYPE_CSV = (
+REAL_PHENOTYPE_CSV = os.environ.get("ABR_PHENOTYPE_CSV") or (
     "/project/pi_annagreen_umass_edu/saishradha/project_data_curation"
     "/phenotype_data/master_resistance_table.csv"
 )
@@ -51,9 +53,17 @@ REAL_PHENOTYPE_CSV = (
 # regulatory branch carries information disjoint from the DNA/protein branches.
 # Built by regulatory_msa/{build_promoter_coords,submit_promoter_msa}.py. This
 # lives in the user's workspace (pi_annagreen is read-only for us).
-REAL_REGULATORY_DIR = (
-    "/home/jacksonmicha_umass_edu/abr_workspace/regulatory_msa/aligned"
-)
+# Resolved next to the clone (<workspace>/regulatory_msa/aligned);
+# $ABR_REGULATORY_DIR overrides it.
+REAL_REGULATORY_DIR = os.environ.get("ABR_REGULATORY_DIR") or str(
+    Path(__file__).resolve().parent.parent / "regulatory_msa" / "aligned")
+# AlphaFold DB models of the H37Rv proteins, C-alpha coordinates re-indexed onto
+# the H37Rv codon grid (one {locus}.npz per coding locus, plus manifest.json).
+# Built by scripts/fetch_af_structures.py; read by datasets/structure.py.
+# Tracked in git (AlphaFold DB, CC-BY 4.0; raw/ PDBs are not), so it resolves
+# inside whichever clone is running.
+REAL_STRUCTURE_DIR = str(Path(__file__).resolve().parent.parent
+                         / "structures" / "alphafold")
 # Trained model weights. NOT under results/ — that lives on the workspace
 # filesystem and is git-ignored, and a full grid is tens of GB. This is the
 # lab's shared large-storage volume, so every run's checkpoints and the config

@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# results/ and slurm_logs/ carry their own .gitignore rather than being ignored
+# from here: results/ re-includes the per-run write-ups and submit scripts,
+# slurm_logs/ re-includes nothing. See ../.gitignore for what this repo is for.

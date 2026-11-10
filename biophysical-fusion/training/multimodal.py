@@ -19,9 +19,10 @@ branch per block and runs BIG-TB's SD-CNN protocol
 Early-stopping defaults deviate from the strict baseline (monitor='val_loss',
 out_bias=log-odds), which collapsed to the all-susceptible majority on the
 imbalanced drugs (MOXI/ETO): val_loss bottoms out at the degenerate solution,
-so it stopped in ~1-9 epochs at CV AUC ~0.54. A MOXI sweep (scripts/sweep_moxi.py)
-found monitor='auc' + patience=15 + out_bias=None recovers CV AUC 0.59->0.85 and
-a usable operating point; those are now the defaults. Pass monitor='loss' /
+so it stopped in ~1-9 epochs at CV AUC ~0.54. A knob sweep over {monitor,
+patience, out_bias} on MOXIFLOXACIN DNA (2026-07, script since retired) found
+monitor='auc' + patience=15 + out_bias=None recovers CV AUC 0.59->0.85 and a
+usable operating point; those are now the defaults. Pass monitor='loss' /
 out_bias='auto' to reproduce the strict baseline.
 
 Everything is mini-batched (real data doesn't fit one GPU). ``arch`` selects the
@@ -35,18 +36,24 @@ used plain KFold(seed=1), and the output bias is initialised to the log-odds
 where Keras leaves it at 0. Neither changes AUC ranking materially; see the
 inline notes at each step.
 """
+import hashlib
 import math
 import time
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from bigtb_ref import tb
-from models import (SETFUSION_DEFAULTS, CisFusionNet, MDCNNNet, MultiModalNet,
-                    SetFusionNet)
+from models import (EXPERIMENTAL_DEFAULTS, EXPERIMENTAL_MODELS,
+                    LOCUSFUSION_ARCHS, LOCUSFUSION_DEFAULTS, SETFUSION_DEFAULTS,
+                    TRANSFORMER_DEFAULTS, CisFusionNet, LocusFusionNet,
+                    locusfusion_defaults,
+                    MDCNNNet, MultiModalNet,
+                    SetFusionNet, make_experimental, parse_block_key)
 from .checkpoint import RunCheckpointer, model_config
 from .core import EarlyStopper, masked_weighted_bce
 
@@ -256,7 +263,8 @@ def _new_writer(tb_dir, *parts):
 
 def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
                  branch_models=None, default_encoder="cnn", head=None,
-                 mdcnn_trunk_per_modality=False, setfusion=None):
+                 mdcnn_trunk_per_modality=False, setfusion=None,
+                 transformer=None, locusfusion=None, experimental=None):
     """One model per fold.
 
     late_fusion -> our per-block encoder net; mdcnn -> BIG-TB's
@@ -268,12 +276,33 @@ def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
     ``setfusion`` carries the setfusion-only capacity knobs (SETFUSION_DEFAULTS:
     d_model, nhead, layers, dim_ff, dropout, enc_*, bins). Both default to the
     values that produced full_run, so omitting them reproduces that run
-    exactly."""
+    exactly. ``locusfusion`` carries LOCUSFUSION_DEFAULTS the same way."""
     head = dict(head or {})
+    if arch in EXPERIMENTAL_MODELS:
+        # the variant-set aggregator family: same tokenizer as locusfusion, six
+        # different ways of combining the tokens. `make_experimental` rejects a
+        # knob the chosen member does not use rather than ignoring it.
+        return make_experimental(
+            arch, [parse_block_key(b.name) for b in blocks],
+            [b.spec() for b in blocks], n_drugs=n_drugs, out_bias=out_bias,
+            hidden=head.get("hidden", 256),
+            **{**EXPERIMENTAL_DEFAULTS, **(experimental or {})})
     if arch == "mdcnn":
+        # mdcnn groups blocks into trunks by channel height, and a trunk can span
+        # modalities (dna and regulatory are both 5-channel), so a PER-MODALITY
+        # encoder choice has no well-defined meaning here. One uniform choice
+        # does: take it when every block agrees, refuse when they do not, rather
+        # than silently dropping half the request.
+        kinds = sorted(set(encoder_types))
+        if len(kinds) > 1:
+            raise ValueError(
+                f"--arch mdcnn takes ONE encoder for every trunk, got {kinds}. "
+                "Its trunks group by channel height and can span modalities, so "
+                "a per-modality mix is ambiguous — use --default-encoder.")
         return MDCNNNet.from_blocks(blocks, n_drugs=n_drugs, out_bias=out_bias,
                                     trunk_per_modality=mdcnn_trunk_per_modality,
-                                    **head)
+                                    encoder=(kinds[0] if kinds else "cnn"),
+                                    transformer=transformer, **head)
     if arch == "setfusion":
         # `hidden`/`per_drug_hidden` mean the same thing here as in DenseHead,
         # so they come off the same head dict. (`hidden` was previously dropped
@@ -284,12 +313,24 @@ def _build_model(arch, blocks, specs, encoder_types, n_drugs, out_bias,
                                         head_dropout=head.get("dropout", 0.0),
                                         per_drug_hidden=head.get("per_drug_hidden", 0),
                                         **{**SETFUSION_DEFAULTS, **(setfusion or {})})
+    if arch in LOCUSFUSION_ARCHS:
+        # same head convention as setfusion: `hidden`/`per_drug_hidden` mean what
+        # they mean in DenseHead, and the runners' --dropout is the READ-OUT
+        # dropout (`dropout` in the capacity defaults is the transformer's).
+        cls, defaults = LOCUSFUSION_ARCHS[arch]
+        return cls.from_blocks(
+            blocks, n_drugs=n_drugs, out_bias=out_bias,
+            hidden=head.get("hidden", 256),
+            head_dropout=head.get("dropout", 0.0),
+            per_drug_hidden=head.get("per_drug_hidden", 0),
+            **{**defaults, **(locusfusion or {})})
     if arch == "cisfusion":
         return CisFusionNet.from_blocks(blocks, n_drugs=n_drugs, out_bias=out_bias,
                                         branch_models=branch_models,
-                                        default_encoder=default_encoder, **head)
+                                        default_encoder=default_encoder,
+                                        transformer=transformer, **head)
     return MultiModalNet(specs, encoder_types, n_drugs=n_drugs, out_bias=out_bias,
-                         **head)
+                         transformer=transformer, **head)
 
 
 def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
@@ -299,7 +340,9 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  hidden=256, dropout=0.0, per_drug_hidden=0,
                  mdcnn_trunk_per_modality=False, run_name=None,
                  save_weights="best", weights_dir=None, data_config=None,
-                 setfusion=None, lr_schedule="none", warmup_epochs=0):
+                 setfusion=None, lr_schedule="none", warmup_epochs=0,
+                 transformer=None, locusfusion=None, experimental=None,
+                 cv_seed=42, split_file=None):
     """Train/eval a MultiModalNet on a DrugData bundle, following BIG-TB's
     SD-CNN protocol (run_SDCNN_ccp_crossval / _assess). Returns a result dict.
 
@@ -325,13 +368,35 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                        branch_models/default_encoder and expect PER-LOCUS blocks.
     setfusion        : setfusion-only capacity overrides (see SETFUSION_DEFAULTS).
                        Ignored by every other arch.
+    transformer      : capacity overrides for the TRANSFORMER encoder / trunk
+                       (see TRANSFORMER_DEFAULTS). Applies wherever a transformer
+                       is actually selected — per-branch under late_fusion and
+                       cisfusion, per-trunk under mdcnn. Nothing at all under
+                       an all-CNN run, and ignored by setfusion, which has its
+                       own d_model/layers/dim_ff knobs.
     lr_schedule      : 'none' (flat LR, what every recorded run used) or
                        'cosine' with `warmup_epochs` (see build_scheduler).
+    cv_seed          : random_state of the StratifiedKFold CV partition (default
+                       42, every run before 2026-09-18). The held-out TEST split
+                       is seed 42 regardless, so varying this is repeated CV on
+                       a fixed test set. Each fold records `val_ids_sha1`.
+    split_file       : optional CSV (New_ID, role in {train,test}, fold 0..k-1) that
+                       fixes the held-out test split AND the CV folds, e.g. the
+                       lineage-grouped splits of scripts/build_lineage_splits.py.
+                       Every isolate kept after the missing-phenotype filter must
+                       appear in it. Overrides the stratified split and cv_seed.
     """
     t0 = time.time()
     branch_models = branch_models or {}
     setfusion = {k: v for k, v in (setfusion or {}).items()
                  if v is not None and SETFUSION_DEFAULTS.get(k) != v}
+    transformer = {k: v for k, v in (transformer or {}).items()
+                   if v is not None and TRANSFORMER_DEFAULTS.get(k) != v}
+    lf_defaults = locusfusion_defaults(arch)
+    locusfusion = {k: v for k, v in (locusfusion or {}).items()
+                   if v is not None and lf_defaults.get(k) != v}
+    experimental = {k: v for k, v in (experimental or {}).items()
+                    if v is not None and EXPERIMENTAL_DEFAULTS.get(k) != v}
     head = {"hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden}
     drug, tag = data.drug, data.modality_tag()
     ckpt = RunCheckpointer(run_name, f"{drug}__{tag}", mode=save_weights,
@@ -354,7 +419,12 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     n = len(keep)
     assert (y != -1).all(), "missing phenotypes leaked past the filter"
     n_R, n_S = int((y == 0).sum()), int((y == 1).sum())
-    enc_desc = "n/a (mdcnn)" if arch == "mdcnn" else enc_by_modality
+    # mdcnn applies ONE encoder to every trunk rather than one per modality,
+    # so report the single kind it actually built. It used to print
+    # "n/a (mdcnn)" unconditionally, which was true only while the conv
+    # trunk was the sole option -- now it would hide a transformer run.
+    enc_desc = (f"{sorted(set(encoder_types))[0]} (all trunks)"
+                if arch == "mdcnn" else enc_by_modality)
     print(f"[{drug}/{tag}] arch={arch} blocks={[b.name for b in data.blocks]} "
           f"specs={specs} encoders={enc_desc} n_valid={n} R={n_R} S={n_S} "
           f"(dropped {data.n - n} missing)", flush=True)
@@ -362,8 +432,26 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     # --- #5: stratified held-out split, seed 42 (paper's seed; also matches the
     # baseline train_test_split random_state=42, and adds stratification as the
     # baseline assess script does) --------------------------------------------
-    train_idx, test_idx = train_test_split(
-        np.arange(n), test_size=0.2, random_state=42, stratify=y)
+    kept_ids = [str(data.isolate_ids[i]) for i in keep]
+    if split_file is None:
+        train_idx, test_idx = train_test_split(
+            np.arange(n), test_size=0.2, random_state=42, stratify=y)
+        split_folds = None
+    else:
+        sp = pd.read_csv(split_file, dtype={"New_ID": str}).set_index("New_ID")
+        missing = [i for i in kept_ids if i not in sp.index]
+        if missing:
+            raise ValueError(f"{split_file}: {len(missing)} of {n} isolates have no split "
+                             f"(e.g. {missing[:3]})")
+        sp = sp.loc[kept_ids]
+        test_idx = np.nonzero((sp.role == "test").values)[0]
+        train_idx = np.nonzero((sp.role == "train").values)[0]
+        fold_of = sp.fold.values[train_idx]
+        split_folds = [(np.nonzero(fold_of != k)[0], np.nonzero(fold_of == k)[0])
+                       for k in sorted(set(fold_of))]
+        assert len(split_folds) == n_splits, (len(split_folds), n_splits)
+        print(f"[{drug}/{tag}] split from {split_file}: train={len(train_idx)} "
+              f"test={len(test_idx)} folds={[len(v) for _, v in split_folds]}", flush=True)
 
     # --- #2: alpha fit on the TRAINING split only -----------------------------
     # tb.alpha_mat's magnitude is n_R/(n_R+n_S) over the rows it sees; the
@@ -390,15 +478,23 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     tb_root = (tb_dir / f"{drug}__{tag}") if tb_dir is not None else None
 
     # --- #5: stratified 5-fold CV on the training split -----------------------
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    # `cv_seed` moves the CV partition and nothing else: the held-out TEST split
+    # above stays seed 42, and `seed` (training randomness) is separate. 42 is
+    # every run before 2026-09-18, byte for byte.
+    if split_folds is None:
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=cv_seed)
+        split_folds = list(skf.split(train_idx, y[train_idx]))
     folds = []
     best_auc, best_model, best_fold = -np.inf, None, None
-    for fold, (tr, va) in enumerate(skf.split(train_idx, y[train_idx])):
+    for fold, (tr, va) in enumerate(split_folds):
         writer = _new_writer(tb_root, f"cv_fold{fold}")
         model = _build_model(arch, data.blocks, specs, encoder_types, 1, out_bias,
                              branch_models, default_encoder, head=head,
                              mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
-                             setfusion=setfusion).to(device)
+                             setfusion=setfusion,
+                             transformer=transformer,
+                             locusfusion=locusfusion,
+                             experimental=experimental).to(device)
         if fold == 0:
             n_params = sum(p.numel() for p in model.parameters())
             print(f"[{drug}/{tag}] {arch}: {n_params:,} parameters", flush=True)
@@ -413,6 +509,10 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         m["fold"] = fold
         m["best_epoch"] = best_epoch
         m["history"] = history       # per-epoch train loss + val metric (training.curves)
+        # which isolates this fold held out, compactly: two results are fold-paired
+        # only if these match, so a paired test can check rather than assume it
+        m["val_ids_sha1"] = hashlib.sha1("\n".join(sorted(
+            data.isolate_ids[keep[i]] for i in train_idx[va])).encode()).hexdigest()[:12]
         folds.append(m)
         # `model` already carries the best-epoch weights (stopper.restore)
         ckpt.add_fold(fold, model, best_epoch, m["auc"])
@@ -449,7 +549,8 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
             drug_names=[drug], out_bias=out_bias, head=head,
             mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
             branch_models=branch_models, default_encoder=default_encoder,
-            n_params=n_params, setfusion=setfusion),
+            n_params=n_params, setfusion=setfusion, transformer=transformer,
+            locusfusion=locusfusion, experimental=experimental),
         "data": {**(data_config or {}),
                  "modalities_used": data.modalities,
                  "modalities_requested": data.requested,
@@ -459,7 +560,8 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  "n_resistant": n_R, "n_susceptible": n_S},
         "split": {"test_size": 0.2, "split_seed": 42, "stratified": True,
                   "n_splits": n_splits, "kfold": "StratifiedKFold",
-                  "kfold_seed": 42, "kfold_shuffle": True,
+                  "kfold_seed": cv_seed, "kfold_shuffle": True,
+                  "split_file": None if split_file is None else str(split_file),
                   "isolate_order": "isolates.txt (post missing-phenotype filter)",
                   "test_isolate_ids": [kept_isolates[i] for i in test_idx]},
         "training": {"epochs": epochs, "batch_size": batch_size, "seed": seed,
@@ -483,6 +585,7 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "genes": data.gene_order, "blocks": [b.name for b in data.blocks],
         "branch_specs": specs, "encoders": enc_by_modality,
         "encoder_types": encoder_types, "dropped": data.dropped,
+        "cv_seed": cv_seed,
         "arch": arch, "n_params": n_params,
         "n_isolates": data.n, "n_valid": n,
         "n_resistant": n_R, "n_susceptible": n_S,
@@ -492,6 +595,14 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "lr": LR if lr is None else float(lr), "weight_decay": float(weight_decay),
         "lr_schedule": lr_schedule, "warmup_epochs": int(warmup_epochs),
         "setfusion": {**SETFUSION_DEFAULTS, **setfusion} if arch == "setfusion" else None,
+        "locusfusion": ({**lf_defaults, **locusfusion}
+                        if arch in LOCUSFUSION_ARCHS else None),
+        "experimental": ({**EXPERIMENTAL_DEFAULTS, **experimental}
+                         if arch in EXPERIMENTAL_MODELS else None),
+        # recorded whenever a transformer is actually in the model, so a result
+        # row always states the capacity it ran at
+        "transformer": ({**TRANSFORMER_DEFAULTS, **transformer}
+                        if "transformer" in set(encoder_types) else None),
         "hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden,
         "mdcnn_trunk_per_modality": bool(mdcnn_trunk_per_modality),
         "weights_dir": str(weights_path) if weights_path else None,
@@ -501,6 +612,7 @@ def run_modal_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "cv_auc_std": cv_std,
         "cv_auc_pr_mean": float(np.mean(prs)) if prs else float("nan"),
         "test_model_fold": best_fold,
+        "split_file": None if split_file is None else str(split_file),
         "test": test_m,
         "seconds": round(time.time() - t0, 1),
     }

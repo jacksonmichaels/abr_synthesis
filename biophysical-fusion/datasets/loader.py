@@ -25,6 +25,7 @@ from .dna import DNAModality
 from .protein import ProteinModality
 from .regulatory import DRUG_TO_REGULATORY, RegulatoryModality
 from .sequences import load_phenotype, load_sequence_df, numeric_labels
+from .structure import StructureModality
 
 # the registry — the whole point of the refactor: any subset can be requested
 MODALITIES = {
@@ -32,7 +33,14 @@ MODALITIES = {
     "protein": ProteinModality,
     "biophysical": BiophysicalModality,
     "regulatory": RegulatoryModality,
+    "structure": StructureModality,
 }
+# Modalities with no per-isolate content: `structure` is the H37Rv fold, the
+# same for every isolate, and only a variant-token model can use it (it is read
+# at the codon a token falls in; a CNN branch over it would see nothing). The
+# runners leave these out of `--modalities all`, so every existing grid keeps
+# the modality set it always had; name them explicitly.
+STATIC_MODALITIES = ("structure",)
 
 DRUG_TO_LOCI = tb.DRUG_TO_LOCI
 
@@ -52,9 +60,47 @@ DRUG_TO_LOCI = tb.DRUG_TO_LOCI
 EXTRA_LOCI = {"ISONIAZID": ["fabG1"], "ETHIONAMIDE": ["fabG1"]}
 
 
-def drug_loci(drug, extra=False):
+# Which gene loci a drug loads by default. "bigtb" is BIG-TB's DRUG_TO_LOCI (the
+# default every existing run used). "who_t12" is the drug's WHO 2023 Table-21
+# tier 1 + tier 2 candidate genes, tier 1 first; most of them only have aligned
+# FASTAs in the gene_msa/who_t12_genotypes folder (pass it as the genotype dir),
+# and a gene with no FASTA there is skipped with a warning like any other.
+# "lab64" is every locus in saishradha's genomic_data/aligned folder as of
+# 2026-10-15 (the 19 curated + 45 WHO candidates, incl. BDQ/CFZ/DLM/LZD genes),
+# given to EVERY drug. Repaired copies live in locus_sets/aligned (2026-10-30).
+# "sai63" and "who_t12_sai" (2026-11-05) keep only loci she provided: "who_t12"
+# has dnaA, PPE35, rpoA and whiB6, which she has no FASTA for, and her pepQ.fasta
+# is Rv3698 while our re-extracted pepQ is Rv2535c, so pepQ goes too. The original
+# two stay as they are because the finished locus_sets sweep was run on them.
+LOCUS_SETS = ("bigtb", "who_t12", "lab64", "sai63", "who_t12_sai")
+LAB64_LOCI = (
+    "aftA", "aftB", "ahpC", "atpE", "bacA", "ccsA", "clpC1", "ddn", "eis", "embA",
+    "embB", "embC", "embR", "ethA", "ethR", "fabG1", "fbiA", "fbiB", "fbiC", "fgd1",
+    "furA", "gid", "glpK", "gyrA", "gyrB", "hadA", "inhA", "katG", "lpqB", "mmpL5",
+    "mmpS5", "mshA", "mtrA", "mtrB", "ndh", "nusG", "panD", "pepQ", "pncA", "rplC",
+    "rpoB", "rpoC", "rpsA", "rpsL", "rrl", "rrs", "Rv0010c", "Rv0565c", "Rv0678",
+    "Rv1129c", "Rv1258c", "Rv1979c", "Rv2477c", "Rv2680", "Rv2681", "Rv2752c",
+    "Rv2983", "Rv3083", "Rv3236c", "sigE", "tlyA", "tsnR", "ubiA", "whiB7")
+SAI63_LOCI = tuple(g for g in LAB64_LOCI if g != "pepQ")
+
+
+def drug_loci(drug, extra=False, locus_set="bigtb"):
     """Gene loci for one drug: BIG-TB's DRUG_TO_LOCI, plus EXTRA_LOCI when
-    ``extra`` is set (order preserved, no duplicates)."""
+    ``extra`` is set (order preserved, no duplicates) -- or, with
+    ``locus_set="who_t12"``, its WHO Table-21 tier 1 + 2 genes -- or, with
+    ``locus_set="lab64"``, all of LAB64_LOCI regardless of drug. ``"sai63"`` and
+    ``"who_t12_sai"`` are lab64 and who_t12 limited to SAI63_LOCI."""
+    if locus_set not in LOCUS_SETS:
+        raise ValueError(f"unknown locus_set {locus_set!r}; choose from {LOCUS_SETS}")
+    if locus_set == "lab64":
+        return list(LAB64_LOCI)
+    if locus_set == "sai63":
+        return list(SAI63_LOCI)
+    if locus_set in ("who_t12", "who_t12_sai"):
+        from .regulatory import DRUG_NAME_TO_WHO
+        from .who_catalogue import genes_for_drug
+        genes = dict.fromkeys(g for g, _ in genes_for_drug(DRUG_NAME_TO_WHO[drug.upper()]))
+        return [g for g in genes if locus_set == "who_t12" or g in SAI63_LOCI]
     base = list(DRUG_TO_LOCI.get(drug.upper(), []))
     if extra:
         base += [g for g in EXTRA_LOCI.get(drug.upper(), []) if g not in base]
@@ -133,7 +179,9 @@ def _resolve(modalities):
 def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                  regulatory_dir=None, loci=None, regulatory_loci=None,
                  per_modality_branch=True, dna_per_locus=True,
-                 extra_loci=False, all_regulatory=False, delta=False, verbose=True):
+                 extra_loci=False, all_regulatory=False, delta=False,
+                 protein_frame="isolate", locus_set="bigtb", unknown_symbols=False,
+                 verbose=True):
     """Build a DrugData bundle for one drug over the requested modalities.
 
     loci                : which gene loci to load for dna/protein/biophysical.
@@ -161,6 +209,11 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
                           keeps only `rrs` and loses the `eis` promoter, because
                           `eis` is not one of its coding loci. Ignored when
                           `regulatory_loci` is given explicitly.
+    protein_frame       : 'isolate' (default — every run before 2026-09-17) or
+                          'reference': protein/biophysical residue k is H37Rv
+                          codon k in every isolate, stops kept as a 21st protein
+                          channel (datasets.protein.locus_residues).
+                          models.locusfusion_v2 requires 'reference'.
     delta               : reference-difference encoding — zero every column that
                           matches the H37Rv reference, in every modality (see
                           datasets/sequences.py). Shape, channels and alphabet are
@@ -180,7 +233,7 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
     regulatory_dir = regulatory_dir or genotype_dir
 
     user_loci = loci is not None
-    loci = list(loci) if user_loci else drug_loci(drug, extra_loci)
+    loci = list(loci) if user_loci else drug_loci(drug, extra_loci, locus_set)
     user_reg = regulatory_loci is not None
     regulatory_loci = (list(regulatory_loci) if user_reg
                        else list(DRUG_TO_REGULATORY.get(drug, [])))
@@ -196,6 +249,11 @@ def load_dataset(drug, modalities, genotype_dir, phenotype_csv,
         if hasattr(m, "per_locus"):
             m.per_locus = (not per_modality_branch) and dna_per_locus
         m.delta = delta
+        # an uncalled base / unreadable codon gets its own channel (dna,
+        # regulatory, protein); off by default -- locusfusion_v2 --lf-unknown-symbols
+        m.unknown_symbols = unknown_symbols
+        if hasattr(m, "frame"):          # protein, biophysical
+            m.frame = protein_frame
     needs_genes = any(m.uses_genes for m in mods)
 
     df_phenos = load_phenotype(phenotype_csv)

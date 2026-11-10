@@ -34,11 +34,20 @@ def make_gene_fixture(genotype_dir, gene, isolate_ids, n_codons=40, seed=0):
     """Write one {gene}_synthetic.fasta, one aligned sequence per isolate.
     Every isolate's sequence has the same length (n_codons*3): gaps stand
     in for indels/frameshifts without shortening the alignment, matching
-    BIG-TB's aligned-FASTA convention."""
+    BIG-TB's aligned-FASTA convention.
+
+    The unmutated sequence every isolate is derived from is also written, as an
+    ``MT_H37Rv`` record — the same id the real alignments carry. It is not in the
+    phenotype fixture, so it drops out of every dataset exactly as the real
+    reference row does (README: 17,942 of 17,943 rpoB isolates intersect), but
+    its presence is what lets ``--delta`` / ``--arch locusfusion`` be exercised
+    on fixtures at all: without a reference row the delta encoding is a no-op
+    and the variant tokenizer has a dense input to chew on."""
     rng = random.Random(seed)
     ref = _random_seq(n_codons, rng)
     path = Path(genotype_dir) / f"{gene}_synthetic.fasta"
     with open(path, "w") as fh:
+        fh.write(f">MT_H37Rv\n{ref}\n")
         for iso in isolate_ids:
             # occasional in-frame indel (3/6 gap columns) or a lone gap
             # (stands in for a frameshift: one broken codon, rest in frame)

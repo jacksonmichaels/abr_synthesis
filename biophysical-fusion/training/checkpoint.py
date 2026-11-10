@@ -59,8 +59,11 @@ from pathlib import Path
 import torch
 
 from bigtb_ref import MODEL_WEIGHTS_DIR
-from models import (SETFUSION_DEFAULTS, CisFusionNet, MDCNNNet, MultiDrugNet,
-                    MultiModalNet, SetFusionNet)
+from models import (EXPERIMENTAL_DEFAULTS, EXPERIMENTAL_MODELS,
+                    LOCUSFUSION_ARCHS, LOCUSFUSION_DEFAULTS, SETFUSION_DEFAULTS,
+                    CisFusionNet,
+                    LocusFusionNet, MDCNNNet, MultiDrugNet,
+                    MultiModalNet, SetFusionNet, make_experimental)
 from models.net import parse_block_key
 
 SCHEMA_VERSION = 1
@@ -114,22 +117,27 @@ def block_records(blocks):
         c, l = b.spec()
         out.append({"name": b.name, "modality": modality, "locus": locus,
                     "channels": int(c), "length": int(l),
-                    "channel_names": list(getattr(b, "channel_names", []) or [])})
+                    "channel_names": list(getattr(b, "channel_names", []) or []),
+                    "meta": dict(getattr(b, "meta", None) or {})})
     return out
 
 
 def model_config(*, arch, blocks, encoder_types, drug_names, out_bias, head,
                  mdcnn_trunk_per_modality=False, branch_models=None,
-                 default_encoder="cnn", n_params=None, setfusion=None):
+                 default_encoder="cnn", n_params=None, setfusion=None,
+                 transformer=None, locusfusion=None, experimental=None):
     """The `model` section — sufficient on its own for build_model_from_config.
 
-    ``setfusion`` records only the capacity knobs that DIFFER from
-    SETFUSION_DEFAULTS, so a config written before those knobs existed (key
-    absent) rebuilds to exactly the model it always did — which is what keeps
-    the full_run / full_run_v2 checkpoints loadable."""
+    ``setfusion``, ``transformer`` and ``locusfusion`` record only the capacity
+    knobs that DIFFER from their defaults, so a config written before those knobs
+    existed (key absent) rebuilds to exactly the model it always did — which is
+    what keeps the full_run / full_run_v2 checkpoints loadable."""
     return {
         "arch": arch,
         "setfusion": dict(setfusion or {}),
+        "transformer": dict(transformer or {}),
+        "locusfusion": dict(locusfusion or {}),
+        "experimental": dict(experimental or {}),
         "drug_names": list(drug_names),          # logits[:, i] == drug_names[i]
         "n_drugs": len(drug_names),
         "branch_specs": [[int(c), int(l)] for c, l in (b.spec() for b in blocks)],
@@ -163,11 +171,18 @@ def build_model_from_config(cfg):
             "per_drug_hidden": m["per_drug_hidden"]}
     out_bias = m["out_bias"]
 
+    # .get, not [...]: configs written before these knobs existed carry no key
+    # and must still rebuild at the defaults.
+    transformer = m.get("transformer") or None
+    enc_kinds = sorted(set(m["encoder_types"]))
+
     if arch == "mdcnn":
         return MDCNNNet(specs, n_drugs=len(drugs),
                         drug_names=drugs if joint else None, out_bias=out_bias,
                         block_modalities=(modalities if m["mdcnn_trunk_per_modality"]
-                                          else None), **head)
+                                          else None),
+                        encoder=(enc_kinds[0] if len(enc_kinds) == 1 else "cnn"),
+                        transformer=transformer, **head)
     if arch == "setfusion":
         # .get, not [...]: configs written before the capacity knobs existed have
         # no 'setfusion' key at all and must still rebuild at the defaults
@@ -177,16 +192,40 @@ def build_model_from_config(cfg):
                             head_dropout=m["dropout"],
                             per_drug_hidden=m["per_drug_hidden"],
                             **{**SETFUSION_DEFAULTS, **(m.get("setfusion") or {})})
+    if arch in EXPERIMENTAL_MODELS:
+        return make_experimental(
+            arch, keys, specs, n_drugs=len(drugs),
+            drug_names=drugs if joint else None, out_bias=out_bias,
+            hidden=m["hidden"],
+            **{**EXPERIMENTAL_DEFAULTS, **(m.get("experimental") or {})})
+    if arch in LOCUSFUSION_ARCHS:
+        cls, defaults = LOCUSFUSION_ARCHS[arch]
+        extra = {}
+        if arch == "locusfusion_v2":
+            # its column -> genome -> codon maps are DATA, not capacity: they came
+            # off the blocks at load time (datasets.cds.block_frame) and
+            # block_records carried them here. A config written without them
+            # rebuilds a model that reads the wrong residue and double-counts the
+            # columns a record shares with its promoter, so they are passed
+            # explicitly rather than defaulted.
+            extra["block_frames"] = [dict(b.get("meta") or {}) for b in m["blocks"]]
+        return cls(keys, specs, n_drugs=len(drugs),
+                   drug_names=drugs if joint else None,
+                   out_bias=out_bias, hidden=m["hidden"],
+                   head_dropout=m["dropout"],
+                   per_drug_hidden=m["per_drug_hidden"],
+                   **extra, **{**defaults, **(m.get("locusfusion") or {})})
     if arch == "cisfusion":
         return CisFusionNet(keys, specs, n_drugs=len(drugs),
                             drug_names=drugs if joint else None,
                             out_bias=out_bias, branch_models=m["branch_models"],
-                            default_encoder=m["default_encoder"], **head)
+                            default_encoder=m["default_encoder"],
+                            transformer=transformer, **head)
     if joint:
         return MultiDrugNet(specs, drugs, m["encoder_types"], out_bias=out_bias,
-                            **head)
+                            transformer=transformer, **head)
     return MultiModalNet(specs, m["encoder_types"], n_drugs=1, out_bias=out_bias,
-                         **head)
+                         transformer=transformer, **head)
 
 
 # ---------------------------------------------------------------------------

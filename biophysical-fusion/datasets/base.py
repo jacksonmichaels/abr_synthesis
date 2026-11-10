@@ -37,6 +37,12 @@ class FeatureBlock:
     array: np.ndarray         # (N, C, L) float32
     channel_names: List[str] = field(default_factory=list)
     note: str = ""
+    # free-form, block-specific. Today only the per-locus DNA blocks fill it, with
+    # {'cds_start', 'cds_end'} -- the CDS window in ALIGNMENT COLUMN space, which
+    # is what lets models.locusfusion_v2 turn a DNA column into a codon index and
+    # read the residue that column changed. Carried into a run's config.json by
+    # training.checkpoint.block_records so a checkpoint rebuilds with it.
+    meta: dict = field(default_factory=dict)
 
     @property
     def channels(self) -> int:
@@ -79,6 +85,8 @@ class Modality:
     its own region FASTAs)."""
     name: str = "modality"
     uses_genes: bool = True
+    # set by the loader; see datasets.sequences.NT_CHANNELS_WITH_UNKNOWN
+    unknown_symbols: bool = False
 
     def build(self, ctx: LoadContext) -> List[FeatureBlock]:
         raise NotImplementedError

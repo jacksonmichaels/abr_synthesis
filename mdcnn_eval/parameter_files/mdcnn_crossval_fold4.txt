@@ -1,0 +1,51 @@
+## MD-CNN cross-validation, FOLD 4 ONLY — resume of the partial run (job 62593892)
+## Mirrors the authors' own run:
+##   .../benchmarking/MTB-CNN/model_training/parameter_files/new/conv_conv_pool_filter12_epoch200.txt
+## (that file is named "epoch200" but actually sets N_epochs: 150 — the run that
+##  produced training_output/results_ccp_filter12_epoch150_sbatch_18_Nov)
+##
+## IDENTICAL to mdcnn_crossval.txt except for `start_cv_fold: 4` below. Job
+## 62593892 completed folds 0-3 (~3h31m each) and was killed by the 16 h wall
+## clock 48 epochs into fold 4; this file runs only the fold that is missing.
+## The KFold(5, shuffle=True, random_state=1) split is deterministic over an
+## identically-derived X, so fold 4's train/val partition here is the same one
+## that job would have used.
+
+filter_size: 12
+N_epochs: 150
+random_seed: 1
+test_size: 0.2
+
+# Skip folds 0-3 (already on disk as cv_split_{0..3}_auc.csv + saved models) and
+# run only fold 4. Absent, this key defaults to 0 = run all five folds.
+start_cv_fold: 4
+
+output_path: /home/jacksonmicha_umass_edu/abr_workspace/mdcnn_eval/training_output/repro_filter12_epoch150
+
+# ---------------------------------------------------------------------------
+# Inputs — all READ-ONLY under pi_annagreen. The precomputed parquet/HDF5/sparse
+# X and alpha matrix are reused verbatim so this run sees byte-identical inputs
+# to the authors' published run (they are only ever read: every code path that
+# would write them is guarded by os.path.isfile and short-circuits).
+# ---------------------------------------------------------------------------
+phenotype_file: /project/pi_annagreen_umass_edu/saishradha/project_data_curation/phenotype_data/master_resistance_table.csv
+genotype_input_directory: /project/pi_annagreen_umass_edu/saishradha/project_data_curation/genomic_data/aligned
+
+metadata_path: /project/pi_annagreen_umass_edu/saishradha/project_data_curation/benchmarking/MTB-CNN/model_training/pickle_files/geno_pheno_metadata.parquet
+h5_path: /project/pi_annagreen_umass_edu/saishradha/project_data_curation/benchmarking/MTB-CNN/model_training/pickle_files/geno_onehot.h5
+
+pkl_file_sparse_train: /project/pi_annagreen_umass_edu/saishradha/project_data_curation/benchmarking/MTB-CNN/model_training/pickle_files/mtb_cnn_X_sparse_train.npy.npz
+pkl_file_sparse_test:  /project/pi_annagreen_umass_edu/saishradha/project_data_curation/benchmarking/MTB-CNN/model_training/pickle_files/mtb_cnn_X_sparse_test.npy.npz
+
+alpha_file: /project/pi_annagreen_umass_edu/saishradha/project_data_curation/benchmarking/MTB-CNN/model_training/pickle_files/alpha_mtb_cnn_train.csv
+
+# Legacy key: read into a local at the top of run_MDCNN_ccp_crossval.py but only
+# used by commented-out code. Points into our own workspace so it can never be
+# written under pi_annagreen.
+pkl_file: /home/jacksonmicha_umass_edu/abr_workspace/mdcnn_eval/training_output/unused_geno_pheno.pkl
+
+# ---------------------------------------------------------------------------
+# Outputs — our workspace only
+# ---------------------------------------------------------------------------
+threshold_file: /home/jacksonmicha_umass_edu/abr_workspace/mdcnn_eval/training_output/repro_filter12_epoch150/auc_thresholds.csv
+saved_model_path: /home/jacksonmicha_umass_edu/abr_workspace/mdcnn_eval/training_output/saved_models/mdcnn_filter12_epoch150

@@ -1,0 +1,9 @@
+# Nothing in this tree is tracked. The .out files are process output (1,200+ of
+# them, 14 MB) and manifests/ is a machine-written job_id -> command index.
+#
+# Both still matter locally: archive/20260806/ is the only surviving copy of
+# alllocus_run's job output, and results/experiments/alllocus_run/
+# reconstruct_from_logs.py needs the manifests to rebuild a run from it. Keep
+# them on the filesystem; they are not for the remote.
+*
+!.gitignore

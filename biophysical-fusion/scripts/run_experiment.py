@@ -40,27 +40,39 @@ import torch  # noqa: E402
 
 from bigtb_ref import (MODEL_WEIGHTS_DIR, REAL_GENOTYPE_DIR,  # noqa: E402
                        REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR, tb)
-from datasets import DRUG_TO_REGULATORY, MODALITIES, load_dataset  # noqa: E402
+from datasets import (DRUG_TO_REGULATORY, MODALITIES,  # noqa: E402
+                      STATIC_MODALITIES, load_dataset)
+from datasets.loader import LOCUS_SETS  # noqa: E402
 from training.checkpoint import SAVE_CHOICES, write_pointer  # noqa: E402
 from datasets.fixtures import build_fixture_dataset  # noqa: E402
-from models import ARCHITECTURES, ENCODERS, TOKEN_NORMS  # noqa: E402
+from models import (ARCHITECTURES, DELTA_ARCHS, ENCODERS,  # noqa: E402
+                    REFERENCE_FRAME_ARCHS,
+                    STRUCTURE_ARCHS,
+                    EXPERIMENTAL_MODELS, LOCUS_ENCODERS, LOCUSFUSION_ARCHS,
+                    locusfusion_defaults,
+                    PER_LOCUS_ARCHS, SUMMARY_NORMS,
+                    TOKEN_NORMS)
 from training.curves import save_curves  # noqa: E402
 from training.multimodal import run_modal_cv  # noqa: E402
 
 RESULTS_DIR = PROJECT_DIR / "results" / "experiments"
-ALL_MODALITIES = list(MODALITIES)
+# `all` is the per-isolate modalities; `structure` (STATIC_MODALITIES) must be
+# named, so every existing grid keeps the modality set it always had
+ALL_MODALITIES = [m for m in MODALITIES if m not in STATIC_MODALITIES]
 ALL_DRUGS = list(tb.DRUG_TO_LOCI)
 
 
-def _resolve_choices(requested, universe, kind, ap):
+def _resolve_choices(requested, universe, kind, ap, extra=()):
     """Expand the sentinel 'all' to the full universe, else validate the
-    requested items against it. `universe` is the ordered list of valid names."""
-    if any(x.lower() == "all" for x in requested):
-        return list(universe)
+    requested items against it. `universe` is the ordered list of valid names;
+    `extra` are valid too, but only when named (not part of 'all')."""
     picked = [x.upper() if kind == "drug" else x.lower() for x in requested]
-    unknown = [x for x in picked if x not in universe]
+    if "all" in (x.lower() for x in requested):
+        return list(universe) + [x for x in extra if x in picked]
+    unknown = [x for x in picked if x not in universe and x not in extra]
     if unknown:
-        ap.error(f"unknown {kind}(s) {unknown}; choose from {universe} or 'all'")
+        ap.error(f"unknown {kind}(s) {unknown}; choose from {list(universe) + list(extra)} "
+                 "or 'all'")
     return picked
 
 
@@ -124,7 +136,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--modalities", nargs="+", default=["dna"], metavar="M",
-                    help=f"any subset of {ALL_MODALITIES}, or 'all' (default: dna)")
+                    help=f"any subset of {ALL_MODALITIES}, or 'all' (default: dna); "
+                         f"plus {list(STATIC_MODALITIES)}, which 'all' leaves out and "
+                         "only --arch locusfusion_v2 reads")
     ap.add_argument("--drugs", nargs="+", default=None, metavar="DRUG",
                     help="drug(s) to run, or 'all' (default: ISONIAZID RIFAMPICIN)")
     ap.add_argument("--loci", nargs="+", default=None, metavar="GENE",
@@ -137,6 +151,15 @@ def main():
                          "never has more promoter windows than coding loci "
                          "(KANAMYCIN then keeps rrs only and loses the eis "
                          "promoter). Ignored when --regulatory-loci is given.")
+    ap.add_argument("--locus-set", default="bigtb", choices=list(LOCUS_SETS),
+                    help="default gene loci per drug: 'bigtb' = BIG-TB's DRUG_TO_LOCI "
+                         "(every run before 2026-09-24); 'who_t12' = the drug's WHO "
+                         "2023 Table-21 tier 1 + 2 candidate genes, which needs "
+                         "--genotype-dir pointing at a folder that has them. Ignored "
+                         "when --loci is given.")
+    ap.add_argument("--genotype-dir", default=None,
+                    help="--real only: aligned per-gene FASTA folder to read instead "
+                         "of bigtb_ref.REAL_GENOTYPE_DIR.")
     ap.add_argument("--extra-loci", action="store_true",
                     help="add the EXTRA_LOCI overlay to the drug's default loci "
                          "(WHO Table 21 tier-1 genes DRUG_TO_LOCI omits: fabG1 "
@@ -162,6 +185,15 @@ def main():
     ap.add_argument("--batch-size", type=int, default=128)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--cv-seed", type=int, default=42,
+                    help="random_state of the CV partition (default 42, every run "
+                         "before 2026-09-18). The held-out test split stays seed 42, "
+                         "so this is repeated CV on a fixed test set; --seed is the "
+                         "separate training randomness.")
+    ap.add_argument("--split-dir", default=None,
+                    help="directory of per-drug split files {DRUG}.csv (New_ID, role, "
+                         "fold), e.g. results/experiments/lineage_split/splits; fixes "
+                         "the test split and CV folds, overriding --cv-seed")
     ap.add_argument("--monitor", default="auc", choices=["auc", "loss"],
                     help="early-stopping metric (default: auc — 'loss' stalls at "
                          "the majority-class collapse on imbalanced drugs)")
@@ -190,6 +222,36 @@ def main():
                     help="per-output hidden branch width; no effect single-drug "
                          "(out_dim=1), kept so both entry points take the same "
                          "flags (default: 0 = off)")
+    # --- transformer encoder capacity ----------------------------------------
+    # Applies wherever a transformer is actually selected: per-branch under
+    # late_fusion / cisfusion, per-trunk under mdcnn. Same None-default
+    # discipline as the setfusion group — an unset flag stays out of the
+    # override dict, so models.TRANSFORMER_DEFAULTS stays the one place the
+    # defaults are written down.
+    #
+    # These exist because a transformer branch is NOT parameter-comparable to a
+    # CNN branch at its defaults: CNNEncoder flattens (out_features = 32*L/9, so
+    # ~3.1M head params on a 3.4 kb block) while TransformerEncoder mean-pools to
+    # d_model=64 regardless of length — a ~30x size gap. Matching capacity means
+    # raising these deliberately; see results/experiments/transformer_run/.
+    tf = ap.add_argument_group(
+        "transformer encoder capacity (only where --encoders/--default-encoder "
+        "select 'transformer')")
+    tf.add_argument("--tf-d-model", type=int, default=None,
+                    help="token width, and the per-branch output width since the "
+                         "encoder mean-pools (default 64)")
+    tf.add_argument("--tf-nhead", type=int, default=None,
+                    help="attention heads; must divide --tf-d-model (default 4)")
+    tf.add_argument("--tf-layers", type=int, default=None,
+                    help="TransformerEncoderLayer count (default 2)")
+    tf.add_argument("--tf-dim-ff", type=int, default=None,
+                    help="feed-forward width inside each layer (default 128)")
+    tf.add_argument("--tf-patch", type=int, default=None,
+                    help="patch-embedding kernel AND stride, so the position axis "
+                         "becomes ~L/patch tokens (default 9)")
+    tf.add_argument("--tf-dropout", type=float, default=None,
+                    help="dropout inside the transformer layers (default 0.1)")
+
     # --- setfusion capacity (ignored by every other arch) ---------------------
     # Defaults are None, not the values: an unset flag stays out of the override
     # dict entirely, so models.SETFUSION_DEFAULTS remains the one place the
@@ -233,6 +295,116 @@ def main():
                          "redundant. 'keyed' strips that constant, which both "
                          "exposes the genotype signal and makes locus_emb the only "
                          "carrier of identity.")
+    # --- locusfusion capacity (--arch locusfusion/locusfusion_v2 only) -----------------------
+    # Its defaults are LOCUSFUSION_DEFAULTS. Unlike the other archs, size was
+    # never the binding constraint here (setfusion_scaling swept four width axes
+    # across 62 arms and closed nothing) — the tokenizer knobs below matter more
+    # than the width ones.
+    lf = ap.add_argument_group("locusfusion capacity "
+                          "(--arch locusfusion / locusfusion_v2 only)")
+    lf.add_argument("--lf-d-model", type=int, default=None,
+                    help="token width, shared by both stages and the read-out "
+                         "(default: 128). Must be divisible by --lf-nhead.")
+    lf.add_argument("--lf-nhead", type=int, default=None,
+                    help="attention heads in both stages and the pooling (default: 4)")
+    lf.add_argument("--lf-enc-layers", type=int, default=None,
+                    help="stage-1 layers, WITHIN one locus (default: 2)")
+    lf.add_argument("--lf-enc-dim-ff", type=int, default=None,
+                    help="stage-1 feed-forward width (default: 256)")
+    lf.add_argument("--lf-fusion-layers", type=int, default=None,
+                    help="stage-2 layers, ACROSS loci (default: 2)")
+    lf.add_argument("--lf-fusion-dim-ff", type=int, default=None,
+                    help="stage-2 feed-forward width (default: 256)")
+    lf.add_argument("--lf-dropout", type=float, default=None,
+                    help="dropout inside both transformers and the pooling "
+                         "attention (default: 0.1). Distinct from --dropout, "
+                         "which is the read-out MLP's.")
+    lf.add_argument("--lf-max-variants", type=int, default=None,
+                    help="token cap per (locus, coordinate stream) (default: 16). "
+                         "The variant census puts the 99th percentile at <=7 "
+                         "columns per locus for 17 of 19 loci and 26 for rrs/rrl, "
+                         "so 16 covers >99%% of (isolate, locus) pairs; overflow "
+                         "keeps the FIRST 16 in positional order.")
+    lf.add_argument("--lf-pos-dims", type=int, default=None,
+                    help="sinusoidal position-encoding width (default: 64)")
+    lf.add_argument("--lf-uncovered-frac", type=float, default=None,
+                    help="fraction of a locus differing from the reference above "
+                         "which it is flagged UNCOVERED rather than hypervariant "
+                         "(default: 0.5). 14-91 isolates per locus are all-gap.")
+    lf.add_argument("--lf-locus-encoder", default=None, choices=list(LOCUS_ENCODERS),
+                    help="stage-1 weight sharing: 'shared' (one encoder, identity "
+                         "from locus_emb only), 'adapter' (default: shared encoder "
+                         "+ a per-locus FiLM, 2*d_model params per locus), or "
+                         "'per_locus' (a separate encoder per locus; 19x the "
+                         "stage-1 weights and the loci can no longer be batched).")
+    lf.add_argument("--lf-summary-norm", default=None, choices=list(SUMMARY_NORMS),
+                    help="standardise each locus summary across the batch with "
+                         "per-locus statistics before stage 2 (default: keyed). "
+                         "Measured motivation: the summary is read off the [WT] "
+                         "slot, whose input is identical in every isolate, so "
+                         "only ~1.6%% of it varies with the genotype at init — "
+                         "the same failure token_signal diagnosed in setfusion. "
+                         "'none' turns it off.")
+    lf.add_argument("--lf-struct-length", type=float, default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: decay "
+                         "length in A of the closeness channels exp(-d/L) "
+                         "(default: 10).")
+    lf.add_argument("--lf-struct-dist", choices=["ca", "heavy"], default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: the "
+                         "token-token distance, C-alpha (default) or closest heavy atoms.")
+    lf.add_argument("--lf-struct-gate", choices=["none", "contact"], default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: 'contact' "
+                         "keeps a pair only within C-alpha reach of a heavy-atom contact "
+                         "(datasets.structure.CONTACT_REACH) and with AlphaFold PAE <= "
+                         "PAE_MAX (default: none).")
+    lf.add_argument("--lf-struct-invalid", type=float, default=None,
+                    help="--arch locusfusion_v2 with --modalities structure: the value "
+                         "a pair with no geometry (or failing the gate) reads "
+                         "(default: 0, which is also 'far'; -1 keeps them apart).")
+    lf.add_argument("--lf-unknown-symbols", action="store_true", default=None,
+                    help="--arch locusfusion_v2: an uncalled base (N) and an unreadable "
+                         "or deleted codon get their own channels, and an uncalled base "
+                         "makes a token (the 2026-09-24 draft's behaviour). Default off.")
+    lf.add_argument("--lf-ref-bio", action="store_true", default=None,
+                    help="--arch locusfusion_v2: carry the H37Rv residue's three "
+                         "properties as their own channels next to the delta. Default off.")
+    lf.add_argument("--lf-carry-variants", type=int, default=None,
+                    help="how many of each locus's own variant tokens are handed "
+                         "up to stage 2 alongside its summary (default: 0). >0 "
+                         "lets cross-locus attention see individual variants "
+                         "(rpoB+rpoC compensatory pairs) at a larger token set.")
+    # --- experimental variant-set aggregators (models/experimental_models.py) --
+    # Same tokenizer as locusfusion; these six differ only in how the variant set
+    # is aggregated. Knobs are checked against the SELECTED member -- passing
+    # --xm-fm-rank to --arch deepsets is an error, not a silent no-op.
+    xm = ap.add_argument_group(
+        "experimental aggregators (--arch catalogue|additive|noisyor|"
+        "gatedpool|deepsets|fm)")
+    xm.add_argument("--xm-d-model", type=int, default=None,
+                    help="variant embedding width (default: 128). Ignored by "
+                         "--arch catalogue, which has no embedding at all.")
+    xm.add_argument("--xm-max-variants", type=int, default=None,
+                    help="token cap per block (default: 16). The variant census "
+                         "puts the 99th percentile at <=7 columns per locus for "
+                         "17 of 19 loci and 26 for rrs/rrl.")
+    xm.add_argument("--xm-pos-dims", type=int, default=None,
+                    help="sinusoidal position-encoding width (default: 64)")
+    xm.add_argument("--xm-uncovered-frac", type=float, default=None,
+                    help="fraction of a block differing from the reference above "
+                         "which it is flagged UNCOVERED rather than hypervariant "
+                         "(default: 0.5)")
+    xm.add_argument("--xm-dropout", type=float, default=None,
+                    help="dropout on the variant embedding (default: 0.1)")
+    xm.add_argument("--xm-fm-rank", type=int, default=None,
+                    help="--arch fm only: factorization rank, i.e. how many "
+                         "dimensions the pairwise-interaction term gets "
+                         "(default: 8). All pairs cost O(T*rank), not O(T^2).")
+    xm.add_argument("--xm-residual-catalogue", action="store_true",
+                    help="--arch additive only: add the exact-identity weight "
+                         "table on top of the featurised one, so the model "
+                         "memorises variants it has seen and featurises the ones "
+                         "it has not. Off by default so the clean measurement "
+                         "(featurisation alone vs --arch catalogue) comes first.")
     # --- input encoding (all archs) -------------------------------------------
     ap.add_argument("--delta", action="store_true",
                     help="reference-difference input encoding: zero every column "
@@ -240,6 +412,12 @@ def main():
                          "and alphabet unchanged; what goes is the ~99.9%% of each "
                          "sequence identical across a clonal cohort, which carries "
                          "no discriminative signal but dominates the CNN's input.")
+    ap.add_argument("--protein-frame", choices=["isolate", "reference"], default=None,
+                    help="codon grid for protein/biophysical residue k: 'isolate' (the "
+                         "isolate's own degapped frame, every run before 2026-09-17) or "
+                         "'reference' (H37Rv codon k in every isolate, stops kept). "
+                         "Default: 'reference' for --arch locusfusion_v2, which "
+                         "requires it; 'isolate' otherwise.")
     # --- LR schedule (all archs) ----------------------------------------------
     ap.add_argument("--lr-schedule", default="none", choices=["none", "cosine"],
                     help="per-epoch LR schedule: 'none' (flat, what every "
@@ -261,9 +439,14 @@ def main():
                          "(PyTorch default), or a float (default: none)")
     ap.add_argument("--arch", default="late_fusion", choices=list(ARCHITECTURES),
                     help="network topology: 'late_fusion' (one encoder per block, "
-                         "concatenated) or 'mdcnn' (BIG-TB's own: loci stacked as "
-                         "channels, 12-bp conv across all of them from layer 1). "
-                         "'mdcnn' implies per-locus branches and ignores --encoders.")
+                         "concatenated), 'mdcnn' (BIG-TB's own: loci stacked as "
+                         "channels, 12-bp conv across all of them from layer 1), "
+                         "'setfusion', 'cisfusion', or 'locusfusion' / "
+                         "'locusfusion_v2' (one token per VARIANT, fused within a "
+                         "locus then across loci; v2 is the revised tokenizer). "
+                         "All but late_fusion imply per-locus branches and ignore "
+                         "--encoders; the variant-token archs additionally imply "
+                         "--delta.")
     ap.add_argument("--per-locus-branches", action="store_true",
                     help="one branch per gene/region instead of the default one "
                          "branch per MODALITY (loci concatenated). Also splits DNA "
@@ -310,17 +493,106 @@ def main():
         ap.error(f"setfusion capacity flags {sorted(setfusion)} require "
                  f"--arch setfusion (got --arch {args.arch})")
 
-    modalities = _resolve_choices(args.modalities, ALL_MODALITIES, "modality", ap)
+    locusfusion = {k: v for k, v in {
+        "d_model": args.lf_d_model, "nhead": args.lf_nhead,
+        "enc_layers": args.lf_enc_layers, "enc_dim_ff": args.lf_enc_dim_ff,
+        "fusion_layers": args.lf_fusion_layers, "fusion_dim_ff": args.lf_fusion_dim_ff,
+        "dropout": args.lf_dropout, "max_variants": args.lf_max_variants,
+        "pos_dims": args.lf_pos_dims, "uncovered_frac": args.lf_uncovered_frac,
+        "locus_encoder": args.lf_locus_encoder,
+        "summary_norm": args.lf_summary_norm,
+        "carry_variants": args.lf_carry_variants,
+        "struct_length": args.lf_struct_length,
+        "struct_dist": args.lf_struct_dist, "struct_gate": args.lf_struct_gate,
+        "struct_invalid": args.lf_struct_invalid,
+        "unknown_symbols": args.lf_unknown_symbols, "ref_bio": args.lf_ref_bio,
+    }.items() if v is not None}
+    experimental = {k: v for k, v in {
+        "d_model": args.xm_d_model, "max_variants": args.xm_max_variants,
+        "pos_dims": args.xm_pos_dims, "uncovered_frac": args.xm_uncovered_frac,
+        "dropout": args.xm_dropout, "fm_rank": args.xm_fm_rank,
+        "residual_catalogue": args.xm_residual_catalogue or None,
+    }.items() if v is not None}
+    if experimental and args.arch not in EXPERIMENTAL_MODELS:
+        ap.error(f"experimental aggregator flags "
+                 f"{sorted('--xm-' + k.replace('_', '-') for k in experimental)} "
+                 f"require one of --arch {'|'.join(sorted(EXPERIMENTAL_MODELS))} "
+                 f"(got --arch {args.arch})")
+
+    if locusfusion and args.arch not in LOCUSFUSION_ARCHS:
+        ap.error(f"locusfusion capacity flags {sorted('--lf-' + k.replace('_', '-') for k in locusfusion)} "
+                 f"require one of --arch {'|'.join(LOCUSFUSION_ARCHS)} "
+                 f"(got --arch {args.arch})")
+    # the family's members do not share every knob -- locusfusion_v2's tokenizer
+    # has no `uncovered_frac`, for one -- and a flag the arch cannot use would be
+    # dropped on the floor, making a sweep arm look like it ran when it was the
+    # control with a different folder name.
+    stray = sorted(set(locusfusion) - set(locusfusion_defaults(args.arch)))
+    if locusfusion and stray:
+        ap.error(f"{['--lf-' + k.replace('_', '-') for k in stray]} "
+                 f"is not a knob of --arch {args.arch} "
+                 f"(its knobs: {sorted(locusfusion_defaults(args.arch))})")
+
+    if args.genotype_dir and not args.real:
+        ap.error("--genotype-dir reads real FASTAs; add --real")
+    modalities = _resolve_choices(args.modalities, ALL_MODALITIES, "modality", ap,
+                                  extra=STATIC_MODALITIES)
+    struct_flags = [f for f, v in (("--lf-struct-length", args.lf_struct_length),
+                                   ("--lf-struct-dist", args.lf_struct_dist),
+                                   ("--lf-struct-gate", args.lf_struct_gate),
+                                   ("--lf-struct-invalid", args.lf_struct_invalid))
+                    if v is not None]
+    if (args.lf_unknown_symbols or args.lf_ref_bio) and args.arch != "locusfusion_v2":
+        ap.error("--lf-unknown-symbols / --lf-ref-bio are locusfusion_v2 tokenizer "
+                 f"options; --arch {args.arch} would ignore them")
+    if struct_flags and "structure" not in modalities:
+        ap.error(f"{struct_flags} set the structure closeness channels; without "
+                 "--modalities structure they would change nothing and the run would "
+                 "be the control under another name")
+    if "structure" in modalities and args.arch not in STRUCTURE_ARCHS:
+        ap.error(f"--modalities structure is read at a variant token's codon and "
+                 f"has no per-isolate channels; it needs --arch "
+                 f"{'|'.join(STRUCTURE_ARCHS)} (got --arch {args.arch})")
     drugs = _resolve_choices(args.drugs or ["ISONIAZID", "RIFAMPICIN"],
                              ALL_DRUGS, "drug", ap)
     branch_models = _parse_encoders(args.encoders, ap)
+
+    transformer = {k: v for k, v in {
+        "d_model": args.tf_d_model, "nhead": args.tf_nhead,
+        "layers": args.tf_layers, "dim_ff": args.tf_dim_ff,
+        "patch": args.tf_patch, "dropout": args.tf_dropout,
+    }.items() if v is not None}
+    if transformer and "transformer" not in set(
+            list(branch_models.values()) + [args.default_encoder]):
+        # same rule as the setfusion flags: silently ignoring them would make a
+        # sweep arm look like it ran when it was really the control
+        ap.error(f"transformer capacity flags {sorted('--tf-'+k.replace('_','-') for k in transformer)} "
+                 "require a transformer encoder — pass --default-encoder transformer "
+                 "or --encoders MODALITY=transformer")
+
     epochs = args.epochs if args.epochs is not None else (60 if args.real else 5)
     # the mdcnn topology stacks LOCI as channels, so it needs one block per
     # locus; the per-modality default (loci concatenated end-to-end) would
     # collapse the whole modality into a single channel plane.
-    per_locus = args.per_locus_branches or args.arch in ("mdcnn", "setfusion", "cisfusion")
-    if args.arch in ("mdcnn", "setfusion", "cisfusion") and not args.per_locus_branches:
+    per_locus = args.per_locus_branches or args.arch in PER_LOCUS_ARCHS
+    if args.arch in PER_LOCUS_ARCHS and not args.per_locus_branches:
         print(f"--arch {args.arch}: loading per-locus branches (implied)")
+    # locusfusion tokenizes the columns that DIFFER from H37Rv, so on a plain
+    # one-hot every column differs from nothing, the cap keeps the first
+    # max_variants columns of each block, and the model silently degenerates
+    # while still producing plausible numbers. Imply it rather than trust a flag.
+    delta = args.delta or args.arch in DELTA_ARCHS
+    if args.arch in DELTA_ARCHS and not args.delta:
+        print(f"--arch {args.arch}: reference-difference input encoding (--delta, implied)")
+    protein_frame = args.protein_frame or (
+        "reference" if args.arch in REFERENCE_FRAME_ARCHS else "isolate")
+    if args.arch in REFERENCE_FRAME_ARCHS and protein_frame != "reference":
+        ap.error(f"--arch {args.arch} reads residues on the H37Rv codon grid; "
+                 f"--protein-frame {protein_frame} would misplace every residue "
+                 "after an indel. Drop the flag or pass --protein-frame reference.")
+    if args.arch in REFERENCE_FRAME_ARCHS and not args.protein_frame:
+        print(f"--arch {args.arch}: protein/biophysical on the H37Rv codon grid "
+              "(--protein-frame reference, implied)")
     run_name = args.run_name or time.strftime("run_%Y%m%d_%H%M%S")
     run_dir = RESULTS_DIR / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -331,8 +603,11 @@ def main():
           f"drugs={drugs}")
     print(f"arch={args.arch} branches={'per-locus' if per_locus else 'per-modality'}"
           f"{' extra_loci=on' if args.extra_loci else ''}")
+    # mdcnn takes ONE encoder for all its trunks (see _build_model), so say which
+    # one -- printing "n/a" was right only while the conv trunk was the sole option
     print(f"encoders: {branch_models or '{}'} (default: {args.default_encoder})"
-          if args.arch != "mdcnn" else "encoders: n/a under --arch mdcnn")
+          if args.arch != "mdcnn"
+          else f"encoders: {args.default_encoder} for every mdcnn trunk")
     print(f"device={args.device} epochs={epochs} batch_size={args.batch_size} "
           f"n_splits={args.n_splits}")
     print(f"lr={args.lr if args.lr is not None else 'exp(-9)'} "
@@ -349,7 +624,8 @@ def main():
     with contextlib.ExitStack() as stack:
         if args.real:
             genotype_dir, phenotype_csv, regulatory_dir = (
-                REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR)
+                args.genotype_dir or REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV,
+                REAL_REGULATORY_DIR)
         else:
             tmp = stack.enter_context(tempfile.TemporaryDirectory())
             genotype_dir, phenotype_csv = _make_synthetic(
@@ -364,10 +640,15 @@ def main():
                                     per_modality_branch=not per_locus,
                                     extra_loci=args.extra_loci,
                                     all_regulatory=args.all_regulatory,
-                                    delta=args.delta)
+                                    delta=delta, protein_frame=protein_frame,
+                                    locus_set=args.locus_set,
+                                    unknown_symbols=bool(args.lf_unknown_symbols))
                 result = run_modal_cv(data, epochs=epochs, n_splits=args.n_splits,
                                       batch_size=args.batch_size, device=args.device,
                                       tb_dir=tb_dir, seed=args.seed,
+                                      cv_seed=args.cv_seed,
+                                      split_file=(None if args.split_dir is None else
+                                                  str(Path(args.split_dir) / f"{drug}.csv")),
                                       branch_models=branch_models,
                                       default_encoder=args.default_encoder,
                                       monitor=args.monitor, patience=args.patience,
@@ -378,6 +659,9 @@ def main():
                                       per_drug_hidden=args.per_drug_hidden,
                                       mdcnn_trunk_per_modality=args.mdcnn_trunk_per_modality,
                                       setfusion=setfusion,
+                                      transformer=transformer,
+                                      locusfusion=locusfusion,
+                                      experimental=experimental,
                                       lr_schedule=args.lr_schedule,
                                       warmup_epochs=args.warmup_epochs,
                                       run_name=run_name,
@@ -391,8 +675,13 @@ def main():
                                           "per_modality_branch": not per_locus,
                                           "all_regulatory": args.all_regulatory,
                                           "extra_loci": args.extra_loci,
+                                          "locus_set": args.locus_set,
                                           "delta": args.delta,
-                                          "loci_override": args.loci,
+                                          # the RESOLVED value, unlike "delta"
+                                          # above, which records the raw flag
+                                          "protein_frame": protein_frame,
+                                          "unknown_symbols": bool(args.lf_unknown_symbols),
+                                                                                    "loci_override": args.loci,
                                           "regulatory_loci_override": args.regulatory_loci,
                                       })
                 out = run_dir / f"{drug}__{result['tag']}.json"

@@ -59,16 +59,18 @@ from .sequences import load_phenotype, load_sequence_df
 ALL_DRUGS = list(DRUG_TO_LOCI)
 
 
-def union_loci(drugs, extra=False):
+def union_loci(drugs, extra=False, locus_set="bigtb"):
     """Ordered, de-duplicated union of every drug's gene loci.
 
     This is the SD-CNN-derived rule (union of the per-drug map). MD-CNN instead
     uses every curated locus regardless of drug — see ``loci_on_disk``, which is
     what the multi-drug runner defaults to on real data. ``extra`` adds the
-    EXTRA_LOCI overlay (fabG1 for INH/ETO)."""
+    EXTRA_LOCI overlay (fabG1 for INH/ETO). ``locus_set`` is drug_loci's: with
+    'who_t12' the union of each drug's WHO tier 1 + 2 genes (drug order, then
+    tier order), with 'lab64' just LAB64_LOCI."""
     out = []
     for d in drugs:
-        for g in drug_loci(d, extra):
+        for g in drug_loci(d, extra, locus_set):
             if g not in out:
                 out.append(g)
     return out
@@ -142,7 +144,9 @@ class MultiDrugData:
 def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
                            regulatory_dir=None, loci=None, regulatory_loci=None,
                            per_modality_branch=True, dna_per_locus=True,
-                           extra_loci=False, all_regulatory=False, verbose=True):
+                           extra_loci=False, all_regulatory=False, delta=False,
+                           protein_frame="isolate", unknown_symbols=False,
+                           verbose=True):
     """Build a MultiDrugData bundle predicting ``drugs`` (default: all) from the
     union of their loci.
 
@@ -170,7 +174,16 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
                           4 branches for all-modalities). False -> one branch per
                           locus/region (the ~100-branch layout).
     dna_per_locus       : only when per_modality_branch=False — DNA one block per
-                          locus (True) vs one concatenated block (False)."""
+                          locus (True) vs one concatenated block (False).
+    protein_frame       : 'isolate' (default — every run before 2026-09-17) or
+                          'reference': protein/biophysical residue k is H37Rv
+                          codon k in every isolate, stops kept as a 21st protein
+                          channel (datasets.protein.locus_residues).
+                          models.locusfusion_v2 requires 'reference'.
+    delta               : reference-difference encoding — zero every column that
+                          matches the H37Rv reference, in every modality (see
+                          datasets/sequences.py). Same flag, same meaning and the
+                          same per-modality plumbing as load_dataset's."""
     drugs = [d.upper() for d in (drugs if drugs else ALL_DRUGS)]
     modalities = _resolve(modalities)
     regulatory_dir = regulatory_dir or genotype_dir
@@ -184,6 +197,12 @@ def load_multidrug_dataset(drugs, modalities, genotype_dir, phenotype_csv,
 
     mods = [MODALITIES[m]() for m in modalities]
     for m in mods:
+        m.delta = delta
+        # an uncalled base / unreadable codon gets its own channel, exactly as in
+        # load_dataset; off by default -- locusfusion_v2 --lf-unknown-symbols
+        m.unknown_symbols = unknown_symbols
+        if hasattr(m, "frame"):          # protein, biophysical
+            m.frame = protein_frame
         if m.name == "dna":
             # one DNA branch (concatenated) when per_modality_branch; else honor
             # dna_per_locus for the per-locus layout.

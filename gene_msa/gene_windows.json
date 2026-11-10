@@ -1,0 +1,527 @@
+{
+ "chrom": "NC_000962.3",
+ "pad": 100,
+ "windows": {
+  "PPE35": {
+   "gene": "PPE35",
+   "rv": "Rv1918c",
+   "drugs": [
+    "PYRAZINAMIDE"
+   ],
+   "gene_start0": 2167648,
+   "gene_end0": 2170612,
+   "start": 2167549,
+   "end": 2170712,
+   "sense": "neg",
+   "length": 3164,
+   "pad": 100
+  },
+  "Rv0010c": {
+   "gene": "Rv0010c",
+   "rv": "Rv0010c",
+   "drugs": [
+    "ISONIAZID"
+   ],
+   "gene_start0": 13132,
+   "gene_end0": 13558,
+   "start": 13033,
+   "end": 13658,
+   "sense": "neg",
+   "length": 626,
+   "pad": 100
+  },
+  "Rv0565c": {
+   "gene": "Rv0565c",
+   "rv": "Rv0565c",
+   "drugs": [
+    "ETHIONAMIDE"
+   ],
+   "gene_start0": 656009,
+   "gene_end0": 657470,
+   "start": 655910,
+   "end": 657570,
+   "sense": "neg",
+   "length": 1661,
+   "pad": 100
+  },
+  "Rv1129c": {
+   "gene": "Rv1129c",
+   "rv": "Rv1129c",
+   "drugs": [
+    "ISONIAZID",
+    "RIFAMPICIN",
+    "LEVOFLOXACIN",
+    "MOXIFLOXACIN"
+   ],
+   "gene_start0": 1253073,
+   "gene_end0": 1254534,
+   "start": 1252974,
+   "end": 1254634,
+   "sense": "neg",
+   "length": 1661,
+   "pad": 100
+  },
+  "Rv1258c": {
+   "gene": "Rv1258c",
+   "rv": "Rv1258c",
+   "drugs": [
+    "ISONIAZID",
+    "PYRAZINAMIDE",
+    "STREPTOMYCIN"
+   ],
+   "gene_start0": 1406080,
+   "gene_end0": 1407340,
+   "start": 1405981,
+   "end": 1407440,
+   "sense": "neg",
+   "length": 1460,
+   "pad": 100
+  },
+  "Rv2477c": {
+   "gene": "Rv2477c",
+   "rv": "Rv2477c",
+   "drugs": [
+    "RIFAMPICIN",
+    "ETHAMBUTOL",
+    "STREPTOMYCIN",
+    "KANAMYCIN",
+    "AMIKACIN",
+    "LEVOFLOXACIN",
+    "MOXIFLOXACIN"
+   ],
+   "gene_start0": 2782365,
+   "gene_end0": 2784042,
+   "start": 2782266,
+   "end": 2784142,
+   "sense": "neg",
+   "length": 1877,
+   "pad": 100
+  },
+  "Rv2680": {
+   "gene": "Rv2680",
+   "rv": "Rv2680",
+   "drugs": [
+    "CAPREOMYCIN"
+   ],
+   "gene_start0": 2996104,
+   "gene_end0": 2996737,
+   "start": 2996005,
+   "end": 2996837,
+   "sense": "pos",
+   "length": 833,
+   "pad": 100
+  },
+  "Rv2681": {
+   "gene": "Rv2681",
+   "rv": "Rv2681",
+   "drugs": [
+    "CAPREOMYCIN"
+   ],
+   "gene_start0": 2996738,
+   "gene_end0": 2998055,
+   "start": 2996639,
+   "end": 2998155,
+   "sense": "pos",
+   "length": 1517,
+   "pad": 100
+  },
+  "Rv2752c": {
+   "gene": "Rv2752c",
+   "rv": "Rv2752c",
+   "drugs": [
+    "ISONIAZID",
+    "RIFAMPICIN",
+    "ETHAMBUTOL",
+    "LEVOFLOXACIN",
+    "MOXIFLOXACIN"
+   ],
+   "gene_start0": 3064514,
+   "gene_end0": 3066191,
+   "start": 3064415,
+   "end": 3066291,
+   "sense": "neg",
+   "length": 1877,
+   "pad": 100
+  },
+  "Rv3083": {
+   "gene": "Rv3083",
+   "rv": "Rv3083",
+   "drugs": [
+    "ETHIONAMIDE"
+   ],
+   "gene_start0": 3448503,
+   "gene_end0": 3449991,
+   "start": 3448404,
+   "end": 3450091,
+   "sense": "pos",
+   "length": 1688,
+   "pad": 100
+  },
+  "Rv3236c": {
+   "gene": "Rv3236c",
+   "rv": "Rv3236c",
+   "drugs": [
+    "PYRAZINAMIDE"
+   ],
+   "gene_start0": 3611958,
+   "gene_end0": 3613116,
+   "start": 3611859,
+   "end": 3613216,
+   "sense": "neg",
+   "length": 1358,
+   "pad": 100
+  },
+  "aftA": {
+   "gene": "aftA",
+   "rv": "Rv3792",
+   "drugs": [
+    "ETHAMBUTOL"
+   ],
+   "gene_start0": 4237931,
+   "gene_end0": 4239863,
+   "start": 4237832,
+   "end": 4239963,
+   "sense": "pos",
+   "length": 2132,
+   "pad": 100
+  },
+  "aftB": {
+   "gene": "aftB",
+   "rv": "Rv3805c",
+   "drugs": [
+    "ETHAMBUTOL"
+   ],
+   "gene_start0": 4266952,
+   "gene_end0": 4268836,
+   "start": 4266853,
+   "end": 4268936,
+   "sense": "neg",
+   "length": 2084,
+   "pad": 100
+  },
+  "ahpC": {
+   "gene": "ahpC",
+   "rv": "Rv2428",
+   "drugs": [
+    "ISONIAZID"
+   ],
+   "gene_start0": 2726192,
+   "gene_end0": 2726780,
+   "start": 2726093,
+   "end": 2726880,
+   "sense": "pos",
+   "length": 788,
+   "pad": 100
+  },
+  "bacA": {
+   "gene": "bacA",
+   "rv": "Rv1819c",
+   "drugs": [
+    "STREPTOMYCIN",
+    "KANAMYCIN",
+    "AMIKACIN",
+    "CAPREOMYCIN"
+   ],
+   "gene_start0": 2062808,
+   "gene_end0": 2064728,
+   "start": 2062709,
+   "end": 2064828,
+   "sense": "neg",
+   "length": 2120,
+   "pad": 100
+  },
+  "ccsA": {
+   "gene": "ccsA",
+   "rv": "Rv0529",
+   "drugs": [
+    "KANAMYCIN",
+    "AMIKACIN",
+    "CAPREOMYCIN"
+   ],
+   "gene_start0": 619890,
+   "gene_end0": 620865,
+   "start": 619791,
+   "end": 620965,
+   "sense": "pos",
+   "length": 1175,
+   "pad": 100
+  },
+  "clpC1": {
+   "gene": "clpC1",
+   "rv": "Rv3596c",
+   "drugs": [
+    "PYRAZINAMIDE"
+   ],
+   "gene_start0": 4038157,
+   "gene_end0": 4040704,
+   "start": 4038058,
+   "end": 4040804,
+   "sense": "neg",
+   "length": 2747,
+   "pad": 100
+  },
+  "dnaA": {
+   "gene": "dnaA",
+   "rv": "Rv0001",
+   "drugs": [
+    "ISONIAZID"
+   ],
+   "gene_start0": 0,
+   "gene_end0": 1524,
+   "start": 1,
+   "end": 1624,
+   "sense": "pos",
+   "length": 1624,
+   "pad": 100
+  },
+  "embR": {
+   "gene": "embR",
+   "rv": "Rv1267c",
+   "drugs": [
+    "ETHAMBUTOL"
+   ],
+   "gene_start0": 1416180,
+   "gene_end0": 1417347,
+   "start": 1416081,
+   "end": 1417447,
+   "sense": "neg",
+   "length": 1367,
+   "pad": 100
+  },
+  "furA": {
+   "gene": "furA",
+   "rv": "Rv1909c",
+   "drugs": [
+    "ISONIAZID"
+   ],
+   "gene_start0": 2156148,
+   "gene_end0": 2156592,
+   "start": 2156049,
+   "end": 2156692,
+   "sense": "neg",
+   "length": 644,
+   "pad": 100
+  },
+  "glpK": {
+   "gene": "glpK",
+   "rv": "Rv3696c",
+   "drugs": [
+    "ISONIAZID",
+    "RIFAMPICIN",
+    "ETHAMBUTOL",
+    "STREPTOMYCIN",
+    "LEVOFLOXACIN",
+    "MOXIFLOXACIN"
+   ],
+   "gene_start0": 4138201,
+   "gene_end0": 4139755,
+   "start": 4138102,
+   "end": 4139855,
+   "sense": "neg",
+   "length": 1754,
+   "pad": 100
+  },
+  "hadA": {
+   "gene": "hadA",
+   "rv": "Rv0635",
+   "drugs": [
+    "ISONIAZID"
+   ],
+   "gene_start0": 731929,
+   "gene_end0": 732406,
+   "start": 731830,
+   "end": 732506,
+   "sense": "pos",
+   "length": 677,
+   "pad": 100
+  },
+  "lpqB": {
+   "gene": "lpqB",
+   "rv": "Rv3244c",
+   "drugs": [
+    "RIFAMPICIN"
+   ],
+   "gene_start0": 3623158,
+   "gene_end0": 3624910,
+   "start": 3623059,
+   "end": 3625010,
+   "sense": "neg",
+   "length": 1952,
+   "pad": 100
+  },
+  "mshA": {
+   "gene": "mshA",
+   "rv": "Rv0486",
+   "drugs": [
+    "ISONIAZID",
+    "ETHIONAMIDE"
+   ],
+   "gene_start0": 575347,
+   "gene_end0": 576790,
+   "start": 575248,
+   "end": 576890,
+   "sense": "pos",
+   "length": 1643,
+   "pad": 100
+  },
+  "mtrA": {
+   "gene": "mtrA",
+   "rv": "Rv3246c",
+   "drugs": [
+    "RIFAMPICIN"
+   ],
+   "gene_start0": 3626662,
+   "gene_end0": 3627349,
+   "start": 3626563,
+   "end": 3627449,
+   "sense": "neg",
+   "length": 887,
+   "pad": 100
+  },
+  "mtrB": {
+   "gene": "mtrB",
+   "rv": "Rv3245c",
+   "drugs": [
+    "RIFAMPICIN"
+   ],
+   "gene_start0": 3624909,
+   "gene_end0": 3626613,
+   "start": 3624810,
+   "end": 3626713,
+   "sense": "neg",
+   "length": 1904,
+   "pad": 100
+  },
+  "ndh": {
+   "gene": "ndh",
+   "rv": "Rv1854c",
+   "drugs": [
+    "ISONIAZID",
+    "ETHIONAMIDE"
+   ],
+   "gene_start0": 2101650,
+   "gene_end0": 2103042,
+   "start": 2101551,
+   "end": 2103142,
+   "sense": "neg",
+   "length": 1592,
+   "pad": 100
+  },
+  "nusG": {
+   "gene": "nusG",
+   "rv": "Rv0639",
+   "drugs": [
+    "RIFAMPICIN"
+   ],
+   "gene_start0": 734253,
+   "gene_end0": 734970,
+   "start": 734154,
+   "end": 735070,
+   "sense": "pos",
+   "length": 917,
+   "pad": 100
+  },
+  "panD": {
+   "gene": "panD",
+   "rv": "Rv3601c",
+   "drugs": [
+    "PYRAZINAMIDE"
+   ],
+   "gene_start0": 4043861,
+   "gene_end0": 4044281,
+   "start": 4043762,
+   "end": 4044381,
+   "sense": "neg",
+   "length": 620,
+   "pad": 100
+  },
+  "rpoA": {
+   "gene": "rpoA",
+   "rv": "Rv3457c",
+   "drugs": [
+    "RIFAMPICIN"
+   ],
+   "gene_start0": 3877463,
+   "gene_end0": 3878507,
+   "start": 3877364,
+   "end": 3878607,
+   "sense": "neg",
+   "length": 1244,
+   "pad": 100
+  },
+  "rpsA": {
+   "gene": "rpsA",
+   "rv": "Rv1630",
+   "drugs": [
+    "PYRAZINAMIDE"
+   ],
+   "gene_start0": 1833541,
+   "gene_end0": 1834987,
+   "start": 1833442,
+   "end": 1835087,
+   "sense": "pos",
+   "length": 1646,
+   "pad": 100
+  },
+  "sigE": {
+   "gene": "sigE",
+   "rv": "Rv1221",
+   "drugs": [
+    "PYRAZINAMIDE"
+   ],
+   "gene_start0": 1364412,
+   "gene_end0": 1365186,
+   "start": 1364313,
+   "end": 1365286,
+   "sense": "pos",
+   "length": 974,
+   "pad": 100
+  },
+  "ubiA": {
+   "gene": "ubiA",
+   "rv": "Rv3806c",
+   "drugs": [
+    "ETHAMBUTOL"
+   ],
+   "gene_start0": 4268924,
+   "gene_end0": 4269833,
+   "start": 4268825,
+   "end": 4269933,
+   "sense": "neg",
+   "length": 1109,
+   "pad": 100
+  },
+  "whiB6": {
+   "gene": "whiB6",
+   "rv": "Rv3862c",
+   "drugs": [
+    "KANAMYCIN",
+    "AMIKACIN",
+    "CAPREOMYCIN"
+   ],
+   "gene_start0": 4338170,
+   "gene_end0": 4338521,
+   "start": 4338071,
+   "end": 4338621,
+   "sense": "neg",
+   "length": 551,
+   "pad": 100
+  },
+  "whiB7": {
+   "gene": "whiB7",
+   "rv": "Rv3197A",
+   "drugs": [
+    "STREPTOMYCIN",
+    "KANAMYCIN",
+    "AMIKACIN"
+   ],
+   "gene_start0": 3568400,
+   "gene_end0": 3568679,
+   "start": 3568301,
+   "end": 3568779,
+   "sense": "neg",
+   "length": 479,
+   "pad": 100
+  }
+ }
+}

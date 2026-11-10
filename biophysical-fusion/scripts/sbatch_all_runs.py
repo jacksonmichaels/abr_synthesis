@@ -61,13 +61,112 @@ MODALITY_SETS = {
     "dna_biophysical":  ["dna", "biophysical"],
     "dna_regulatory":   ["dna", "regulatory"],
     "all_modalities":   ["dna", "protein", "biophysical", "regulatory"],
+    # --- leave-one-out arm, added 2026-08-13 for the SHAP follow-up ----------
+    # The ladder above only ever ADDS to DNA, so it cannot answer what SHAP
+    # claims about all_modalities: that the model gives its DNA input ~1% of the
+    # attribution budget and re-reads the same variant through the protein
+    # channel. `no_dna` is the falsifiable form of that claim — if the
+    # attribution is right, dropping DNA should cost almost nothing.
+    # `no_regulatory` is its control (regulatory is the only modality not
+    # derived from the coding sequence, so it should be the one that hurts), and
+    # `regulatory_only` bounds how much the promoter carries by itself.
+    "no_dna":           ["protein", "biophysical", "regulatory"],
+    "no_regulatory":    ["dna", "protein", "biophysical"],
+    "regulatory_only":  ["regulatory"],
 }
-GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion")
+# All six live architectures. `locusfusion` joined 2026-08-25 and
+# `locusfusion_v2` 2026-09-17; both imply --delta and per-locus blocks, which the
+# runners apply from --arch, so neither needs a special case here.
+GRID_ARCHS = ("late_fusion", "mdcnn", "setfusion", "cisfusion", "locusfusion",
+              "locusfusion_v2")
+
+
+# The experimental variant-set AGGREGATORS (models/experimental_models.py,
+# 2026-08-25). Deliberately NOT folded into GRID_ARCHS: that would cross them
+# with all eight MODALITY_SETS and add 48 entries to a registry whose --experiments
+# default is "all", turning a bare `sbatch_all_runs.py` into ~1,000 jobs. They are
+# a controlled comparison of aggregators, not a modality ablation, so one modality
+# set is the right grid -- `all_modalities`, because that is where the protein and
+# biophysical features `additive` and `fm` read actually exist, and because
+# full_run_v2/all_modalities__* is the matched control.
+WHO_T12_GENOTYPE_DIR = ("/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/"
+                        "gene_msa/who_t12_genotypes")
+AGGREGATOR_ARCHS = ("catalogue", "additive", "noisyor", "gatedpool", "deepsets", "fm")
 
 
 def _build_grid():
-    return {f"{mods}__{arch}": {"modalities": list(names), "arch": arch}
+    grid = {f"{mods}__{arch}": {"modalities": list(names), "arch": arch}
             for mods, names in MODALITY_SETS.items() for arch in GRID_ARCHS}
+    grid.update({f"all_modalities__{arch}":
+                 {"modalities": list(MODALITY_SETS["all_modalities"]), "arch": arch}
+                 for arch in AGGREGATOR_ARCHS})
+    # AlphaFold C-alpha proximity between a locus's variant tokens (2026-09-24,
+    # tentative; datasets/structure.py). Only locusfusion_v2 reads `structure`, so
+    # it is one explicit entry rather than a MODALITY_SETS row crossed with every
+    # arch. Matched control: all_modalities__locusfusion_v2.
+    grid["all_modalities_structure__locusfusion_v2"] = {
+        "modalities": list(MODALITY_SETS["all_modalities"]) + ["structure"],
+        "arch": "locusfusion_v2"}
+    # ...and the same with longer closeness decay lengths (default 10 A).
+    for L in (20, 30):
+        grid[f"all_modalities_structure_L{L}__locusfusion_v2"] = {
+            "modalities": list(MODALITY_SETS["all_modalities"]) + ["structure"],
+            "arch": "locusfusion_v2", "extra_args": ["--lf-struct-length", str(L)]}
+    # Add-one-modality ladder from v2's best base, dna_protein (2026-09-29). In v2
+    # adding regulatory/biophysical lowers macro CV (dna_protein 0.9007 ->
+    # all_modalities 0.8924) where in v1 it raises it; these two say which one
+    # does it. Explicit v2-only entries, not MODALITY_SETS rows, so a bare
+    # `--experiments all` does not grow by one per arch.
+    for extra in ("regulatory", "biophysical"):
+        grid[f"dna_protein_{extra}__locusfusion_v2"] = {
+            "modalities": ["dna", "protein", extra], "arch": "locusfusion_v2"}
+    # Structure on that base rather than on all_modalities, at the 30 A decay
+    # length (the only one not below its control). Matched control:
+    # locusfusion_v2/sd_dna_protein__locusfusion_v2.
+    grid["dna_protein_structure_L30__locusfusion_v2"] = {
+        "modalities": ["dna", "protein", "structure"], "arch": "locusfusion_v2",
+        "extra_args": ["--lf-struct-length", "30"]}
+    # Structure sweep v2 (2026-10-01), same base and length: a pair with no
+    # geometry reads -1 instead of 0 (so it is neither "far" nor "same residue"),
+    # then closest heavy atoms instead of C-alpha, then the contact gate (C-alpha
+    # within 2 x the longest side chain + 5 A, AlphaFold PAE <= 10 A). Each arm
+    # changes one thing from the one before; the first's control is the L30 arm
+    # above, all three share locusfusion_v2/sd41_dna_protein__locusfusion_v2.
+    neg1 = ["--lf-struct-length", "30", "--lf-struct-invalid", "-1"]
+    for name, extra in (("L30_neg1", []),
+                        ("L30_heavy_neg1", ["--lf-struct-dist", "heavy"]),
+                        ("L30_heavy_gate_neg1", ["--lf-struct-dist", "heavy",
+                                                 "--lf-struct-gate", "contact"])):
+        grid[f"dna_protein_structure_{name}__locusfusion_v2"] = {
+            "modalities": ["dna", "protein", "structure"], "arch": "locusfusion_v2",
+            "extra_args": neg1 + extra}
+    # WHO 2023 Table-21 tier 1 + 2 candidate genes per drug instead of BIG-TB's
+    # DRUG_TO_LOCI (2026-09-24). The 35 genes with no curated alignment were
+    # extracted by gene_msa/ (gene body +/- 100 bp); the folder symlinks the 19
+    # curated FASTAs next to them. Matched control:
+    # locusfusion_v2/sd_all_modalities__locusfusion_v2.
+    grid["all_modalities_who_t12__locusfusion_v2"] = {
+        "modalities": list(MODALITY_SETS["all_modalities"]), "arch": "locusfusion_v2",
+        "extra_args": ["--locus-set", "who_t12", "--genotype-dir", WHO_T12_GENOTYPE_DIR]}
+    # The 2x2 ablation of the 2026-09-24 48-channel draft against the final
+    # 41-channel tokenizer (2026-10-01): each opt-in feature alone, on dna. The
+    # other corners are locusfusion_v2/sd41_dna (neither) and the draft's own
+    # locusfusion_v2/sd_dna (both, on the draft code).
+    for name, flags in (("unk", ["--lf-unknown-symbols"]), ("refbio", ["--lf-ref-bio"]),
+                        ("unk_refbio", ["--lf-unknown-symbols", "--lf-ref-bio"])):
+        grid[f"dna_{name}__locusfusion_v2"] = {
+            "modalities": ["dna"], "arch": "locusfusion_v2", "extra_args": flags}
+    # locusfusion_v3 (2026-10-01) = locusfusion_v2 with the uncalled-base channel
+    # (--lf-unknown-symbols) on every modality set, the full v1-style sweep.
+    # Results go under results/experiments/locusfusion_v3/ (see its submit.sh).
+    # dna_unk above is the same command as the dna row here.
+    for mods, names in MODALITY_SETS.items():
+        if mods in ("dna", "dna_protein", "dna_biophysical", "dna_regulatory",
+                    "all_modalities"):
+            grid[f"{mods}_unk__locusfusion_v2"] = {
+                "modalities": list(names), "arch": "locusfusion_v2",
+                "extra_args": ["--lf-unknown-symbols"]}
+    return grid
 
 
 EXPERIMENTS = _build_grid()
@@ -120,6 +219,18 @@ def _training_knobs(args):
                       ("--enc-bins", args.enc_bins)):
         if val is not None:
             parts += [flag, str(val)]
+    # transformer encoder capacity: same rule. These are what make an all-
+    # transformer cell parameter-comparable to its CNN control -- a transformer
+    # branch mean-pools to d_model while a CNN branch flattens, so at the
+    # defaults the two differ by ~30x. Swept by results/experiments/transformer_run.
+    for flag, val in (("--tf-d-model", args.tf_d_model),
+                      ("--tf-nhead", args.tf_nhead),
+                      ("--tf-layers", args.tf_layers),
+                      ("--tf-dim-ff", args.tf_dim_ff),
+                      ("--tf-patch", args.tf_patch),
+                      ("--tf-dropout", args.tf_dropout)):
+        if val is not None:
+            parts += [flag, str(val)]
     if args.save_weights != "best":
         parts += ["--save-weights", args.save_weights]
     if args.weights_dir:
@@ -142,16 +253,31 @@ def run_experiment_command(exp_name, cfg, drug, args):
     arch = cfg.get("arch", args.arch)
     if arch != "late_fusion":
         parts += ["--arch", arch]
+    if args.cv_seed != 42:
+        parts += ["--cv-seed", str(args.cv_seed)]
+    if args.split_dir:
+        parts += ["--split-dir", args.split_dir]
+    if args.locus_set != "bigtb":
+        parts += ["--locus-set", args.locus_set]
+    if args.genotype_dir:
+        parts += ["--genotype-dir", args.genotype_dir]
     if cfg.get("extra_loci", args.extra_loci):
         parts += ["--extra-loci"]
     if args.per_locus_branches:
         parts += ["--per-locus-branches"]
     if cfg.get("encoders"):
         parts += ["--encoders", *[f"{m}={e}" for m, e in cfg["encoders"].items()]]
+    # A per-experiment `encoders` dict names ONE modality at a time; this sets the
+    # encoder for every block that dict does not name. It is how a whole cell is
+    # made uniformly transformer, which is the only form --arch mdcnn accepts
+    # (its trunks group by channel height and can span modalities).
+    if args.default_encoder != "cnn":
+        parts += ["--default-encoder", args.default_encoder]
     loci = cfg.get("loci") or args.loci
     if loci:
         parts += ["--loci", *loci]
     parts += _training_knobs(args)
+    parts += list(cfg.get("extra_args", ()))       # per-experiment model knobs
     if args.tb:
         parts += ["--tb"]
     return " ".join(shlex.quote(p) for p in parts)
@@ -176,7 +302,14 @@ def run_multidrug_command(exp_name, cfg, args):
     loci = cfg.get("loci") or args.loci
     if loci:
         parts += ["--loci", *loci]
+    if args.split_dir:                     # one partition for the joint cohort
+        parts += ["--split-file", os.path.join(args.split_dir, "MULTIDRUG.csv")]
+    if args.locus_set != "bigtb":
+        parts += ["--locus-set", args.locus_set]
+    if args.genotype_dir:
+        parts += ["--genotype-dir", args.genotype_dir]
     parts += _training_knobs(args)
+    parts += list(cfg.get("extra_args", ()))       # per-experiment model knobs
     if args.monitor_min_n:                 # joint-only: no macro to trim single-drug
         parts += ["--monitor-min-n", str(args.monitor_min_n)]
     if args.tb:
@@ -195,6 +328,8 @@ def create_sbatch_script(exp_name, cfg, drug, args, job_id):
                else run_experiment_command(exp_name, cfg, drug, args))
 
     constraint = f"#SBATCH --constraint={args.constraint}\n" if args.constraint else ""
+    env_lines = "".join(f"export {kv.split('=', 1)[0]}={shlex.quote(kv.split('=', 1)[1])}\n"
+                        for kv in args.env)
     script = f"""#!/bin/bash
 #SBATCH -c {args.cpus}                # cores
 #SBATCH --mem={args.mem}             # host memory (the knob that avoids the OOM kill)
@@ -202,6 +337,7 @@ def create_sbatch_script(exp_name, cfg, drug, args, job_id):
 {constraint}#SBATCH --gpus={args.gpus}            # GPUs
 #SBATCH -t {args.time}               # time limit (H:MM:SS)
 #SBATCH -o {log_path}
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH --job-name={job_name}
 
 # --- {exp_name} on {tag} ---
@@ -218,7 +354,7 @@ mkdir -p {shlex.quote(args.logs_dir)}
 # 1.21 GiB. The branch-per-locus nets allocate many differently-sized activation
 # blocks per step, which is exactly the pattern expandable segments fix.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-
+{env_lines}
 {command}
 
 echo "Done: {exp_name} on {tag}"
@@ -283,6 +419,19 @@ def parse_args():
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--n-splits", type=int, default=5)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--cv-seed", type=int, default=42,
+                   help="CV partition random_state for single-drug jobs (default 42, "
+                        "emitted only when it differs); not wired for --multidrug")
+    p.add_argument("--split-dir", default=None,
+                   help="pass --split-dir to run_experiment.py (per-drug {DRUG}.csv split "
+                        "files); with --multidrug, pass --split-file <dir>/MULTIDRUG.csv "
+                        "(scripts/build_lineage_splits.py --multidrug)")
+    p.add_argument("--locus-set", default="bigtb",
+                   choices=["bigtb", "who_t12", "lab64", "sai63", "who_t12_sai"],
+                   help="pass --locus-set to every job (datasets.loader.LOCUS_SETS); "
+                        "pair it with --genotype-dir")
+    p.add_argument("--genotype-dir", default=None,
+                   help="pass --genotype-dir to every job (aligned FASTAs folder)")
     p.add_argument("--run-prefix", default="", help="prefix for run-name folders, "
                    "e.g. 'permod_' -> results/experiments/permod_dna (default: none)")
     p.add_argument("--arch", default="late_fusion",
@@ -371,6 +520,25 @@ def parse_args():
                    help="--arch mdcnn: one trunk per (modality, channels) rather "
                         "than per channel count, so promoter windows are not "
                         "padded to the longest CDS inside the DNA trunk")
+    p.add_argument("--default-encoder", default="cnn", choices=["cnn", "transformer"],
+                   help="encoder for every block not named by an experiment's own "
+                        "`encoders` dict (default: cnn). --arch mdcnn takes only a "
+                        "uniform choice, so this is the flag to use there.")
+    p.add_argument("--tf-d-model", type=int, default=None,
+                   help="transformer encoder token width. Only meaningful where "
+                        "--default-encoder/--encoders select 'transformer'; it is "
+                        "also the per-branch output width, since the encoder "
+                        "mean-pools (default 64)")
+    p.add_argument("--tf-nhead", type=int, default=None,
+                   help="transformer attention heads (default 4)")
+    p.add_argument("--tf-layers", type=int, default=None,
+                   help="transformer encoder layers (default 2)")
+    p.add_argument("--tf-dim-ff", type=int, default=None,
+                   help="transformer feed-forward width (default 128)")
+    p.add_argument("--tf-patch", type=int, default=None,
+                   help="transformer patch-embedding kernel and stride (default 9)")
+    p.add_argument("--tf-dropout", type=float, default=None,
+                   help="dropout inside the transformer layers (default 0.1)")
     p.add_argument("--save-weights", default="best",
                    choices=["best", "all", "none"],
                    help="which CV fold weights each job persists, alongside a "
@@ -390,6 +558,9 @@ def parse_args():
     # bookkeeping
     p.add_argument("--project-dir", default=PROJECT_DIR, help=f"checkout to cd into (default: {PROJECT_DIR})")
     p.add_argument("--logs-dir", default=None, help="sbatch log dir (default: <project>/slurm_logs)")
+    p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
+                   help="export KEY=VALUE in every job script (repeatable), e.g. "
+                        "ABR_GENOTYPE_DIR=<local copy> while /project is flaky")
     p.add_argument("--delay", type=float, default=1.0, help="seconds between submissions")
     p.add_argument("--dry_run", action="store_true", help="print scripts, submit nothing")
     return p.parse_args()
@@ -397,6 +568,9 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.multidrug and args.cv_seed != 42:
+        sys.exit("--cv-seed is wired for single-drug jobs only (run_experiment.py); "
+                 "run_multidrug.py still partitions with KFold(random_state=42)")
     args.logs_dir = args.logs_dir or os.path.join(args.project_dir, "slurm_logs")
     experiments = _resolve(args.experiments, EXPERIMENTS, "experiment")
     # multi-drug: one job per experiment, so the drug loop runs once with None
@@ -446,11 +620,16 @@ def main():
             # gone. Microseconds plus a collision guard, so back-to-back
             # invocations each keep their own file.
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            track = os.path.join(args.logs_dir, f"submitted_{stamp}.json")
+            # Manifests live in their own folder (2026-08-13): they are the only
+            # job_id -> run mapping there is, and keeping them out of the .out
+            # stream means log housekeeping can never sweep them up by accident.
+            manifest_dir = os.path.join(args.logs_dir, "manifests")
+            os.makedirs(manifest_dir, exist_ok=True)
+            track = os.path.join(manifest_dir, f"submitted_{stamp}.json")
             n = 0
             while os.path.exists(track):
                 n += 1
-                track = os.path.join(args.logs_dir, f"submitted_{stamp}_{n}.json")
+                track = os.path.join(manifest_dir, f"submitted_{stamp}_{n}.json")
             with open(track, "w") as fh:
                 json.dump({"invocation": " ".join(map(shlex.quote, sys.argv)),
                            "submitted_jobs": submitted}, fh, indent=2)

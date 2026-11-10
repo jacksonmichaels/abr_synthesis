@@ -21,16 +21,23 @@ single-drug engine so the two stay consistent.
 import time
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import KFold, train_test_split
 
 from bigtb_ref import tb
-from models import (SETFUSION_DEFAULTS, CisFusionNet, MDCNNNet, MultiDrugNet,
-                    SetFusionNet)
+from models import (BRANCHED_DEFAULTS, EXPERIMENTAL_DEFAULTS,
+                    EXPERIMENTAL_MODELS, LOCUSFUSION_ARCHS, LOCUSFUSION_DEFAULTS,
+                    SETFUSION_DEFAULTS,
+                    TRANSFORMER_DEFAULTS, CisFusionNet, LocusFusionNet,
+                    locusfusion_defaults,
+                    MDCNNNet, MultiDrugNet,
+                    SetFusionNet, make_experimental, parse_block_key)
 from .checkpoint import RunCheckpointer, model_config
-from .core import EarlyStopper, masked_weighted_bce
+from .core import (EarlyStopper, anneal_branch_temperature, branch_assignments,
+                   branch_aux_loss, masked_weighted_bce)
 from .multimodal import (LR, _batch, _new_writer, _set_seed, build_optimizer,
                          build_scheduler)
 
@@ -135,6 +142,10 @@ def _train(model, arrays, alpha, Y, tr_idx, va_idx, epochs, batch_size, device,
     history = {"train_loss": [], f"val_{monitor}": []}
     for ep in range(epochs):
         model.train()
+        # Gumbel-softmax temperature for models.BranchedHead: annealed once per
+        # epoch over the WHOLE run, so theta sharpens toward a one-hot branch
+        # assignment by the end. No-op for every other head.
+        anneal_branch_temperature(model, ep, epochs)
         perm = tr_idx[np.random.permutation(len(tr_idx))]
         run_loss, seen = 0.0, 0
         for s in range(0, len(perm), batch_size):
@@ -142,6 +153,9 @@ def _train(model, arrays, alpha, Y, tr_idx, va_idx, epochs, batch_size, device,
             ab = torch.from_numpy(alpha[b]).to(device, non_blocking=True)
             opt.zero_grad()
             loss = masked_weighted_bce(model(_batch(arrays, b, device)), ab)
+            # + lambda * CE_generic, the cold-start path (0.0 without a branched
+            # head). Must follow the forward pass that cached the logits.
+            loss = loss + branch_aux_loss(model, ab)
             loss.backward()
             opt.step()
             run_loss += float(loss) * len(b)
@@ -208,7 +222,8 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                      mdcnn_trunk_per_modality=False, monitor_min_n=0,
                      run_name=None, save_weights="best", weights_dir=None,
                      data_config=None, setfusion=None, lr_schedule="none",
-                     warmup_epochs=0):
+                     warmup_epochs=0, transformer=None, locusfusion=None,
+                     branched=None, experimental=None, split_file=None):
     """Train/eval a multi-drug net on a MultiDrugData bundle. Returns a result
     dict with per-drug and macro CV/TEST metrics.
 
@@ -222,11 +237,35 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     setfusion : setfusion-only capacity overrides (see models.SETFUSION_DEFAULTS);
                 ignored by every other arch. lr_schedule/warmup_epochs select the
                 per-epoch LR schedule (see training.multimodal.build_scheduler);
-                'none' is the flat LR every recorded run used."""
+                'none' is the flat LR every recorded run used.
+
+    transformer : capacity overrides for the transformer encoder / trunk (see
+                models.TRANSFORMER_DEFAULTS), applied wherever a transformer is
+                selected — per-locus branch under late_fusion / cisfusion, per
+                trunk under mdcnn. Ignored under an all-CNN run.
+
+    locusfusion : locusfusion-only capacity overrides (see
+                models.LOCUSFUSION_DEFAULTS); ignored by every other arch. That
+                arch also needs reference-difference input — load with
+                delta=True or its tokenizer has nothing sparse to tokenize.
+
+    split_file : optional CSV (New_ID, role in {train,test}, fold 0..k-1) that
+                fixes the held-out test split AND the CV folds, e.g. the
+                lineage-grouped MULTIDRUG.csv of scripts/build_lineage_splits.py
+                --multidrug. Every isolate kept after the all-missing filter must
+                appear in it (extra rows are ignored). Overrides the random split
+                and KFold, as split_file does in training.multimodal.run_modal_cv."""
     t0 = time.time()
     branch_models = branch_models or {}
     setfusion = {k: v for k, v in (setfusion or {}).items()
                  if v is not None and SETFUSION_DEFAULTS.get(k) != v}
+    transformer = {k: v for k, v in (transformer or {}).items()
+                   if v is not None and TRANSFORMER_DEFAULTS.get(k) != v}
+    lf_defaults = locusfusion_defaults(arch)
+    locusfusion = {k: v for k, v in (locusfusion or {}).items()
+                   if v is not None and lf_defaults.get(k) != v}
+    experimental = {k: v for k, v in (experimental or {}).items()
+                    if v is not None and EXPERIMENTAL_DEFAULTS.get(k) != v}
     drugs = data.drugs
     n_drugs = len(drugs)
     tag = data.modality_tag()
@@ -242,8 +281,27 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
           f"specs~{specs[:3]}{'...' if len(specs) > 3 else ''} "
           f"n_valid={n} (dropped {data.n - n} all-missing)", flush=True)
 
-    # --- random held-out split (multi-label -> not stratified), seed 42 -------
-    train_idx, test_idx = train_test_split(np.arange(n), test_size=0.2, random_state=42)
+    # --- held-out split: random (multi-label -> not stratified), seed 42, or
+    # fixed by split_file (test split + CV folds, see training.multimodal) -----
+    kept_ids = [str(data.isolate_ids[i]) for i in keep]
+    if split_file is None:
+        train_idx, test_idx = train_test_split(np.arange(n), test_size=0.2, random_state=42)
+        split_folds = None
+    else:
+        sp = pd.read_csv(split_file, dtype={"New_ID": str}).set_index("New_ID")
+        missing = [i for i in kept_ids if i not in sp.index]
+        if missing:
+            raise ValueError(f"{split_file}: {len(missing)} of {n} isolates have no split "
+                             f"(e.g. {missing[:3]})")
+        sp = sp.loc[kept_ids]
+        test_idx = np.nonzero((sp.role == "test").values)[0]
+        train_idx = np.nonzero((sp.role == "train").values)[0]
+        fold_of = sp.fold.values[train_idx]
+        split_folds = [(np.nonzero(fold_of != k)[0], np.nonzero(fold_of == k)[0])
+                       for k in sorted(set(fold_of))]
+        assert len(split_folds) == n_splits, (len(split_folds), n_splits)
+        print(f"[multidrug/{tag}] split from {split_file}: train={len(train_idx)} "
+              f"test={len(test_idx)} folds={[len(v) for _, v in split_folds]}", flush=True)
 
     alpha = _alpha_matrix(Y, train_idx, n_drugs)
     tb_root = (tb_dir / f"multidrug__{tag}") if tb_dir is not None else None
@@ -258,25 +316,60 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
               f"{len(monitor_cols)}/{n_drugs} drugs (--monitor-min-n="
               f"{monitor_min_n}); excluded from the STOP SIGNAL ONLY, still "
               f"trained and reported: {skipped}", flush=True)
-    head = {"hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden}
+    head = {"hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden,
+            "branched": branched}
+    if branched:
+        # late_fusion / mdcnn / cisfusion all end in make_head and take it via
+        # **head; setfusion and locusfusion build their own read-outs and would
+        # silently ignore it, which would look like "branching did nothing".
+        if arch not in ("late_fusion", "mdcnn", "cisfusion"):
+            raise ValueError(
+                f"--head branched is not implemented for --arch {arch} (it builds "
+                "its own read-out). Supported: late_fusion, mdcnn, cisfusion.")
+        print(f"[multidrug/{tag}] branched head: "
+              f"{ {**BRANCHED_DEFAULTS, **branched} }", flush=True)
     ckpt = RunCheckpointer(run_name, f"multidrug__{tag}", mode=save_weights,
                            weights_dir=weights_dir)
     kept_isolates = [data.isolate_ids[i] for i in keep]
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    fold_splits = (split_folds if split_folds is not None else
+                   KFold(n_splits=n_splits, shuffle=True, random_state=42).split(train_idx))
     folds, best_macro, best_model, best_fold = [], -np.inf, None, None
-    for fold, (tr, va) in enumerate(kf.split(train_idx)):
+    for fold, (tr, va) in enumerate(fold_splits):
         writer = _new_writer(tb_root, f"cv_fold{fold}")
         if arch == "mdcnn":
+            # one uniform trunk encoder; see training.multimodal._build_model for
+            # why a per-modality mix is refused rather than half-applied
+            kinds = sorted(set(encoder_types))
+            if len(kinds) > 1:
+                raise ValueError(
+                    f"--arch mdcnn takes ONE encoder for every trunk, got {kinds}. "
+                    "Use --default-encoder.")
             model = MDCNNNet.from_blocks(data.blocks, drug_names=drugs,
                                          out_bias=out_bias,
                                          trunk_per_modality=mdcnn_trunk_per_modality,
-                                         **head)
+                                         encoder=(kinds[0] if kinds else "cnn"),
+                                         transformer=transformer, **head)
+        elif arch in EXPERIMENTAL_MODELS:
+            model = make_experimental(
+                arch, [parse_block_key(b.name) for b in data.blocks],
+                [b.spec() for b in data.blocks], drug_names=drugs,
+                out_bias=out_bias, hidden=hidden,
+                **{**EXPERIMENTAL_DEFAULTS, **experimental})
+        elif arch in LOCUSFUSION_ARCHS:
+            # one token per variant, fused within a locus then across loci; the
+            # (modality, locus) keys come off the block names as for setfusion.
+            model = LOCUSFUSION_ARCHS[arch][0].from_blocks(
+                data.blocks, drug_names=drugs, out_bias=out_bias,
+                hidden=hidden, head_dropout=dropout,
+                per_drug_hidden=per_drug_hidden,
+                **{**lf_defaults, **locusfusion})
         elif arch == "cisfusion":
             model = CisFusionNet.from_blocks(data.blocks, drug_names=drugs,
                                              out_bias=out_bias,
                                              branch_models=branch_models,
-                                             default_encoder=default_encoder, **head)
+                                             default_encoder=default_encoder,
+                                             transformer=transformer, **head)
         elif arch == "setfusion":
             # built from the blocks: the (modality, locus) keys live in their
             # names. `hidden`/`per_drug_hidden` mean what they mean everywhere
@@ -289,7 +382,7 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                                              **{**SETFUSION_DEFAULTS, **setfusion})
         else:
             model = MultiDrugNet(specs, drugs, encoder_types, out_bias=out_bias,
-                                 **head)
+                                 transformer=transformer, **head)
         model = model.to(device)
         if fold == 0:
             n_params = sum(p.numel() for p in model.parameters())
@@ -341,7 +434,8 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
             drug_names=drugs, out_bias=out_bias, head=head,
             mdcnn_trunk_per_modality=mdcnn_trunk_per_modality,
             branch_models=branch_models, default_encoder=default_encoder,
-            n_params=n_params, setfusion=setfusion),
+            n_params=n_params, setfusion=setfusion, transformer=transformer,
+            locusfusion=locusfusion, experimental=experimental),
         "data": {**(data_config or {}),
                  "modalities_used": data.modalities,
                  "modalities_requested": data.requested,
@@ -349,9 +443,11 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  "loci": data.loci, "gene_order": data.gene_order,
                  "n_isolates": data.n, "n_valid": n,
                  "dropped_all_missing": data.n - n},
-        "split": {"test_size": 0.2, "split_seed": 42, "stratified": False,
-                  "n_splits": n_splits, "kfold": "KFold", "kfold_seed": 42,
-                  "kfold_shuffle": True,
+        "split": {**({"test_size": 0.2, "split_seed": 42, "stratified": False,
+                     "kfold": "KFold", "kfold_seed": 42, "kfold_shuffle": True}
+                    if split_file is None else {}),
+                  "n_splits": n_splits,
+                  "split_file": None if split_file is None else str(split_file),
                   "isolate_order": "isolates.txt (post all-missing filter)",
                   "test_isolate_ids": [kept_isolates[i] for i in test_idx]},
         "training": {"epochs": epochs, "batch_size": batch_size, "seed": seed,
@@ -384,9 +480,18 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "lr": LR if lr is None else float(lr), "weight_decay": float(weight_decay),
         "lr_schedule": lr_schedule, "warmup_epochs": int(warmup_epochs),
         "setfusion": {**SETFUSION_DEFAULTS, **setfusion} if arch == "setfusion" else None,
+        "locusfusion": ({**lf_defaults, **locusfusion}
+                        if arch in LOCUSFUSION_ARCHS else None),
+        "experimental": ({**EXPERIMENTAL_DEFAULTS, **experimental}
+                         if arch in EXPERIMENTAL_MODELS else None),
+        "transformer": ({**TRANSFORMER_DEFAULTS, **transformer}
+                        if "transformer" in set(encoder_types) else None),
+        "branched": {**BRANCHED_DEFAULTS, **branched} if branched else None,
+        "branch_assignments": branch_assignments(best_model) if branched else None,
         "hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden,
         "mdcnn_trunk_per_modality": bool(mdcnn_trunk_per_modality),
         "monitor_min_n": monitor_min_n, "monitor_drugs": monitor_drugs,
+        "split_file": None if split_file is None else str(split_file),
         "weights_dir": str(weights_path) if weights_path else None,
         "save_weights": save_weights,
         "cv_macro_auc_mean": cv_macro_mean, "cv_macro_auc_std": cv_macro_std,

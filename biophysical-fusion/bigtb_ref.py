@@ -53,9 +53,10 @@ REAL_PHENOTYPE_CSV = os.environ.get("ABR_PHENOTYPE_CSV") or (
 # regulatory branch carries information disjoint from the DNA/protein branches.
 # Built by regulatory_msa/{build_promoter_coords,submit_promoter_msa}.py. This
 # lives in the user's workspace (pi_annagreen is read-only for us).
-REAL_REGULATORY_DIR = (
-    "/home/jacksonmicha_umass_edu/abr_workspace/regulatory_msa/aligned"
-)
+# Resolved next to the clone (<workspace>/regulatory_msa/aligned);
+# $ABR_REGULATORY_DIR overrides it.
+REAL_REGULATORY_DIR = os.environ.get("ABR_REGULATORY_DIR") or str(
+    Path(__file__).resolve().parent.parent / "regulatory_msa" / "aligned")
 # AlphaFold DB models of the H37Rv proteins, C-alpha coordinates re-indexed onto
 # the H37Rv codon grid (one {locus}.npz per coding locus, plus manifest.json).
 # Built by scripts/fetch_af_structures.py; read by datasets/structure.py.

@@ -106,7 +106,7 @@ RESOURCES = {   # kind -> (partition, cpus, mem, time, gpus, constraint)
 # the repaired inputs (see curated_fix/aligned19/README.md and
 # regulatory_msa/aligned_atg); both are the same cohort, 17,942 isolates
 FIXED_GENO = WORKSPACE / "curated_fix" / "aligned19"
-ATG_REG = Path("/home/jacksonmicha_umass_edu/abr_workspace/regulatory_msa/aligned_atg")
+ATG_REG = WORKSPACE / "regulatory_msa" / "aligned_atg"
 
 TOKENS_PY = r"""
 from bigtb_ref import REAL_GENOTYPE_DIR as G, REAL_PHENOTYPE_CSV as P, REAL_REGULATORY_DIR as R

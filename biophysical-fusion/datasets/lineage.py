@@ -14,8 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 LINEAGE_CSV = os.environ.get("ABR_LINEAGE_CSV") or str(
-    Path("/scratch3/workspace/jacksonmicha_umass_edu-abr_synthesis/data_snapshot")
-    / "lineage" / "lineage_calls.csv")
+    Path(__file__).resolve().parents[2] / "data_snapshot" / "lineage" / "lineage_calls.csv")
 
 
 def load_lineage(path=None):

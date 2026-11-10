@@ -1,5 +1,7 @@
 # ABR synthesis workspace
 
+**New here? Start with [GETTING_STARTED.md](GETTING_STARTED.md).**
+
 The project is `biophysical-fusion/` (code, results, notebooks; see its README).
 Everything else here is data, weights or frozen code that it reads, mostly by
 absolute path. **Don't rename or regroup the folders below:** 49

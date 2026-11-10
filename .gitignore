@@ -43,7 +43,6 @@ reference_docs/
 # biophysical-fusion/results/.gitignore; everything else — TODOs, cleanup
 # reports, paper drafts — is working text that does not need a remote.
 *.md
-!/biophysical-fusion/README.md
 !/README.md
 *.tex
 
@@ -116,3 +115,9 @@ genomefusion_refs/essentiality/dejesus_supp/
 genomefusion_refs/essentiality/supp.zip
 genomefusion_refs/mycobrowser/releases.html
 genomefusion_refs/mycobrowser/H37Rv_r2.txt
+
+# --- kept on disk, not in the repo (experiment records, paper/figure/analysis work) ---
+/archive/
+/biophysical-fusion/results/
+/biophysical-fusion/diagrams/
+/biophysical-fusion/notebooks/

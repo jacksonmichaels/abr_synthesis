@@ -1,7 +1,0 @@
-# The SD-CNN train/test leak reproduction. eval_leak.py / eval_leak_all.py are
-# tracked; leak_all.csv, their output, is not. The finding it reproduces is
-# written up in reference_docs/, which is untracked — filesystem only.
-*
-!*/
-!.gitignore
-!*.py

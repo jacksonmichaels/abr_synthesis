@@ -3,6 +3,7 @@
 # too slow and too heavy for a login node.
 #
 #   cd biophysical-fusion && sbatch scripts/sbatch/genomefusion_tests.sh
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH --job-name=gf_tests
 #SBATCH --output=results/experiments/genomefusion/logs/%x-%j.out
 #SBATCH --error=results/experiments/genomefusion/logs/%x-%j.err

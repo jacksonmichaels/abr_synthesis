@@ -15,9 +15,32 @@ weights fit on the training rows; Adam at exp(-9); early stopping on validation
 AUC with best-weight restore; TEST = the best CV fold's model scored once.
 
 Locus sets (`--locus-set`):
-    genome    every locus the partition keeps
-    19        the LocusFusion v3/v5 loci (the parity arm)
-    minus19   every locus except those (is there signal outside the known loci?)
+    genome    every locus the partition keeps (6,776)
+    19        the LocusFusion v3/v5 loci (19 gene loci, NO promoters)
+    19r       the 19 plus every locus carrying a WHO Table-22 regulatory region
+              for one of them. Defined by the catalogue, not by a distance:
+              WHO extents run 2-1,982 bp, so no fixed flank can express them.
+    size:N    a locus set of N loci: 19r plus a seeded random draw from the
+              rest. NESTED -- the draw order is fixed by --ladder-seed, so
+              size:64 is a subset of size:128 is a subset of ... is a subset of
+              the genome. That makes the size ladder monotone in information,
+              so a drop along it is the cost of carrying more loci rather than
+              a change of content.
+    19p       the 19 plus the intergenic loci covering their 100 bp 5' flank.
+              SUPERSEDED by 19r: the 100 bp was chosen to match v3's padded
+              FASTAs, and because loci are atomic it only ever selected whole
+              intergenic loci anyway (rpoB's is 497 bp). Kept to reproduce the
+              H1 runs.
+    who_t12, lab64
+              the same gene lists LocusFusion's locus_sets sweep used. Gene loci
+              only, so no promoter bases, like `19`.
+    who_t12r, lab64r
+              those genes plus every locus carrying a WHO Table-22 region for
+              them. These are the arms to compare to LocusFusion at those sets.
+    minus19p  the complement of `19p`.
+    minus19   the complement of `19` alone, so it KEEPS all 16 of the 19 genes'
+              promoter loci including the fabG1-inhA c-15t. Kept only to
+              reproduce older runs; prefer `minus19p`.
 """
 import argparse
 import hashlib
@@ -48,7 +71,15 @@ from genomefusion.partition import CACHE, WORKSPACE, load_or_build  # noqa: E402
 
 ALL_DRUGS = ["AMIKACIN", "CAPREOMYCIN", "ETHAMBUTOL", "ETHIONAMIDE", "ISONIAZID", "KANAMYCIN",
              "LEVOFLOXACIN", "MOXIFLOXACIN", "PYRAZINAMIDE", "RIFAMPICIN", "STREPTOMYCIN"]
-LOCUS_SETS = ("genome", "19", "minus19")
+#: gene lists shared with LocusFusion (datasets.loader.drug_loci), so GenomeFusion
+#: and the locus_sets baselines start from the same genes. The `r` variant adds
+#: the loci carrying those genes' WHO Table-22 regions, as `19r` does for the 19.
+NAMED_SETS = {"who_t12": "who_t12", "who_t12r": "who_t12", "lab64": "lab64", "lab64r": "lab64"}
+LOCUS_SETS = ("genome", "19", "19r", "19p", "minus19p", "minus19", *NAMED_SETS)
+
+
+def _is_size(which):
+    return isinstance(which, str) and which.startswith("size:")
 
 
 def parse_args(argv=None):
@@ -57,7 +88,15 @@ def parse_args(argv=None):
     ap.add_argument("--drugs", nargs="+", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--split-dir", required=True)
-    ap.add_argument("--locus-set", choices=LOCUS_SETS, default="genome")
+    ap.add_argument("--locus-set", default="genome",
+                    help="one of " + ", ".join(LOCUS_SETS) + ", or size:N for a ladder rung")
+    ap.add_argument("--ladder-seed", type=int, default=0,
+                    help="fixes the draw order for --locus-set size:N. The SAME seed must be "
+                         "used for every rung of a ladder, or the rungs stop being nested.")
+    ap.add_argument("--no-regulated-features", action="store_true",
+                    help="drop the regulated-locus half of the locus feature vector, i.e. a "
+                         "locus no longer knows WHAT it regulates. The control for the "
+                         "known-relationship change.")
     ap.add_argument("--tokens", default=str(WORKSPACE / "genomefusion_tokens" / "tokens.npz"))
     ap.add_argument("--partition-cache", default=str(CACHE))
     ap.add_argument("--weights-dir", default=None)
@@ -67,6 +106,9 @@ def parse_args(argv=None):
                          "do not have yet, so this currently refuses rather than training on "
                          "two columns of zeros")
     ap.add_argument("--max-tokens-per-locus", type=int, default=None)
+    ap.add_argument("--promoter-flank", type=int, default=100,
+                    help="for --locus-set 19p: how many bp 5' of each gene to pull in as "
+                         "intergenic loci. 100 matches the flank v3's per-gene FASTAs carry.")
     # protocol
     ap.add_argument("--epochs", type=int, default=300)
     ap.add_argument("--patience", type=int, default=30)
@@ -91,6 +133,14 @@ def parse_args(argv=None):
     for k, v in GF_DEFAULTS.items():
         ap.add_argument("--" + k.replace("_", "-"), type=type(v), default=v)
     args = ap.parse_args(argv)
+    if args.locus_set not in LOCUS_SETS and not _is_size(args.locus_set):
+        ap.error(f"--locus-set must be one of {LOCUS_SETS} or size:N, got {args.locus_set!r}")
+    if _is_size(args.locus_set):
+        try:
+            if int(args.locus_set.split(":", 1)[1]) <= 0:
+                raise ValueError
+        except ValueError:
+            ap.error(f"size:N needs a positive integer N, got {args.locus_set!r}")
     args.drugs = ALL_DRUGS if [d.lower() for d in args.drugs] == ["all"] else \
         [d.upper() for d in args.drugs]
     if len(args.drugs) > 1:
@@ -101,12 +151,84 @@ def parse_args(argv=None):
     return args
 
 
-def locus_subset(partition, which):
+def regulatory_loci_for_19(partition):
+    """Loci carrying a WHO Table-22 regulatory region for one of the 19."""
+    genes19 = {L.gene for L in partition.loci if L.is_19}
+    return np.asarray([i for i, L in enumerate(partition.loci)
+                       if L.is_regulatory and (set(L.regulates) & genes19)], np.int64)
+
+
+def base_19r(partition):
+    return np.union1d(np.flatnonzero([L.is_19 for L in partition.loci]),
+                      regulatory_loci_for_19(partition))
+
+
+def named_subset(partition, which, drug):
+    """A NAMED_SETS locus set for one drug: `who_t12` is per-drug, `lab64` is not.
+
+    Like `19`, the plain sets are gene loci only, so they LACK the promoter bases
+    that LocusFusion's flanked FASTAs carry. Compare the `r` variants to it, and
+    do not read a plain-set shortfall as a model result.
+
+    A gene inside the RLC/PE-PPE mask has no locus and is reported, not fatal, but
+    its regulatory region is still added to the `r` variant if it is unmasked.
+    """
+    if not drug:
+        raise ValueError(f"--locus-set {which} needs a drug")
+    from datasets.loader import drug_loci
+    names = drug_loci(drug, locus_set=NAMED_SETS[which])
+    by_name = {}
+    for i, L in enumerate(partition.loci):
+        if L.kind != "intergenic":
+            for key in (L.gene, L.name):
+                if key:
+                    by_name.setdefault(key, i)
+    missing = [g for g in names if g not in by_name]
+    if missing:
+        print(f"[gf] {which}/{drug}: no locus for {missing} (masked or unannotated)", flush=True)
+    keep = {by_name[g] for g in names if g in by_name}
+    if which.endswith("r"):
+        keep |= {i for i, L in enumerate(partition.loci)
+                 if L.is_regulatory and set(L.regulates) & set(names)}
+    return np.asarray(sorted(keep), np.int64)
+
+
+def size_subset(partition, n, seed=0):
+    """`n` loci: the 19r core plus a seeded random draw from everything else.
+
+    The draw order depends only on `seed`, so the sets are NESTED across n.
+    """
+    n_all = len(partition.loci)
+    n = min(int(n), n_all)
+    base = base_19r(partition)
+    if n <= len(base):
+        return base
+    rest = np.setdiff1d(np.arange(n_all), base)
+    order = np.random.default_rng(seed).permutation(rest)
+    return np.sort(np.concatenate([base, order[:n - len(base)]]))
+
+
+def locus_subset(partition, which, promoter_flank=100, ladder_seed=0, drug=None):
     is19 = np.asarray([L.is_19 for L in partition.loci])
+    if which in NAMED_SETS:
+        return named_subset(partition, which, drug)
     if which == "genome":
         return np.arange(len(partition.loci))
     if which == "19":
         return np.flatnonzero(is19)
+    if which == "19r":
+        return base_19r(partition)
+    if _is_size(which):
+        return size_subset(partition, int(which.split(":", 1)[1]), ladder_seed)
+    if which == "19p":
+        prom = np.asarray(partition.promoter_loci(promoter_flank), np.int64)
+        return np.union1d(np.flatnonzero(is19), prom)
+    if which == "minus19p":
+        # the complement of 19p: drop the 19 AND the promoter loci that carry
+        # their regulatory variants, so what is left is genuinely elsewhere
+        keep = ~is19
+        keep[np.asarray(partition.promoter_loci(promoter_flank), np.int64)] = False
+        return np.flatnonzero(keep)
     return np.flatnonzero(~is19)
 
 
@@ -184,7 +306,8 @@ def main(argv=None):
     store = TokenStore(args.tokens)
     print(f"[gf] store {len(store):,} isolates, {store.stats['tokens_total']:,} tokens, "
           f"mean {store.stats['tokens_mean']:.0f}/isolate", flush=True)
-    loci = locus_subset(partition, args.locus_set)
+    loci = locus_subset(partition, args.locus_set, args.promoter_flank, args.ladder_seed,
+                        drug=tag)
     bb = BatchBuilder(store, partition, loci=loci, population=args.population,
                       device=args.device, max_tokens_per_locus=args.max_tokens_per_locus)
     print(f"[gf] {len(loci):,} loci in this set; mean {bb.n_active.mean():.0f} active per "
@@ -200,11 +323,22 @@ def main(argv=None):
     print(f"[gf] split {split_file}: train={len(train)} test={len(test)} "
           f"folds={[len(v) for _, v in folds]}", flush=True)
 
-    feats = partition.feature_matrix()[loci]
+    feats = partition.feature_matrix(with_regulated=not args.no_regulated_features)[loci]
+    # the regulated-locus edge, remapped into this subset's compact ids (-1 when
+    # the regulated locus is not in the subset, as in minus19p)
+    reg_full = partition.regulated_index()
+    remap = np.full(len(partition.loci), -1, np.int64)
+    remap[loci] = np.arange(len(loci))
+    reg_lid = np.where(reg_full[loci] >= 0, remap[reg_full[loci].clip(0)], -1)
+    n_edge = int((reg_lid >= 0).sum())
+    print(f"[gf] locus features {feats.shape[1]} wide "
+          f"(regulated half: {'off' if args.no_regulated_features else 'on'}); "
+          f"{n_edge:,}/{len(loci):,} loci carry a regulated-locus edge", flush=True)
     capacity = {k: getattr(args, k) for k in GF_DEFAULTS}
 
     def build():
-        return GenomeFusionNet(feats, args.drugs, c_tok=bb.c_tok, **capacity).to(args.device)
+        return GenomeFusionNet(feats, args.drugs, c_tok=bb.c_tok, regulated_lid=reg_lid,
+                               **capacity).to(args.device)
 
     alpha = _alpha_matrix(Y, train, len(args.drugs))
     run_folds = list(args.folds if args.folds is not None else range(len(folds)))
@@ -261,6 +395,14 @@ def main(argv=None):
     result = {
         "arch": "genomefusion", "tag": tag, "drug": tag, "drugs": args.drugs,
         "locus_set": args.locus_set, "n_loci": int(len(loci)),
+        "ladder_seed": args.ladder_seed if _is_size(args.locus_set) else None,
+        "n_feat": int(feats.shape[1]), "regulated_features": not args.no_regulated_features,
+        "n_regulated_edges": n_edge,
+        "n_regulatory_loci": int(sum(partition.loci[int(i)].is_regulatory for i in loci)),
+        "promoter_flank": args.promoter_flank if args.locus_set == "19p" else None,
+        "promoter_loci": ([int(x) for x in loci
+                           if partition.loci[int(x)].kind == "intergenic"]
+                          if args.locus_set == "19p" else None),
         "n_params": n_params, "n_isolates": len(store),
         "token_width": int(bb.c_tok), "channels": channel_names((), args.population),
         "active_loci_mean": float(bb.n_active.mean()), "active_loci_max": int(bb.n_active.max()),

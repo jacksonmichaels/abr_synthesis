@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH --job-name=abr_shap_lf_v3_all
 #SBATCH -c 4
 #SBATCH --mem=96G

@@ -11,7 +11,9 @@ import numpy as np
 
 from datasets.biochem import CODON_TABLE
 from genomefusion.layout import CONSEQUENCES, FRAMESHIFT, INFRAME_INDEL, RESIDUE_SYMBOLS
-from genomefusion.partition import CACHE, LOCI_19, load_or_build
+from genomefusion.partition import CACHE as _CACHE, LOCI_19, load_or_build
+
+CACHE = _CACHE.parent / "genomefusion_cache_v3"
 from genomefusion.reference import load_reference, reference_codons
 from genomefusion.tokenizer import tokenize_isolate
 from genomefusion.build_tokens import VCF_DIR, VCF_SUFFIX, phenotype_ids

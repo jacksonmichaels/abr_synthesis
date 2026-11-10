@@ -257,6 +257,10 @@ def run_experiment_command(exp_name, cfg, drug, args):
         parts += ["--cv-seed", str(args.cv_seed)]
     if args.split_dir:
         parts += ["--split-dir", args.split_dir]
+    if args.locus_set != "bigtb":
+        parts += ["--locus-set", args.locus_set]
+    if args.genotype_dir:
+        parts += ["--genotype-dir", args.genotype_dir]
     if cfg.get("extra_loci", args.extra_loci):
         parts += ["--extra-loci"]
     if args.per_locus_branches:
@@ -298,6 +302,12 @@ def run_multidrug_command(exp_name, cfg, args):
     loci = cfg.get("loci") or args.loci
     if loci:
         parts += ["--loci", *loci]
+    if args.split_dir:                     # one partition for the joint cohort
+        parts += ["--split-file", os.path.join(args.split_dir, "MULTIDRUG.csv")]
+    if args.locus_set != "bigtb":
+        parts += ["--locus-set", args.locus_set]
+    if args.genotype_dir:
+        parts += ["--genotype-dir", args.genotype_dir]
     parts += _training_knobs(args)
     parts += list(cfg.get("extra_args", ()))       # per-experiment model knobs
     if args.monitor_min_n:                 # joint-only: no macro to trim single-drug
@@ -327,6 +337,7 @@ def create_sbatch_script(exp_name, cfg, drug, args, job_id):
 {constraint}#SBATCH --gpus={args.gpus}            # GPUs
 #SBATCH -t {args.time}               # time limit (H:MM:SS)
 #SBATCH -o {log_path}
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH --job-name={job_name}
 
 # --- {exp_name} on {tag} ---
@@ -412,7 +423,15 @@ def parse_args():
                    help="CV partition random_state for single-drug jobs (default 42, "
                         "emitted only when it differs); not wired for --multidrug")
     p.add_argument("--split-dir", default=None,
-                   help="pass --split-dir to run_experiment.py (per-drug {DRUG}.csv split files)")
+                   help="pass --split-dir to run_experiment.py (per-drug {DRUG}.csv split "
+                        "files); with --multidrug, pass --split-file <dir>/MULTIDRUG.csv "
+                        "(scripts/build_lineage_splits.py --multidrug)")
+    p.add_argument("--locus-set", default="bigtb",
+                   choices=["bigtb", "who_t12", "lab64", "sai63", "who_t12_sai"],
+                   help="pass --locus-set to every job (datasets.loader.LOCUS_SETS); "
+                        "pair it with --genotype-dir")
+    p.add_argument("--genotype-dir", default=None,
+                   help="pass --genotype-dir to every job (aligned FASTAs folder)")
     p.add_argument("--run-prefix", default="", help="prefix for run-name folders, "
                    "e.g. 'permod_' -> results/experiments/permod_dna (default: none)")
     p.add_argument("--arch", default="late_fusion",

@@ -66,7 +66,8 @@ class GenomeFusionNet(nn.Module):
     def __init__(self, locus_features, drugs, c_tok, n_dist=0, site_table=None,
                  d_model=128, nhead=4, dropout=0.1, enc_layers=2, enc_dim_ff=256,
                  fusion_layers=2, fusion_dim_ff=256, pos_dims=32, hidden=256,
-                 residual_scale=0.1, residual_dropout=0.3, out_bias=None):
+                 residual_scale=0.1, residual_dropout=0.3, out_bias=None,
+                 regulated_lid=None):
         super().__init__()
         if d_model % nhead or pos_dims % 2:
             raise ValueError("d_model must divide by nhead and pos_dims must be even")
@@ -98,6 +99,22 @@ class GenomeFusionNet(nn.Module):
         nn.init.trunc_normal_(self.locus_residual.weight, std=0.02)
         self.residual_scale = float(residual_scale)
         self.residual_drop = nn.Dropout(residual_dropout)
+
+        # The known-relationship edge: locus -> the locus it regulates, or -1.
+        # A promoter's identity picks up the learned residual of the GENE it
+        # acts on, so "the fabG1 promoter" is tied to fabG1 specifically
+        # rather than being one of 3,027 interchangeable intergenic segments.
+        # Gated by its own scalar, initialised at 0, so the model starts
+        # exactly where it would without the edge and has to earn the term.
+        if regulated_lid is None:
+            regulated_lid = np.full(self.n_loci, -1, np.int64)
+        regulated_lid = np.asarray(regulated_lid, np.int64)
+        if regulated_lid.shape != (self.n_loci,):
+            raise ValueError(f"regulated_lid must be ({self.n_loci},), got {regulated_lid.shape}")
+        self.register_buffer("regulated_lid", torch.as_tensor(regulated_lid, dtype=torch.long))
+        self.has_edge = bool((regulated_lid >= 0).any())
+        self.reg_gate = nn.Parameter(torch.zeros(1))
+        self.config["n_regulated_edges"] = int((regulated_lid >= 0).sum())
 
         self.tok_proj = nn.Linear(self.c_in, d_model)
         self.pos_proj = nn.Linear(pos_dims, d_model)
@@ -132,6 +149,11 @@ class GenomeFusionNet(nn.Module):
         safe = lid.clamp_min(0)
         emb = self.feat_proj(self.locus_feat[safe])
         emb = emb + self.residual_scale * self.residual_drop(self.locus_residual(safe))
+        if self.has_edge:
+            tgt = self.regulated_lid[safe]                     # the gene it regulates
+            edge = self.residual_drop(self.locus_residual(tgt.clamp_min(0)))
+            emb = emb + self.reg_gate * torch.where(
+                (tgt >= 0).unsqueeze(-1), edge, torch.zeros_like(edge))
         return torch.where((lid >= 0).unsqueeze(-1), emb, torch.zeros_like(emb))
 
     def film(self, lid):

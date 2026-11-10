@@ -25,6 +25,7 @@ base is dropped entirely.
 from dataclasses import dataclass, field
 from pathlib import Path
 import csv
+import dataclasses
 import json
 import re
 
@@ -47,6 +48,13 @@ GENBANK = Path(os.environ.get(
 RLC_BED = REFS / "rlc" / "RLC_Regions.H37Rv.bed"
 MYCOBROWSER = REFS / "mycobrowser" / "H37Rv_r5.txt"
 ESSENTIALITY = REFS / "essentiality" / "dejesus_S3_orf_essentiality.tsv"
+#: WHO 2023 Table-22 promoter regions in absolute NC_000962.3 coordinates,
+#: anchored on the START CODON. Built by regulatory_msa/build_promoter_coords.py.
+#: This is the ATG-anchored build; the older TSS-anchored promoter_windows.json
+#: shifted every window whose TSS is not the ATG (katG by 481 bp, rpoB by 212)
+#: and dropped second segments, so it must NOT be used here.
+PROMOTERS = Path(os.environ.get(
+    "ABR_GF_PROMOTERS", WORKSPACE / "regulatory_msa" / "promoter_windows_atg.json"))
 
 MASK_CATEGORIES = ("PE/PPE", "insertion seqs and phages")
 
@@ -58,8 +66,10 @@ CATEGORIES = ("conserved hypotheticals", "intermediary metabolism and respiratio
               "PE/PPE", "insertion seqs and phages", "unknown")
 ESSENTIAL_CALLS = ("ES", "ESD", "GD", "NE", "GA", "Uncertain")
 #: the 19 loci LocusFusion v3/v5 use, by gene name
-LOCI_19 = ("ahpC", "eis", "embA", "embB", "embC", "ethA", "ethR", "fabG1", "gid", "gyrA",
-           "gyrB", "inhA", "katG", "pncA", "rpoB", "rpoC", "rpsL", "rrl", "rrs")
+# The 19 loci LocusFusion v3/v5, the stacked CNN and LASSO read. This held ahpC
+# instead of tlyA until 2026-11-06; genomefusion_cache_v3 carries the correction.
+LOCI_19 = ("eis", "embA", "embB", "embC", "ethA", "ethR", "fabG1", "gid", "gyrA", "gyrB",
+           "inhA", "katG", "pncA", "rpoB", "rpoC", "rpsL", "rrl", "rrs", "tlyA")
 
 
 @dataclass
@@ -77,7 +87,15 @@ class LocusInfo:
     pseudo: bool = False
     cds_len: int = 0          # coding length in bases (0 if not a CDS)
     is_19: bool = False
-    up_genes: tuple = ()      # for an intergenic segment: (plus-strand gene, minus-strand gene)
+    up_genes: tuple = ()      # coordinate-flanking gene tags: (gene ending before, starting after)
+    # --- the known-relationship annotation (all defaulted, so code carrying
+    # --- these fields still loads a cache built before they existed) --------
+    regulates: tuple = ()     # gene names this locus is a WHO Table-22 promoter region for
+    is_regulatory: bool = False   # any base of this locus lies in a WHO region
+    reg_bases: int = 0        # how many of its bases do
+    downstream: tuple = ()    # STRAND-AWARE: (next + strand gene, next - strand gene) this
+                              # locus sits upstream of. `up_genes` is merely coordinate
+                              # flanking and says nothing about direction of transcription.
 
 
 @dataclass
@@ -92,8 +110,8 @@ class Partition:
     genome_len: int
     meta: dict = field(default_factory=dict)
 
-    def feature_matrix(self):
-        """(n_loci, F) float32 of the locus features the embedding is predicted from."""
+    def _own_features(self):
+        """(n_loci, F_own): what a locus is, on its own."""
         rows = []
         for L in self.loci:
             kind = [float(L.kind == k) for k in REGION_KINDS]
@@ -104,14 +122,95 @@ class Partition:
                          np.log1p(L.end - L.start) / 10.0,
                          (L.start + L.end) / 2.0 / self.genome_len,
                          float(L.strand > 0), float(L.strand < 0),
-                         float(L.pseudo), float(L.is_19)])
+                         float(L.pseudo), float(L.is_19),
+                         # the regulatory annotation
+                         float(L.is_regulatory),
+                         np.log1p(L.reg_bases) / 10.0,
+                         min(len(L.regulates), 3) / 3.0])
         return np.asarray(rows, np.float32)
 
     @property
-    def feature_names(self):
+    def own_feature_names(self):
         return ([f"kind:{k}" for k in REGION_KINDS] + [f"cat:{c}" for c in CATEGORIES]
                 + [f"ess:{e}" for e in ESSENTIAL_CALLS] + ["ess:none"]
-                + ["log_len", "genome_frac", "strand_plus", "strand_minus", "pseudo", "is_19"])
+                + ["log_len", "genome_frac", "strand_plus", "strand_minus", "pseudo", "is_19",
+                   "is_regulatory", "log_reg_bases", "n_regulates"])
+
+    def regulated_index(self):
+        """(n_loci,) int32: the locus this one acts on, or -1.
+
+        For a tagged regulatory locus that is the gene it regulates (WHO
+        Table-22, so the biology is asserted, not inferred); otherwise the gene
+        it sits upstream of by strand, which is what `downstream` records and
+        what the anonymous `up_plus`/`up_minus` token channels cannot say. This
+        is the edge the model needs to tie a promoter to its gene without the
+        two sharing a locus.
+        """
+        by_gene = {}
+        for i, L in enumerate(self.loci):
+            if L.gene and L.kind != "intergenic":
+                by_gene.setdefault(L.gene, i)
+        out = np.full(len(self.loci), -1, np.int32)
+        for i, L in enumerate(self.loci):
+            for g in (*L.regulates, *(L.downstream or ())):
+                if g and g in by_gene and by_gene[g] != i:
+                    out[i] = by_gene[g]
+                    break
+        return out
+
+    def feature_matrix(self, with_regulated=True):
+        """(n_loci, F) the features the locus embedding and FiLM are predicted from.
+
+        With `with_regulated`, each row is [own features | the features of the
+        locus it regulates], zeros where it regulates nothing. That is what
+        lets 3,027 otherwise-interchangeable intergenic loci be told apart:
+        on their own they share a feature signature, but "the intergenic locus
+        upstream of a non-essential CDS of length L at genome position p" is
+        far more specific.
+        """
+        own = self._own_features()
+        if not with_regulated:
+            return own
+        reg = self.regulated_index()
+        tgt = np.zeros_like(own)
+        has = reg >= 0
+        tgt[has] = own[reg[has]]
+        return np.concatenate([own, tgt], 1)
+
+    @property
+    def feature_names(self):
+        return self.own_feature_names + [f"reg:{n}" for n in self.own_feature_names]
+
+    def promoter_loci(self, flank=100, genes=None):
+        """The intergenic loci lying within `flank` bp 5' of a gene locus.
+
+        LocusFusion v3's per-gene FASTAs carry a 100 bp upstream flank, so a
+        promoter variant such as the fabG1-inhA c-15t sits INSIDE v3's
+        `dna:fabG1` block. The strict one-locus-per-base partition puts that
+        base in an intergenic locus instead, and `is_19` is set only while the
+        gene loci are built, so the `19` locus set does not merely move those
+        bases to another locus -- it drops them. This returns the intergenic
+        loci that put them back, which is what the `19p` locus set adds.
+
+        `genes` is a list of locus indices whose 5' window to take; the default
+        is the 19. Strandless (intergenic) loci are skipped. The genome is
+        treated as circular, as `up_plus` / `up_minus` already are.
+        """
+        if genes is None:
+            genes = [i for i, L in enumerate(self.loci) if L.is_19]
+        out = set()
+        for i in genes:
+            L = self.loci[i]
+            if L.strand > 0:
+                w = np.arange(L.start - flank, L.start)
+            elif L.strand < 0:
+                w = np.arange(L.end, L.end + flank)
+            else:
+                continue
+            for x in np.unique(self.locus_of[w % self.genome_len]):
+                if x >= 0 and self.loci[int(x)].kind == "intergenic":
+                    out.add(int(x))
+        return sorted(out)
 
 
 # ---- GenBank ---------------------------------------------------------------
@@ -195,9 +294,85 @@ def read_essentiality(path=ESSENTIALITY):
 
 
 # ---- the partition ---------------------------------------------------------
+def read_promoter_windows(path=PROMOTERS):
+    """{gene: (core_start, core_end)} half-open, from the ATG-anchored build.
+
+    `core_*` is the WHO Table-22 region itself, without the 30 bp of CNN flank
+    the JSON also carries -- we want the catalogue's extent, not a padded
+    window. Extents run from 2 bp to 1,982 bp, which is the reason GenomeFusion
+    cannot express a promoter as a fixed upstream distance.
+    """
+    if not Path(path).exists():
+        return {}
+    d = json.loads(Path(path).read_text())
+    out = {}
+    for gene, w in (d.get("windows") or {}).items():
+        a, b = int(w["core_start"]), int(w["core_end"])
+        out[gene] = (min(a, b), max(a, b) + 1)
+    return out
+
+
+def annotate_regulatory(loci, locus_of, glen, genes, windows, verbose=True):
+    """Mark which loci carry a known regulatory region, and what they regulate.
+
+    This is an ANNOTATION pass, not a partition pass: it never moves a base.
+    It cannot be a partition pass, because a WHO region is frequently not
+    intergenic -- embC's 1,982 bp region is 1,980 bp of coding sequence, and
+    the inhA region (the fabG1-inhA operon promoter, the one carrying c-15t)
+    contains the whole of the fabG1 CDS. Carving those out would destroy the
+    CDS loci, and duplicating them is what the one-locus-per-base partition
+    exists to avoid. So a regulatory region tags the loci it overlaps and
+    records the gene it acts on; the bases stay where they are.
+    """
+    reg = {}
+    for gene, (a, b) in windows.items():
+        span = np.arange(a, b) % glen
+        for li in np.unique(locus_of[span]):
+            li = int(li)
+            if li < 0:
+                continue
+            n = int((locus_of[span] == li).sum())
+            r = reg.setdefault(li, {"genes": set(), "bases": 0})
+            r["genes"].add(gene)
+            r["bases"] += n
+    for li, r in reg.items():
+        L = loci[li]
+        L.is_regulatory = True
+        L.regulates = tuple(sorted(r["genes"]))
+        L.reg_bases = int(r["bases"])
+
+    # strand-aware "upstream of": the next START CODON on each strand after
+    # this locus's own end (+ strand) or before its start (- strand).
+    plus = sorted((g["start"], g["gene"] or g["tag"]) for g in genes
+                  if g["strand"] > 0 and g["kind"] == "cds")
+    minus = sorted((g["end"] - 1, g["gene"] or g["tag"]) for g in genes
+                   if g["strand"] < 0 and g["kind"] == "cds")
+    ps = np.asarray([x[0] for x in plus])
+    ms = np.asarray([x[0] for x in minus])
+    for L in loci:
+        dn_p = dn_m = ""
+        if len(ps):
+            i = int(np.searchsorted(ps, L.end, side="left"))
+            if i < len(ps):
+                dn_p = plus[i][1]
+        if len(ms):
+            j = int(np.searchsorted(ms, L.start, side="right")) - 1
+            if j >= 0:
+                dn_m = minus[j][1]
+        L.downstream = (dn_p, dn_m)
+    if verbose:
+        n_ig = sum(1 for li in reg if loci[li].kind == "intergenic")
+        print(f"[partition] regulatory: {len(windows)} WHO regions -> {len(reg)} loci tagged "
+              f"({n_ig} intergenic, {len(reg) - n_ig} coding/RNA)", flush=True)
+    return {"who_regions": len(windows), "reg_loci": len(reg),
+            "reg_loci_intergenic": sum(1 for li in reg if loci[li].kind == "intergenic"),
+            "promoters": str(PROMOTERS)}
+
+
 def build_partition(genbank=GENBANK, rlc_bed=RLC_BED, mask_categories=MASK_CATEGORIES,
-                    min_locus_bases=1, verbose=True, require_refs=True):
-    missing = [str(p) for p in (genbank, rlc_bed, MYCOBROWSER, ESSENTIALITY)
+                    min_locus_bases=1, verbose=True, require_refs=True,
+                    promoters=PROMOTERS):
+    missing = [str(p) for p in (genbank, rlc_bed, MYCOBROWSER, ESSENTIALITY, promoters)
                if p and not Path(p).exists()]
     if missing and require_refs:
         raise FileNotFoundError(
@@ -321,7 +496,11 @@ def build_partition(genbank=GENBANK, rlc_bed=RLC_BED, mask_categories=MASK_CATEG
                               start=int(s), end=int(e), strand=0, n_bases=n,
                               up_genes=(up_t, dn_t)))
 
-    meta = {"genome_len": glen, "n_genes": len(genes), "n_loci": len(loci),
+    reg_meta = annotate_regulatory(loci, locus_of, glen, genes,
+                                   read_promoter_windows(promoters), verbose=verbose)
+
+    meta = {"regulatory": reg_meta,
+            "genome_len": glen, "n_genes": len(genes), "n_loci": len(loci),
             "n_gene_loci": sum(L.kind != "intergenic" for L in loci),
             "n_intergenic_loci": sum(L.kind == "intergenic" for L in loci),
             "masked_bases": int(masked.sum()), "masked_frac": float(masked.mean()),
@@ -352,7 +531,16 @@ def save(p, path):
 
 def load(path):
     z = np.load(path, allow_pickle=False)
-    loci = [LocusInfo(**{**d, "up_genes": tuple(d.get("up_genes", ()))})
+    # Keep only keys this LocusInfo actually declares. A cache written by a
+    # NEWER build carries fields this code has never heard of, and
+    # LocusInfo(**d) would die on the unexpected keyword -- which would take
+    # out every already-queued job the moment the cache was rebuilt. Dropping
+    # unknown keys (and letting absent ones fall back to their defaults) makes
+    # the format compatible in both directions.
+    fields = {f.name for f in dataclasses.fields(LocusInfo)}
+    tuple_fields = ("up_genes", "regulates", "downstream")
+    loci = [LocusInfo(**{**{k: v for k, v in d.items() if k in fields},
+                         **{t: tuple(d.get(t, ())) for t in tuple_fields if t in d}})
             for d in json.loads(str(z["loci"]))]
     meta = json.loads(str(z["meta"]))
     return Partition(loci=loci, locus_of=z["locus_of"], overlap=z["overlap"],

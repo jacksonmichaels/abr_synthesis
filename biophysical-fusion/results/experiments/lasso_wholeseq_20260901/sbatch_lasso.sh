@@ -14,6 +14,7 @@
 # isolates x 33,218 columns at 16,130 nonzeros per isolate, 11.3 GB peak RSS and
 # 23 s per liblinear fit, so 40 fits (8 C values x 5 folds) plus the ~60 s build
 # sits well inside 12 h. Every other cell is smaller and does not use the room.
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH -c 4
 #SBATCH --mem=64G
 #SBATCH -p cpu

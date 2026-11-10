@@ -9,6 +9,7 @@
 # `source ~/.bashrc` is not a builtin, so conda never activates and the job dies
 # on `ModuleNotFoundError: numpy` three seconds in -- which is exactly how the
 # first submission of the per-drug-loci arm failed.
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH -c 8
 #SBATCH --mem=128G
 #SBATCH -p cpu

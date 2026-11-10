@@ -8,6 +8,7 @@
 # Reads the BIG-TB VCFs straight from the read-only pi_annagreen tree (copying
 # 35,884 files off that spinning disk costs far more than one read pass) and
 # writes only to $OUT.
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH --job-name=gf_tokens
 #SBATCH --output=results/experiments/genomefusion/logs/%x-%A_%a.out
 #SBATCH --error=results/experiments/genomefusion/logs/%x-%A_%a.err

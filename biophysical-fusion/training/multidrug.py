@@ -21,6 +21,7 @@ single-drug engine so the two stay consistent.
 import time
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 from sklearn.metrics import average_precision_score, roc_auc_score
@@ -222,7 +223,7 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                      run_name=None, save_weights="best", weights_dir=None,
                      data_config=None, setfusion=None, lr_schedule="none",
                      warmup_epochs=0, transformer=None, locusfusion=None,
-                     branched=None, experimental=None):
+                     branched=None, experimental=None, split_file=None):
     """Train/eval a multi-drug net on a MultiDrugData bundle. Returns a result
     dict with per-drug and macro CV/TEST metrics.
 
@@ -246,7 +247,14 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
     locusfusion : locusfusion-only capacity overrides (see
                 models.LOCUSFUSION_DEFAULTS); ignored by every other arch. That
                 arch also needs reference-difference input — load with
-                delta=True or its tokenizer has nothing sparse to tokenize."""
+                delta=True or its tokenizer has nothing sparse to tokenize.
+
+    split_file : optional CSV (New_ID, role in {train,test}, fold 0..k-1) that
+                fixes the held-out test split AND the CV folds, e.g. the
+                lineage-grouped MULTIDRUG.csv of scripts/build_lineage_splits.py
+                --multidrug. Every isolate kept after the all-missing filter must
+                appear in it (extra rows are ignored). Overrides the random split
+                and KFold, as split_file does in training.multimodal.run_modal_cv."""
     t0 = time.time()
     branch_models = branch_models or {}
     setfusion = {k: v for k, v in (setfusion or {}).items()
@@ -273,8 +281,27 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
           f"specs~{specs[:3]}{'...' if len(specs) > 3 else ''} "
           f"n_valid={n} (dropped {data.n - n} all-missing)", flush=True)
 
-    # --- random held-out split (multi-label -> not stratified), seed 42 -------
-    train_idx, test_idx = train_test_split(np.arange(n), test_size=0.2, random_state=42)
+    # --- held-out split: random (multi-label -> not stratified), seed 42, or
+    # fixed by split_file (test split + CV folds, see training.multimodal) -----
+    kept_ids = [str(data.isolate_ids[i]) for i in keep]
+    if split_file is None:
+        train_idx, test_idx = train_test_split(np.arange(n), test_size=0.2, random_state=42)
+        split_folds = None
+    else:
+        sp = pd.read_csv(split_file, dtype={"New_ID": str}).set_index("New_ID")
+        missing = [i for i in kept_ids if i not in sp.index]
+        if missing:
+            raise ValueError(f"{split_file}: {len(missing)} of {n} isolates have no split "
+                             f"(e.g. {missing[:3]})")
+        sp = sp.loc[kept_ids]
+        test_idx = np.nonzero((sp.role == "test").values)[0]
+        train_idx = np.nonzero((sp.role == "train").values)[0]
+        fold_of = sp.fold.values[train_idx]
+        split_folds = [(np.nonzero(fold_of != k)[0], np.nonzero(fold_of == k)[0])
+                       for k in sorted(set(fold_of))]
+        assert len(split_folds) == n_splits, (len(split_folds), n_splits)
+        print(f"[multidrug/{tag}] split from {split_file}: train={len(train_idx)} "
+              f"test={len(test_idx)} folds={[len(v) for _, v in split_folds]}", flush=True)
 
     alpha = _alpha_matrix(Y, train_idx, n_drugs)
     tb_root = (tb_dir / f"multidrug__{tag}") if tb_dir is not None else None
@@ -305,9 +332,10 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                            weights_dir=weights_dir)
     kept_isolates = [data.isolate_ids[i] for i in keep]
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    fold_splits = (split_folds if split_folds is not None else
+                   KFold(n_splits=n_splits, shuffle=True, random_state=42).split(train_idx))
     folds, best_macro, best_model, best_fold = [], -np.inf, None, None
-    for fold, (tr, va) in enumerate(kf.split(train_idx)):
+    for fold, (tr, va) in enumerate(fold_splits):
         writer = _new_writer(tb_root, f"cv_fold{fold}")
         if arch == "mdcnn":
             # one uniform trunk encoder; see training.multimodal._build_model for
@@ -415,9 +443,11 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
                  "loci": data.loci, "gene_order": data.gene_order,
                  "n_isolates": data.n, "n_valid": n,
                  "dropped_all_missing": data.n - n},
-        "split": {"test_size": 0.2, "split_seed": 42, "stratified": False,
-                  "n_splits": n_splits, "kfold": "KFold", "kfold_seed": 42,
-                  "kfold_shuffle": True,
+        "split": {**({"test_size": 0.2, "split_seed": 42, "stratified": False,
+                     "kfold": "KFold", "kfold_seed": 42, "kfold_shuffle": True}
+                    if split_file is None else {}),
+                  "n_splits": n_splits,
+                  "split_file": None if split_file is None else str(split_file),
                   "isolate_order": "isolates.txt (post all-missing filter)",
                   "test_isolate_ids": [kept_isolates[i] for i in test_idx]},
         "training": {"epochs": epochs, "batch_size": batch_size, "seed": seed,
@@ -461,6 +491,7 @@ def run_multidrug_cv(data, epochs=60, n_splits=5, batch_size=128, device="cpu",
         "hidden": hidden, "dropout": dropout, "per_drug_hidden": per_drug_hidden,
         "mdcnn_trunk_per_modality": bool(mdcnn_trunk_per_modality),
         "monitor_min_n": monitor_min_n, "monitor_drugs": monitor_drugs,
+        "split_file": None if split_file is None else str(split_file),
         "weights_dir": str(weights_path) if weights_path else None,
         "save_weights": save_weights,
         "cv_macro_auc_mean": cv_macro_mean, "cv_macro_auc_std": cv_macro_std,

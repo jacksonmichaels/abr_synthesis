@@ -160,6 +160,7 @@ def job_script(name, sub, targs, kind, snap, cache, weights):
     logs = RUN_ROOT / "logs"
     out = RUN_ROOT / sub
     lines = ["#!/bin/bash",
+             "#SBATCH --account=pi_annagreen_umass_edu",  # ABR jobs bill Anna Green, not the user default
              f"#SBATCH --job-name={name}",
              f"#SBATCH --output={logs}/%x-%j.out",
              f"#SBATCH --error={logs}/%x-%j.err",

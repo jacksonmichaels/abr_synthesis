@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH -c 4
 #SBATCH --mem=128G
 #SBATCH -p cpu-preempt

@@ -4,6 +4,7 @@
 #     LOCUS_SET = perdrug | all
 # Resources as lasso_wholeseq_20260901/sbatch_lasso.sh (worst cell INH/onehot/all
 # 11.3 GB peak, minutes of compute).
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH -c 4
 #SBATCH --mem=64G
 #SBATCH -p cpu

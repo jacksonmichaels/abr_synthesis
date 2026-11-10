@@ -59,16 +59,18 @@ from .sequences import load_phenotype, load_sequence_df
 ALL_DRUGS = list(DRUG_TO_LOCI)
 
 
-def union_loci(drugs, extra=False):
+def union_loci(drugs, extra=False, locus_set="bigtb"):
     """Ordered, de-duplicated union of every drug's gene loci.
 
     This is the SD-CNN-derived rule (union of the per-drug map). MD-CNN instead
     uses every curated locus regardless of drug — see ``loci_on_disk``, which is
     what the multi-drug runner defaults to on real data. ``extra`` adds the
-    EXTRA_LOCI overlay (fabG1 for INH/ETO)."""
+    EXTRA_LOCI overlay (fabG1 for INH/ETO). ``locus_set`` is drug_loci's: with
+    'who_t12' the union of each drug's WHO tier 1 + 2 genes (drug order, then
+    tier order), with 'lab64' just LAB64_LOCI."""
     out = []
     for d in drugs:
-        for g in drug_loci(d, extra):
+        for g in drug_loci(d, extra, locus_set):
             if g not in out:
                 out.append(g)
     return out

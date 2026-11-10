@@ -5,6 +5,7 @@
 # where `source ~/.bashrc` is not a builtin, so conda never activates and the job
 # dies on `ModuleNotFoundError: numpy` three seconds in. The generated scripts in
 # scripts/sbatch_all_runs.py have always had the bash shebang for this reason.
+#SBATCH --account=pi_annagreen_umass_edu
 #SBATCH -c 8
 #SBATCH --mem=64G
 #SBATCH -p cpu

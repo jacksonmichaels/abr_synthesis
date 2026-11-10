@@ -65,19 +65,42 @@ EXTRA_LOCI = {"ISONIAZID": ["fabG1"], "ETHIONAMIDE": ["fabG1"]}
 # tier 1 + tier 2 candidate genes, tier 1 first; most of them only have aligned
 # FASTAs in the gene_msa/who_t12_genotypes folder (pass it as the genotype dir),
 # and a gene with no FASTA there is skipped with a warning like any other.
-LOCUS_SETS = ("bigtb", "who_t12")
+# "lab64" is every locus in saishradha's genomic_data/aligned folder as of
+# 2026-10-15 (the 19 curated + 45 WHO candidates, incl. BDQ/CFZ/DLM/LZD genes),
+# given to EVERY drug. Repaired copies live in locus_sets/aligned (2026-10-30).
+# "sai63" and "who_t12_sai" (2026-11-05) keep only loci she provided: "who_t12"
+# has dnaA, PPE35, rpoA and whiB6, which she has no FASTA for, and her pepQ.fasta
+# is Rv3698 while our re-extracted pepQ is Rv2535c, so pepQ goes too. The original
+# two stay as they are because the finished locus_sets sweep was run on them.
+LOCUS_SETS = ("bigtb", "who_t12", "lab64", "sai63", "who_t12_sai")
+LAB64_LOCI = (
+    "aftA", "aftB", "ahpC", "atpE", "bacA", "ccsA", "clpC1", "ddn", "eis", "embA",
+    "embB", "embC", "embR", "ethA", "ethR", "fabG1", "fbiA", "fbiB", "fbiC", "fgd1",
+    "furA", "gid", "glpK", "gyrA", "gyrB", "hadA", "inhA", "katG", "lpqB", "mmpL5",
+    "mmpS5", "mshA", "mtrA", "mtrB", "ndh", "nusG", "panD", "pepQ", "pncA", "rplC",
+    "rpoB", "rpoC", "rpsA", "rpsL", "rrl", "rrs", "Rv0010c", "Rv0565c", "Rv0678",
+    "Rv1129c", "Rv1258c", "Rv1979c", "Rv2477c", "Rv2680", "Rv2681", "Rv2752c",
+    "Rv2983", "Rv3083", "Rv3236c", "sigE", "tlyA", "tsnR", "ubiA", "whiB7")
+SAI63_LOCI = tuple(g for g in LAB64_LOCI if g != "pepQ")
 
 
 def drug_loci(drug, extra=False, locus_set="bigtb"):
     """Gene loci for one drug: BIG-TB's DRUG_TO_LOCI, plus EXTRA_LOCI when
     ``extra`` is set (order preserved, no duplicates) -- or, with
-    ``locus_set="who_t12"``, its WHO Table-21 tier 1 + 2 genes."""
+    ``locus_set="who_t12"``, its WHO Table-21 tier 1 + 2 genes -- or, with
+    ``locus_set="lab64"``, all of LAB64_LOCI regardless of drug. ``"sai63"`` and
+    ``"who_t12_sai"`` are lab64 and who_t12 limited to SAI63_LOCI."""
     if locus_set not in LOCUS_SETS:
         raise ValueError(f"unknown locus_set {locus_set!r}; choose from {LOCUS_SETS}")
-    if locus_set == "who_t12":
+    if locus_set == "lab64":
+        return list(LAB64_LOCI)
+    if locus_set == "sai63":
+        return list(SAI63_LOCI)
+    if locus_set in ("who_t12", "who_t12_sai"):
         from .regulatory import DRUG_NAME_TO_WHO
         from .who_catalogue import genes_for_drug
-        return list(dict.fromkeys(g for g, _ in genes_for_drug(DRUG_NAME_TO_WHO[drug.upper()])))
+        genes = dict.fromkeys(g for g, _ in genes_for_drug(DRUG_NAME_TO_WHO[drug.upper()]))
+        return [g for g in genes if locus_set == "who_t12" or g in SAI63_LOCI]
     base = list(DRUG_TO_LOCI.get(drug.upper(), []))
     if extra:
         base += [g for g in EXTRA_LOCI.get(drug.upper(), []) if g not in base]

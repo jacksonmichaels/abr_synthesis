@@ -41,6 +41,7 @@ from datasets import (ALL_DRUGS, MODALITIES, STATIC_MODALITIES,  # noqa: E402
                       loci_on_disk,
                       load_multidrug_dataset, union_loci, union_regulatory)
 from datasets.fixtures import build_fixture_dataset  # noqa: E402
+from datasets.loader import LOCUS_SETS  # noqa: E402
 from models import (ARCHITECTURES, DELTA_ARCHS, ENCODERS,  # noqa: E402
                     REFERENCE_FRAME_ARCHS,
                     STRUCTURE_ARCHS,
@@ -109,6 +110,22 @@ def main():
                     help="gene loci to load (default: every curated locus FASTA "
                          "in the genotype dir — MD-CNN's own drug-independent "
                          "rule; see --per-drug-loci)")
+    ap.add_argument("--locus-set", default="bigtb", choices=list(LOCUS_SETS),
+                    help="'bigtb' (default) keeps the rules above (every locus on "
+                         "disk, or --per-drug-loci). 'who_t12' = the ordered union "
+                         "of the drugs' WHO tier 1 + 2 genes; 'lab64' = "
+                         "datasets.loader.LAB64_LOCI. Either sets the loci "
+                         "explicitly, NOT from what is on disk. Ignored when "
+                         "--loci is given.")
+    ap.add_argument("--genotype-dir", default=None,
+                    help="--real only: aligned per-gene FASTA folder to read instead "
+                         "of bigtb_ref.REAL_GENOTYPE_DIR (regulatory windows still "
+                         "come from bigtb_ref.REAL_REGULATORY_DIR).")
+    ap.add_argument("--split-file", default=None,
+                    help="CSV (New_ID, role train/test, fold) fixing the test split "
+                         "and CV folds, e.g. the lineage-grouped MULTIDRUG.csv of "
+                         "scripts/build_lineage_splits.py --multidrug. Default: "
+                         "random 80/20 + KFold(5), seed 42.")
     ap.add_argument("--per-drug-loci", action="store_true",
                     help="use the UNION of the selected drugs' DRUG_TO_LOCI "
                          "instead of every locus on disk (the older behaviour; "
@@ -516,6 +533,10 @@ def main():
         # was really the control with a different folder name
         ap.error(f"setfusion capacity flags {sorted(setfusion)} require "
                  f"--arch setfusion (got --arch {args.arch})")
+    if args.genotype_dir and not args.real:
+        ap.error("--genotype-dir reads real FASTAs; drop --synthetic")
+    if args.split_file and not Path(args.split_file).is_file():
+        ap.error(f"--split-file {args.split_file} does not exist")
     epochs = args.epochs if args.epochs is not None else (60 if args.real else 5)
     # mdcnn stacks LOCI as channels -> needs one block per locus (see above)
     per_locus = args.per_locus_branches or args.arch in PER_LOCUS_ARCHS
@@ -558,10 +579,11 @@ def main():
 
     with contextlib.ExitStack() as stack:
         if args.real:
-            geno, pheno, reg = REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR
+            geno, pheno, reg = (args.genotype_dir or REAL_GENOTYPE_DIR,
+                                REAL_PHENOTYPE_CSV, REAL_REGULATORY_DIR)
         else:
             tmp = stack.enter_context(tempfile.TemporaryDirectory())
-            genes = args.loci or union_loci(drugs)
+            genes = args.loci or union_loci(drugs, locus_set=args.locus_set)
             regions = union_regulatory(drugs) if "regulatory" in modalities else []
             regions = [r for r in regions if r not in set(genes)]
             geno, pheno = build_fixture_dataset(
@@ -574,8 +596,14 @@ def main():
         # SD-CNN's rule and misses fabG1, which has a FASTA but is named by no
         # drug. Fixtures are excluded: that directory also holds the synthetic
         # regulatory windows, which would be read as coding loci.
+        # A --locus-set other than bigtb names its loci explicitly: the
+        # locus_sets genotype dir holds 68 FASTAs, so loci_on_disk would load
+        # every one of them whatever the set.
         loci = args.loci
-        if loci is None and args.real and not args.per_drug_loci:
+        if loci is None and args.locus_set != "bigtb":
+            loci = union_loci(drugs, locus_set=args.locus_set)
+            print(f"loci: --locus-set {args.locus_set} ({len(loci)}): {loci}")
+        elif loci is None and args.real and not args.per_drug_loci:
             loci = loci_on_disk(geno)
             print(f"loci: all {len(loci)} curated on disk (MD-CNN rule): {loci}")
         elif loci is None:
@@ -610,6 +638,7 @@ def main():
                                   warmup_epochs=args.warmup_epochs,
                                   run_name=run_name, save_weights=args.save_weights,
                                   weights_dir=args.weights_dir,
+                                  split_file=args.split_file,
                                   data_config={
                                       "genotype_dir": str(geno),
                                       "phenotype_csv": str(pheno),
@@ -620,12 +649,17 @@ def main():
                                       "all_regulatory": args.all_regulatory,
                                       "extra_loci": args.extra_loci,
                                       "per_drug_loci": args.per_drug_loci,
+                                      "locus_set": args.locus_set,
+                                      "loci_override": args.loci,
+                                      "split_file": args.split_file,
                                       "protein_frame": protein_frame,
                                       "unknown_symbols": bool(args.lf_unknown_symbols),
                                                                             # the resolved region list is recoverable
                                       # from the 'regulatory:*' block names
                                   })
 
+    result.update(locus_set=args.locus_set, genotype_dir=str(geno),
+                  regulatory_dir=str(reg))
     (run_dir / f"multidrug__{result['tag']}.json").write_text(json.dumps(result, indent=2))
     _write_summary(run_dir, result)
     # breadcrumb: the run folder records where its weights went

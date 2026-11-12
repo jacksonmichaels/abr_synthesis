@@ -48,5 +48,7 @@ All paths: `paths.py` (every one has an `ABR_*` override).
 - Sai's `pepQ.fasta` is Rv3698, not WHO's pepQ (Rv2535c); `who_t12_sai` excludes it.
 - Sai's 4 loci eis/embB/ethA/rrs were built with an MSA extractor that overwrote bases at insertions. Known, accepted for alignment with her data.
 - LF token caches are keyed on input paths; a new data dir means a rebuild (~minutes, ~4 GB RAM).
+- CNN and GF training are not bit-reproducible in the first CV fold of a process (old code too, even 1 thread + PYTHONHASHSEED=0); later folds are. Expect ~0.002 CV drift between identical runs.
+- LASSO: liblinear runs with no `random_state`, so coefficients and AUCs drift slightly (~1e-6 AUC) between identical runs.
 - GF regulated-locus edges are mostly a next-gene fallback, not WHO regulation. Don't describe them as catalogue knowledge.
 - Checkpoints: `{"config", "state_dict"}`. Renaming parameters breaks loading old weights.

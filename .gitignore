@@ -8,21 +8,21 @@ __pycache__/
 
 # --- data, linked or built in the workspace ---------------------------------
 /data_snapshot
-/curated_fix/
-/regulatory_msa/
-/gene_msa/
-/locus_sets/
-/genomefusion_cache*/
-/genomefusion_tokens/
-/token_cache_v4/
+/curated_fix
+/regulatory_msa
+/gene_msa
+/locus_sets
+/genomefusion_cache*
+/genomefusion_tokens
+/token_cache_v4
 /structures/alphafold/raw/
 /structures/ribosome/
 /Big-TB-benchmark
 
 # --- outputs -------------------------------------------------------------------
-/results/
-/model_weights_*/
-/logs/
+/results
+/model_weights_*
+/logs
 slurm-*.out
 
 # --- large reference downloads (genomefusion_refs/fetch_refs.sh re-fetches) ---

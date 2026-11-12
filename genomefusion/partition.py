@@ -8,10 +8,12 @@ genes, and the same base would then be a token in two loci. The regulatory role
 of an intergenic base is carried by the token instead, as its distance upstream
 of the next start codon on each strand (`up_plus` / `up_minus`).
 
-    from genomefusion.partition import build_partition
-    p = build_partition()          # cached under <workspace>/genomefusion_cache/
+    from genomefusion.partition import load_or_build
+    p = load_or_build()            # paths.GF_CACHE/partition.npz, built on first use
     p.loci                         # LocusInfo per locus, genome order
     p.locus_of[pos]                # 0-based genome position -> locus index, -1 masked
+
+    python -m genomefusion.partition [out.npz]     # build and write it explicitly
 
 Overlapping genes: 13,121 bases of H37Rv lie in two gene features. Each goes to
 the gene whose START codon is nearer, so start codons stay whole; the token's
@@ -25,36 +27,20 @@ base is dropped entirely.
 from dataclasses import dataclass, field
 from pathlib import Path
 import csv
-import dataclasses
 import json
 import re
 
 import numpy as np
 
-import os
+from paths import GENBANK as _GENBANK, GF_CACHE, GF_PROMOTERS, GF_REFS
 
-PROJECT = Path(__file__).resolve().parents[1]
-# A SLURM job runs from a frozen snapshot, where PROJECT.parent is the snapshot
-# directory and holds none of the shared data. These therefore come from the
-# environment, with the live workspace only as a fallback, and are checked
-# rather than silently skipped: a partition built without the mask or the
-# annotation would look fine and be wrong.
-WORKSPACE = Path(os.environ.get("ABR_WORKSPACE", PROJECT.parent))
-REFS = Path(os.environ.get("ABR_GF_REFS", WORKSPACE / "genomefusion_refs"))
-CACHE = Path(os.environ.get("ABR_GF_CACHE", WORKSPACE / "genomefusion_cache"))
-
-GENBANK = Path(os.environ.get(
-    "ABR_GENBANK", WORKSPACE / "data_snapshot" / "genbank" / "genome.gbff"))
+REFS = GF_REFS
+CACHE = GF_CACHE
+GENBANK = Path(_GENBANK)
 RLC_BED = REFS / "rlc" / "RLC_Regions.H37Rv.bed"
 MYCOBROWSER = REFS / "mycobrowser" / "H37Rv_r5.txt"
 ESSENTIALITY = REFS / "essentiality" / "dejesus_S3_orf_essentiality.tsv"
-#: WHO 2023 Table-22 promoter regions in absolute NC_000962.3 coordinates,
-#: anchored on the START CODON. Built by regulatory_msa/build_promoter_coords.py.
-#: This is the ATG-anchored build; the older TSS-anchored promoter_windows.json
-#: shifted every window whose TSS is not the ATG (katG by 481 bp, rpoB by 212)
-#: and dropped second segments, so it must NOT be used here.
-PROMOTERS = Path(os.environ.get(
-    "ABR_GF_PROMOTERS", WORKSPACE / "regulatory_msa" / "promoter_windows_atg.json"))
+PROMOTERS = GF_PROMOTERS
 
 MASK_CATEGORIES = ("PE/PPE", "insertion seqs and phages")
 
@@ -65,11 +51,10 @@ CATEGORIES = ("conserved hypotheticals", "intermediary metabolism and respiratio
               "virulence, detoxification, adaptation", "regulatory proteins",
               "PE/PPE", "insertion seqs and phages", "unknown")
 ESSENTIAL_CALLS = ("ES", "ESD", "GD", "NE", "GA", "Uncertain")
-#: the 19 loci LocusFusion v3/v5 use, by gene name
-# The 19 loci LocusFusion v3/v5, the stacked CNN and LASSO read. This held ahpC
-# instead of tlyA until 2026-11-06; genomefusion_cache_v3 carries the correction.
-LOCI_19 = ("eis", "embA", "embB", "embC", "ethA", "ethR", "fabG1", "gid", "gyrA", "gyrB",
-           "inhA", "katG", "pncA", "rpoB", "rpoC", "rpsL", "rrl", "rrs", "tlyA")
+#: bp of 5' flank `promoter_loci` covers; the flank LocusFusion's FASTAs carry
+PROMOTER_FLANK = 100
+#: the 19 loci LocusFusion, the stacked CNN and LASSO read
+from datasets.loader import LOCI_19  # noqa: E402
 
 
 @dataclass
@@ -88,8 +73,7 @@ class LocusInfo:
     cds_len: int = 0          # coding length in bases (0 if not a CDS)
     is_19: bool = False
     up_genes: tuple = ()      # coordinate-flanking gene tags: (gene ending before, starting after)
-    # --- the known-relationship annotation (all defaulted, so code carrying
-    # --- these fields still loads a cache built before they existed) --------
+    # --- the known-relationship annotation ----------------------------------
     regulates: tuple = ()     # gene names this locus is a WHO Table-22 promoter region for
     is_regulatory: bool = False   # any base of this locus lies in a WHO region
     reg_bases: int = 0        # how many of its bases do
@@ -181,23 +165,20 @@ class Partition:
     def feature_names(self):
         return self.own_feature_names + [f"reg:{n}" for n in self.own_feature_names]
 
-    def promoter_loci(self, flank=100, genes=None):
-        """The intergenic loci lying within `flank` bp 5' of a gene locus.
+    def promoter_loci(self, flank=PROMOTER_FLANK):
+        """The intergenic loci lying within `flank` bp 5' of one of the 19.
 
-        LocusFusion v3's per-gene FASTAs carry a 100 bp upstream flank, so a
-        promoter variant such as the fabG1-inhA c-15t sits INSIDE v3's
+        LocusFusion's per-gene FASTAs carry a 100 bp upstream flank, so a
+        promoter variant such as the fabG1-inhA c-15t sits INSIDE its
         `dna:fabG1` block. The strict one-locus-per-base partition puts that
         base in an intergenic locus instead, and `is_19` is set only while the
         gene loci are built, so the `19` locus set does not merely move those
         bases to another locus -- it drops them. This returns the intergenic
         loci that put them back, which is what the `19p` locus set adds.
 
-        `genes` is a list of locus indices whose 5' window to take; the default
-        is the 19. Strandless (intergenic) loci are skipped. The genome is
-        treated as circular, as `up_plus` / `up_minus` already are.
+        The genome is treated as circular, as `up_plus` / `up_minus` already are.
         """
-        if genes is None:
-            genes = [i for i, L in enumerate(self.loci) if L.is_19]
+        genes = [i for i, L in enumerate(self.loci) if L.is_19]
         out = set()
         for i in genes:
             L = self.loci[i]
@@ -302,8 +283,6 @@ def read_promoter_windows(path=PROMOTERS):
     window. Extents run from 2 bp to 1,982 bp, which is the reason GenomeFusion
     cannot express a promoter as a fixed upstream distance.
     """
-    if not Path(path).exists():
-        return {}
     d = json.loads(Path(path).read_text())
     out = {}
     for gene, w in (d.get("windows") or {}).items():
@@ -369,33 +348,31 @@ def annotate_regulatory(loci, locus_of, glen, genes, windows, verbose=True):
             "promoters": str(PROMOTERS)}
 
 
-def build_partition(genbank=GENBANK, rlc_bed=RLC_BED, mask_categories=MASK_CATEGORIES,
-                    min_locus_bases=1, verbose=True, require_refs=True,
-                    promoters=PROMOTERS):
+def build_partition(genbank=GENBANK, rlc_bed=RLC_BED, promoters=PROMOTERS, verbose=True):
+    # Checked rather than skipped: a partition built without the mask or the
+    # annotation would look fine and be wrong.
     missing = [str(p) for p in (genbank, rlc_bed, MYCOBROWSER, ESSENTIALITY, promoters)
-               if p and not Path(p).exists()]
-    if missing and require_refs:
+               if not Path(p).exists()]
+    if missing:
         raise FileNotFoundError(
             "GenomeFusion reference data is missing, so the partition would be built without "
             "the mask / categories / essentiality and would silently differ:\n  "
             + "\n  ".join(missing)
-            + "\nSet ABR_GF_REFS (and ABR_GENBANK) to the real workspace, or pass "
-              "require_refs=False to build an unmasked partition on purpose.")
+            + "\nSet ABR_GF_REFS / ABR_GF_PROMOTERS / ABR_GENBANK (see paths.py).")
     genes, glen, skipped = read_genbank(genbank)
-    myco = read_mycobrowser() if MYCOBROWSER.exists() else {}
-    ess = read_essentiality() if ESSENTIALITY.exists() else {}
+    myco = read_mycobrowser()
+    ess = read_essentiality()
 
     # masked bases: RLC BED + genes in a masked functional category
     masked = np.zeros(glen, bool)
     n_rlc = 0
-    if rlc_bed and Path(rlc_bed).exists():
-        for s, e in read_bed(rlc_bed):
-            masked[max(s, 0):min(e, glen)] = True
-            n_rlc += 1
+    for s, e in read_bed(rlc_bed):
+        masked[max(s, 0):min(e, glen)] = True
+        n_rlc += 1
     n_cat = 0
     for g in genes:
         cat = myco.get((g["tag"] or "").lower(), {}).get("category", "")
-        if cat in mask_categories:
+        if cat in MASK_CATEGORIES:
             masked[g["start"]:g["end"]] = True
             n_cat += 1
 
@@ -452,7 +429,7 @@ def build_partition(genbank=GENBANK, rlc_bed=RLC_BED, mask_categories=MASK_CATEG
         g = genes[gi]
         own = (owner == gi) & ~masked
         n = int(own.sum())
-        if n < min_locus_bases:
+        if n < 1:
             continue
         tag = g["tag"] or f"gene{gi}"
         info = myco.get(tag.lower(), {})
@@ -481,7 +458,7 @@ def build_partition(genbank=GENBANK, rlc_bed=RLC_BED, mask_categories=MASK_CATEG
         own[s:e] = True
         own &= ~masked
         n = int(own.sum())
-        if n < min_locus_bases:
+        if n < 1:
             n_ig_dropped += 1
             continue
         j = int(np.searchsorted(ends, s, side="right")) - 1      # last gene ending at/before s
@@ -507,7 +484,7 @@ def build_partition(genbank=GENBANK, rlc_bed=RLC_BED, mask_categories=MASK_CATEG
             "rlc_regions": n_rlc, "masked_category_genes": n_cat,
             "overlap_bases": int(overlap.sum()), "unassigned_bases": int((locus_of < 0).sum()),
             "intergenic_dropped": n_ig_dropped, "genbank_skipped": skipped,
-            "mask_categories": list(mask_categories), "genbank": str(genbank),
+            "mask_categories": list(MASK_CATEGORIES), "genbank": str(genbank),
             "rlc_bed": str(rlc_bed), "refs": str(REFS),
             "has_categories": bool(myco), "has_essentiality": bool(ess)}
     if verbose:
@@ -531,16 +508,8 @@ def save(p, path):
 
 def load(path):
     z = np.load(path, allow_pickle=False)
-    # Keep only keys this LocusInfo actually declares. A cache written by a
-    # NEWER build carries fields this code has never heard of, and
-    # LocusInfo(**d) would die on the unexpected keyword -- which would take
-    # out every already-queued job the moment the cache was rebuilt. Dropping
-    # unknown keys (and letting absent ones fall back to their defaults) makes
-    # the format compatible in both directions.
-    fields = {f.name for f in dataclasses.fields(LocusInfo)}
     tuple_fields = ("up_genes", "regulates", "downstream")
-    loci = [LocusInfo(**{**{k: v for k, v in d.items() if k in fields},
-                         **{t: tuple(d.get(t, ())) for t in tuple_fields if t in d}})
+    loci = [LocusInfo(**{k: tuple(v) if k in tuple_fields else v for k, v in d.items()})
             for d in json.loads(str(z["loci"]))]
     meta = json.loads(str(z["meta"]))
     return Partition(loci=loci, locus_of=z["locus_of"], overlap=z["overlap"],
@@ -548,11 +517,11 @@ def load(path):
                      phase_of=z["phase_of"], genome_len=meta["genome_len"], meta=meta)
 
 
-def load_or_build(cache=CACHE, **kw):
+def load_or_build(cache=CACHE):
     path = Path(cache) / "partition.npz"
     if path.exists():
         return load(path)
-    p = build_partition(**kw)
+    p = build_partition()
     save(p, path)
     return p
 

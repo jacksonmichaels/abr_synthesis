@@ -1,21 +1,7 @@
 """
-GenomeFusion -- the canonical model file. Edit the network here.
-
-Training imports it through genomefusion/model.py, so a change here is what the
-next run trains. Partition, tokens and batching live in genomefusion/
-(partition.py, tokenizer.py, data.py); the token layout is genomefusion/layout.py.
-
-    train:     python -m genomefusion.train ...
-    sweep:     python -m genomefusion.sbatch --arms gf19p --dry-run   (gf19p is the
-               19-locus parity arm, the genome arm needs ~20 warmup epochs)
-    tests:     python -m genomefusion.tests.test_model
-
-Checkpoints store {"config": model.config, "state_dict": ...}; renaming or
-adding a parameter here means old weights no longer load strictly.
-
 GenomeFusion: LocusFusion over the whole genome.
 
-Two transformer stages, as in v3-v5, but sparse. Only the loci an isolate
+Two transformer stages, as in LocusFusion, but sparse. Only the loci an isolate
 actually changes enter the network, and a locus holds as many tokens as the
 isolate has changes in it.
 
@@ -40,13 +26,18 @@ parameters, most of them for loci that vary in a handful of isolates. The
 embedding and the FiLM scale/shift are predicted from the locus feature vector
 (region kind, functional category, essentiality, length, position, WHO-19
 membership), plus a small learned residual with its own dropout.
+
+Partition, tokens and batching live in genomefusion/ (partition.py,
+tokenizer.py, data.py); the token layout is genomefusion/layout.py. Checkpoints
+store {"config": model.config, "state_dict": ...}; renaming or adding a
+parameter or buffer here means existing weights no longer load strictly.
 """
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from genomefusion.layout import DIST_MISSING, N_NULL_STATS
+from genomefusion.layout import N_NULL_STATS
 
 GF_DEFAULTS = dict(d_model=128, nhead=4, dropout=0.1, enc_layers=2, enc_dim_ff=256,
                    fusion_layers=2, fusion_dim_ff=256, pos_dims=32, hidden=256,
@@ -64,44 +55,32 @@ def _sinusoid(x, dims):
     return torch.cat([torch.sin(a), torch.cos(a)], -1)
 
 
-def proximity_table(dist_drugs, loci, distances, length=10.0):
-    """(n_drugs, genome_len) is far too big; this is the per-locus fallback used
-    when a token has no site index: one value per (drug, locus)."""
-    out = np.full((len(dist_drugs), len(loci)), DIST_MISSING, np.float32)
-    for i, d in enumerate(dist_drugs):
-        for j, L in enumerate(loci):
-            key = f"{d}|{L.gene}"
-            if key in distances:
-                out[i, j] = 0.0
-    return out
-
-
 class GenomeFusionNet(nn.Module):
-    def __init__(self, locus_features, drugs, c_tok, n_dist=0, site_table=None,
+    def __init__(self, locus_features, drugs, c_tok, regulated_lid,
                  d_model=128, nhead=4, dropout=0.1, enc_layers=2, enc_dim_ff=256,
                  fusion_layers=2, fusion_dim_ff=256, pos_dims=32, hidden=256,
-                 residual_scale=0.1, residual_dropout=0.3, out_bias=None,
-                 regulated_lid=None):
+                 residual_scale=0.1, residual_dropout=0.3):
         super().__init__()
         if d_model % nhead or pos_dims % 2:
             raise ValueError("d_model must divide by nhead and pos_dims must be even")
         self.drugs = list(drugs)
         self.n_loci, self.n_feat = locus_features.shape
-        self.c_tok, self.n_dist = int(c_tok), int(n_dist)
-        self.c_in = self.c_tok + self.n_dist
+        self.c_tok = self.c_in = int(c_tok)
         self.d_model, self.pos_dims = d_model, pos_dims
-        self.config = dict(drugs=self.drugs, c_tok=self.c_tok, n_dist=self.n_dist,
+        # n_dist / out_bias are fixed (no per-drug site-distance channels, no
+        # output-bias init) but stay in the config, which existing checkpoints carry
+        self.config = dict(drugs=self.drugs, c_tok=self.c_tok, n_dist=0,
                            n_loci=self.n_loci, n_feat=self.n_feat, d_model=d_model,
                            nhead=nhead, dropout=dropout, enc_layers=enc_layers,
                            enc_dim_ff=enc_dim_ff, fusion_layers=fusion_layers,
                            fusion_dim_ff=fusion_dim_ff, pos_dims=pos_dims, hidden=hidden,
                            residual_scale=residual_scale, residual_dropout=residual_dropout,
-                           out_bias=out_bias)
+                           out_bias=None)
 
         self.register_buffer("locus_feat", torch.as_tensor(locus_features, dtype=torch.float32))
-        if site_table is None:
-            site_table = np.zeros((max(self.n_dist, 1), 1), np.float32) + DIST_MISSING
-        self.register_buffer("site_table", torch.as_tensor(np.asarray(site_table, np.float32)))
+        # unused placeholder of the site-distance table (-1 = missing), kept so the
+        # state_dict matches existing checkpoints key for key
+        self.register_buffer("site_table", torch.full((1, 1), -1.0))
 
         # locus identity, predicted from features (+ a small learned residual)
         self.feat_proj = nn.Sequential(nn.Linear(self.n_feat, d_model), nn.GELU(),
@@ -120,8 +99,6 @@ class GenomeFusionNet(nn.Module):
         # rather than being one of 3,027 interchangeable intergenic segments.
         # Gated by its own scalar, initialised at 0, so the model starts
         # exactly where it would without the edge and has to earn the term.
-        if regulated_lid is None:
-            regulated_lid = np.full(self.n_loci, -1, np.int64)
         regulated_lid = np.asarray(regulated_lid, np.int64)
         if regulated_lid.shape != (self.n_loci,):
             raise ValueError(f"regulated_lid must be ({self.n_loci},), got {regulated_lid.shape}")
@@ -153,9 +130,6 @@ class GenomeFusionNet(nn.Module):
         self.norm = nn.LayerNorm(d_model)
         self.fc1 = nn.Linear(d_model, hidden)
         self.fc_out = nn.Linear(hidden, 1)
-        if out_bias is not None:
-            with torch.no_grad():
-                self.fc_out.bias.fill_(float(out_bias))
 
     # ---- locus identity ----------------------------------------------------
     def locus_vectors(self, lid):
@@ -193,14 +167,6 @@ class GenomeFusionNet(nn.Module):
             return self.encoder(x)[:, 0]
 
         x = b["tok_feat"].to(torch.float32)
-        if self.n_dist:
-            idx = b["tok_site"]
-            ok = idx >= 0
-            tab = self.site_table                       # (n_dist, n_sites)
-            safe = idx.clamp(0, tab.shape[1] - 1)
-            dist = tab[:, safe].t()                     # (N, n_dist)
-            dist = torch.where(ok.unsqueeze(-1), dist, torch.full_like(dist, DIST_MISSING))
-            x = torch.cat([x, dist], -1)
         tok = self.tok_proj(x) + self.pos_proj(_sinusoid(b["tok_coord"], self.pos_dims))
         tok = tok + lvec[b["tok_pair"]]
 
@@ -248,7 +214,7 @@ class GenomeFusionNet(nn.Module):
         return self.encoder(x, src_key_padding_mask=pad)[:, 0]
 
     # ---- stage 2 + readout --------------------------------------------------
-    def forward(self, b, return_attn=False):
+    def forward(self, b):
         B, Lmax, dev = b["B"], b["Lmax"], self.drug_queries.device
         d = self.d_model
         pair_vec = self.encode_pairs(b)
@@ -264,7 +230,5 @@ class GenomeFusionNet(nn.Module):
         fused = self.fusion(fused, src_key_padding_mask=pad)
 
         q = self.drug_queries.unsqueeze(0).expand(B, -1, -1)
-        pooled, attn = self.pool_attn(q, fused, fused, key_padding_mask=pad,
-                                      need_weights=return_attn)
-        logits = self.fc_out(F.relu(self.fc1(self.norm(pooled)))).squeeze(-1)
-        return (logits, attn) if return_attn else logits
+        pooled, _ = self.pool_attn(q, fused, fused, key_padding_mask=pad, need_weights=False)
+        return self.fc_out(F.relu(self.fc1(self.norm(pooled)))).squeeze(-1)

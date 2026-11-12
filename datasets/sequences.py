@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from Bio import SeqIO
 
-from bigtb_ref import tb
+import bigtb as tb
 from .cds import REFERENCE_IDS
 
 # Vectorized equivalent of tb.get_one_hot: same BASE_TO_COLUMN mapping
@@ -24,62 +24,26 @@ from .cds import REFERENCE_IDS
 # 256-entry lookup table instead. Semantics are byte-for-byte the same.
 BASE_TO_COLUMN = tb.BASE_TO_COLUMN
 NT_CHANNELS = list(BASE_TO_COLUMN.keys())          # ['A','C','T','G','-']
-# Opt-in (load_dataset(unknown_symbols=True), locusfusion_v2 --lf-unknown-symbols):
-# an ambiguous base (N, or anything outside A/C/T/G/-) gets a 6th channel instead
-# of the all-zero column, which under delta encoding is what a column MATCHING the
-# reference looks like. Off by default, so every existing input is unchanged.
-UNKNOWN_CHANNEL = "N"
-NT_CHANNELS_WITH_UNKNOWN = NT_CHANNELS + [UNKNOWN_CHANNEL]
 _BASE_LUT = np.full(256, -1, dtype=np.int64)
 for _b, _col in BASE_TO_COLUMN.items():
     _BASE_LUT[ord(_b)] = _col
 
 
-def one_hot_nt(seq: str, with_unknown: bool = False) -> np.ndarray:
-    """(L, 5) one-hot, matching tb.get_one_hot exactly but vectorized.
-
-    An ambiguous base (N, or anything outside A/C/T/G/-) is the all-zero column,
-    as tb.get_one_hot has it. Under delta encoding that is also what a column
-    MATCHING the reference looks like, so an uncalled base makes no variant token
-    -- a limitation of this alphabet, stated in models/locusfusion_v2.py.
-    """
+def one_hot_nt(seq: str) -> np.ndarray:
+    """(L, 5) one-hot, matching tb.get_one_hot exactly but vectorized."""
     codes = np.frombuffer(seq.encode("ascii", "replace"), dtype=np.uint8)
     cols = _BASE_LUT[codes]
-    width = len(BASE_TO_COLUMN) + (1 if with_unknown else 0)
-    oh = np.zeros((len(codes), width), dtype=np.float32)
+    oh = np.zeros((len(codes), len(BASE_TO_COLUMN)), dtype=np.float32)
     valid = cols >= 0
     oh[np.nonzero(valid)[0], cols[valid]] = 1.0
-    if with_unknown:                      # see NT_CHANNELS_WITH_UNKNOWN
-        oh[np.nonzero(~valid)[0], len(BASE_TO_COLUMN)] = 1.0
     return oh
 
-
-# --- reference-difference ("delta") encoding --------------------------------
-# M. tuberculosis is effectively clonal: two isolates differ at a handful of
-# positions in a 2.6 kb gene. A plain one-hot therefore spends ~99.9% of its
-# columns restating sequence that is identical in every isolate, and the
-# measured consequence is severe — in the full_run_v2 setfusion cell the
-# per-isolate part of an encoded token is 0.14% of its magnitude (spread 0.00090
-# against a norm of 0.6654), so the fusion transformer sees essentially the same
-# vector for every sample and its attention collapses to uniform.
-#
-# Delta encoding keeps the one-hot alphabet and shape but ZEROES every column
-# where the isolate matches the H37Rv reference, so what reaches the CNN is the
-# variants and nothing else. No information that distinguishes isolates is lost:
-# the columns removed are constant across the cohort and therefore carry no
-# discriminative signal. The base an isolate actually has at a differing
-# position is still one-hot encoded, so "which substitution" survives.
-#
-# The reference is the real MT_H37Rv record shipped in each alignment (verified
-# present in both the genotype and regulatory dirs), NOT a consensus over the
-# cohort — a consensus would be fitted on test isolates too.
 
 @functools.lru_cache(maxsize=512)
 def reference_row(seq_dir, locus):
     """The aligned H37Rv row for a locus, or None if the FASTA has no reference.
 
-    Same alignment column space as every other record in the file, so a
-    position-by-position comparison is well defined.
+    Same alignment column space as every other record in the file.
     """
     matches = sorted(Path(seq_dir).glob(f"{locus}*.fasta"))
     if not matches:
@@ -88,49 +52,6 @@ def reference_row(seq_dir, locus):
         if rec.id in REFERENCE_IDS or "H37Rv" in rec.id:
             return str(rec.seq).upper()
     return None
-
-
-def _match_mask(seq, ref):
-    """Boolean mask over the overlap: True where `seq` matches `ref`."""
-    n = min(len(seq), len(ref))
-    if n == 0:
-        return np.zeros(0, dtype=bool), 0
-    a = np.frombuffer(seq[:n].upper().encode("ascii", "replace"), dtype=np.uint8)
-    b = np.frombuffer(ref[:n].encode("ascii", "replace"), dtype=np.uint8)
-    return a == b, n
-
-
-def delta_one_hot_nt(seq, ref, with_unknown: bool = False):
-    """(L, 5) one-hot with reference-matching columns zeroed.
-
-    Positions past the end of the reference are left encoded — they cannot be
-    compared, and dropping them would silently discard real sequence.
-    """
-    # An ambiguous base never equals a reference base, so with_unknown keeps its
-    # column through the zeroing below and the failed call stays visible.
-    oh = one_hot_nt(seq, with_unknown=with_unknown)
-    if not ref:
-        return oh
-    same, n = _match_mask(seq, ref)
-    if n:
-        oh[:n][same] = 0.0
-    return oh
-
-
-def delta_zero_columns(mat, seq, ref):
-    """Zero the columns of a (C, K) feature matrix where `seq` matches `ref`.
-
-    The residue-level counterpart of ``delta_one_hot_nt``, shared by the protein
-    (20-channel one-hot) and biophysical (3-channel property) featurizers, both
-    of which are indexed by amino-acid position.
-    """
-    if not ref:
-        return mat
-    same, n = _match_mask(seq, ref)
-    n = min(n, mat.shape[1])
-    if n:
-        mat[:, :n][:, same[:n]] = 0.0
-    return mat
 
 
 def load_sequence_df(seq_dir, loci):

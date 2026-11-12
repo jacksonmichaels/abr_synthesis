@@ -2,11 +2,11 @@
 C-alpha coordinates, heavy atoms and PAE on the H37Rv codon grid
 ``locusfusion_v2`` tokenizes on.
 
-    python scripts/fetch_af_structures.py                 # all coding loci on disk
-    python scripts/fetch_af_structures.py --loci katG pncA
-    python scripts/fetch_af_structures.py --force         # re-download
+    python structures/fetch_af_structures.py              # the 19 curated loci
+    python structures/fetch_af_structures.py --loci katG pncA
+    python structures/fetch_af_structures.py --force         # re-download
 
-Writes ``bigtb_ref.REAL_STRUCTURE_DIR/{locus}.npz`` plus ``manifest.json``, and
+Writes ``paths.REAL_STRUCTURE_DIR/{locus}.npz`` plus ``manifest.json``, and
 keeps the raw model files under ``raw/`` so every number can be re-derived.
 
 The grid. A ``locusfusion_v2`` token's ``codon`` is k = (reference bases from
@@ -37,9 +37,8 @@ import requests
 from Bio import Align, SeqIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bigtb_ref import REAL_GENOTYPE_DIR, REAL_STRUCTURE_DIR  # noqa: E402
-from datasets.cds import GENBANK  # noqa: E402
-from datasets.loader import loci_on_disk  # noqa: E402
+from datasets.loader import LOCI_19  # noqa: E402
+from paths import GENBANK, REAL_STRUCTURE_DIR  # noqa: E402
 
 UNIPROT = "https://rest.uniprot.org/uniprotkb/search"
 AFDB = "https://alphafold.ebi.ac.uk/api/prediction/{acc}"
@@ -244,7 +243,7 @@ def build_locus(locus, cds, raw_dir, out_dir, force=False):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--loci", nargs="*", default=None,
-                    help="default: every locus with an aligned FASTA in REAL_GENOTYPE_DIR")
+                    help="default: the 19 curated loci (rRNA loci are skipped)")
     ap.add_argument("--out", default=REAL_STRUCTURE_DIR)
     ap.add_argument("--force", action="store_true", help="re-download model files")
     args = ap.parse_args()
@@ -252,7 +251,7 @@ def main():
     out_dir = Path(args.out)
     raw_dir = out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    loci = args.loci or loci_on_disk(REAL_GENOTYPE_DIR)
+    loci = args.loci or list(LOCI_19)
     cds = genbank_cds()
 
     rows = []

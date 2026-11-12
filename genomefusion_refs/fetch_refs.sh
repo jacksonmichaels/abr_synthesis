@@ -3,7 +3,7 @@
 # (compute nodes may lack internet). Small files; safe to re-run.
 set -euo pipefail
 cd "$(dirname "$0")"
-PY=/home/jacksonmicha_umass_edu/.conda/envs/abr_env/bin/python
+PY=python   # abr_env active
 
 mkdir -p rlc mycobrowser essentiality
 RAW=https://raw.githubusercontent.com/farhat-lab/mtb-illumina-wgs-evaluation/main

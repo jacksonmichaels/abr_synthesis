@@ -48,15 +48,9 @@ class EarlyStopper:
 
     ``min_epochs`` is a warmup: for the first ``min_epochs`` epochs the patience
     counter is held at zero, so training cannot stop no matter how flat the
-    monitored metric looks. Needed for architectures that start from a degenerate
-    initialisation and spend a while escaping it before they learn anything — the
-    full_run SetFusionNet cells are the case that motivated it. Their train loss
-    sat at 0.2405 for ~12 epochs (near-collinear fused tokens), the val AUC best
-    landed inside that plateau, and patience=15 then fired at epoch ~25 and
-    restored weights from BEFORE the network broke out of the plateau at epoch
-    13. Best-weight tracking still runs during warmup, so warming up can never
-    return a worse model than not warming up — it only buys more epochs.
-    Default 0 = the previous behaviour exactly."""
+    monitored metric looks. Best-weight tracking still runs during warmup, so
+    warming up can never return a worse model than not warming up — it only
+    buys more epochs. Default 0 = off."""
 
     def __init__(self, patience=5, min_delta=1e-4, mode="min", min_epochs=0):
         self.patience = patience
@@ -97,55 +91,3 @@ class EarlyStopper:
         """Restore the weights from the best epoch (no-op if never improved)."""
         if self.best_state is not None:
             model.load_state_dict(self.best_state)
-
-
-# ---------------------------------------------------------------------------
-# Learn-to-Branch support (models.BranchedHead).
-#
-# The branched head needs two things the plain DenseHead does not, and both
-# have to happen in the training loop rather than inside forward():
-#
-#   * the Gumbel-softmax temperature must be annealed ONCE PER EPOCH, not per
-#     batch -- forward() has no idea which epoch it is in;
-#   * the generic head is trained by an AUXILIARY term added to the objective
-#     (Eq. 4 of Luo et al.: alpha*RE + beta*CE_personal + lambda*CE_generic; we
-#     drop the reconstruction term, see below).
-#
-# We do not port the LSTM autoencoder or its reconstruction loss. It denoises
-# irregularly-sampled sensor data; our inputs are aligned one-hot genotypes,
-# where `token_signal` measured that ~99.86% of an encoded block is constant
-# across isolates -- a reconstruction objective would spend itself rebuilding
-# that constant. The reference-difference encoding (`--delta`) is the
-# domain-appropriate version of the same idea and already exists.
-# ---------------------------------------------------------------------------
-
-def _branched_heads(model):
-    """Every BranchedHead inside `model` (usually one, or none)."""
-    from models import BranchedHead
-    return [m for m in model.modules() if isinstance(m, BranchedHead)]
-
-
-def anneal_branch_temperature(model, epoch, total_epochs):
-    """Step the Gumbel-softmax temperature. No-op without a branched head."""
-    for h in _branched_heads(model):
-        h.anneal(epoch, total_epochs)
-
-
-def branch_aux_loss(model, alpha):
-    """`generic_weight * masked_weighted_bce(generic_logits, alpha)`, or 0.
-
-    Reads the logits cached by ``BranchedHead.forward`` on the *training* path,
-    so this must be called after the forward pass of the same step and only
-    while the model is in train mode. Returns a plain 0.0 float when there is
-    no branched head, so callers can add it unconditionally."""
-    total = 0.0
-    for h in _branched_heads(model):
-        if h.aux_logits is not None and h.generic_weight:
-            total = total + h.generic_weight * masked_weighted_bce(h.aux_logits, alpha)
-    return total
-
-
-def branch_assignments(model):
-    """Discovered drug clusters, {group: [drug, ...]}, or None."""
-    heads = _branched_heads(model)
-    return heads[0].assignments() if heads else None

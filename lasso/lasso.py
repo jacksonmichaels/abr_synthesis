@@ -1,128 +1,51 @@
-#!/usr/bin/env python3
-"""LINEAGE-SPLIT COPY of results/experiments/lasso_wholeseq_20260901/lasso_wholeseq.py
-(2026-10-15): identical except --split-dir. Original docstring follows.
+"""
+LASSO baseline: L1-logistic regression on the whole aligned sequence, one-hot.
 
+Every alignment column contributes one 0/1 indicator per base observed there
+(A, C, T, G, -; anything else, N included, is all-zero, as in the networks'
+one-hot). Columns constant across the fitted cohort are dropped: a constant
+column is collinear with the unpenalised intercept, so its L1 optimum is 0.
+Columns are not standardised (standardising would inflate rare variants).
 
-L1-logistic ("lasso") on the WHOLE aligned sequence — no variant calling in
-between.
+Protocol matches the networks (training/multimodal.run_modal_cv):
+  * missing phenotypes dropped before splitting,
+  * the lineage split from --split-dir (or a stratified 80/20 split, seed 42,
+    then StratifiedKFold(5, seed 42) on train),
+  * class_weight="balanced" (the linear analogue of the networks' alpha weights),
+  * the same metrics (AUC; AUC-PR with resistant as positive; tb.get_threshold_val),
+  * TEST scored once with the best CV fold's model.
+The whole C grid is kept in the JSON (`c_path`); cv_auc_mean is the best C's.
 
-Lives with this run and dies with its write-up (see the working conventions in
-the project README) -- it is not general project tooling.
+Locus sets (--locus-set):
+  perdrug                          the drug's Big-TB loci
+  all                              the 19 curated loci (datasets.loader.LOCI_19)
+  lab64 | who_t12_sai | who_t12      datasets.loader.LOCUS_SETS (who_t12 needs
+                                   4 genes not in Sai's 64; use who_t12_sai)
 
-## Why it exists
-
-`results/experiments/variant_aggregators_20260825/sparse_baseline.py` already
-runs an L1-logistic, but on a *variant design matrix*: `variant_design_matrix`
-tokenises each isolate into at most 512 (locus, position, base) differences from
-H37Rv and fits on those. That is the DISTILLED linear baseline, and it reaches
-macro CV 0.878 over the 11 drugs.
-
-This script asks the undistilled version of the same question. The CNNs are fed
-the entire alignment — every column, variable or not — and are left to find the
-signal themselves. So is this. If a lasso on the raw one-hot alignment reaches
-the 0.9246 of `full_run_v2`'s best cell, the convolutional stack is not earning
-its parameters.
-
-## The two encodings, and why both are run
-
-They are not the same model even though they carry the same information.
-
-`--encoding onehot` — every alignment column contributes one indicator per base
-observed there (A, C, T, G, -, per ``tb.BASE_TO_COLUMN``; anything else, N
-included, is all-zero exactly as ``one_hot_nt`` leaves it). Columns that are
-CONSTANT across the cohort are dropped. That drop is lossless, not a
-convenience: a constant column is collinear with the intercept, sklearn leaves
-the intercept unpenalised, so the L1 optimum of a constant column's coefficient
-is exactly zero. It is also lossless *per fold* — a column constant within the
-training split is likewise collinear with the intercept over the rows being fit
-— so building the column set on the full cohort neither sees a label nor
-changes a single fitted coefficient. Nothing here needs a `--fit-vocab-on-train`
-arm the way the variant baseline did.
-
-`--encoding delta` — the repo's reference coding (``datasets/sequences.py``):
-the indicator for the H37Rv base is dropped at each position, so a row is
-nonzero only where the isolate differs from the reference. Statistically this is
-ordinary dummy coding with H37Rv as the reference level, and it spans the same
-column space as `onehot` — but L1 is not invariant to reparametrisation, so the
-two arms genuinely can, and are expected to, differ. `delta` penalises "differs
-from H37Rv"; `onehot` penalises "has base b", including the wild-type base.
-
-Neither arm standardises. The columns are 0/1 indicators already on a common
-scale, and standardising would divide each by its own sqrt(p(1-p)) — inflating
-singleton variants by two orders of magnitude relative to common ones, which is
-the opposite of what a rare-variant penalty should do.
-
-## What makes it a fair comparison
-
-Identical protocol to `training/multimodal.run_modal_cv`, step for step:
-
-  * missing phenotypes (`y == -1`) dropped BEFORE splitting,
-  * held-out test = `train_test_split(test_size=0.2, random_state=42,
-    stratify=y)`,
-  * `StratifiedKFold(5, shuffle=True, random_state=42)` on the training split,
-  * `class_weight="balanced"`, the linear analogue of the inverse-frequency
-    alpha the networks train with,
-  * the same metrics through the same helpers -- AUC, AUC-PR with RESISTANT as
-    the positive class, and `tb.get_threshold_val` for sens/spec,
-  * TEST scored once with the model from the best CV fold, as `run_modal_cv`
-    does.
-
-The C grid is reported IN FULL rather than tuned silently, as in the variant
-baseline: `cv_auc_mean` is the grid's best, and every C's per-fold score and
-support size (number of nonzero coefficients) is kept in the JSON, so both the
-selection and the sparsity path are inspectable.
-
-## The sweep
-
-Two encodings x two locus universes x 11 drugs = 44 cells, DNA only.
-
-`--locus-set perdrug` is BIG-TB's SD-CNN per-drug map (2-3 loci) — the
-locus-matched arm. `--locus-set all` is every curated locus on disk (19), which
-is what the joint MD-CNN-style runs see. That axis is the one README finding 2
-says actually moves the number, so it is the one the sweep spends its jobs on.
-
-`--loci G [G ...]` overrides both with an explicit list, which is what the
-locus-ablation follow-up needs: the two canned universes differ by 16 loci at
-once, so neither can say *which* of them carries the lift. The tag becomes the
-joined locus list, so an ablation cell names itself in its own filename.
-
-Output matches `run_experiment.py`'s schema (`{DRUG}__{tag}.json` + a
-`summary.csv` with the same columns), so the existing notebook builders read
-each arm's folder like any other run.
-
-Usage::
-
-    python results/experiments/lasso_wholeseq_20260901/lasso_wholeseq.py \
-        --drugs all --encoding onehot --locus-set perdrug \
-        --out results/experiments/lasso_wholeseq_20260901/onehot_perdrug
+    python -m lasso.lasso --drugs PYRAZINAMIDE --locus-set all \
+        --split-dir results/splits/heldout_2 --out results/lasso/onehot_all_L2
 """
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(PROJECT_DIR))
+import numpy as np
+import pandas as pd
+import scipy.sparse as sp
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-import scipy.sparse as sp  # noqa: E402
-from sklearn.linear_model import LogisticRegression  # noqa: E402
-from sklearn.metrics import average_precision_score, roc_auc_score  # noqa: E402
-from sklearn.model_selection import StratifiedKFold, train_test_split  # noqa: E402
-
-from bigtb_ref import REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV, tb  # noqa: E402
-from datasets.loader import drug_loci, loci_on_disk  # noqa: E402
-from datasets.sequences import (BASE_TO_COLUMN, load_phenotype,  # noqa: E402
-                                load_sequence_df, numeric_labels,
-                                reference_row)
+import bigtb as tb
+from datasets.loader import LOCI_19, LOCUS_SETS, drug_loci
+from datasets.sequences import (BASE_TO_COLUMN, load_phenotype, load_sequence_df,
+                                numeric_labels)
+from paths import REAL_GENOTYPE_DIR, REAL_PHENOTYPE_CSV
 
 ALL_DRUGS = list(tb.DRUG_TO_LOCI)
+LOCUS_SET_CHOICES = ("perdrug", "all") + tuple(s for s in LOCUS_SETS if s != "bigtb")
 
-# Wider than the variant baseline's grid at the sparse end: this design matrix
-# is 10-100x wider than that one, so the useful penalty is stronger and the path
-# has to reach it. Reported in full either way.
 C_GRID = (0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0)
 
 NT_CODES = list(BASE_TO_COLUMN)                 # ['A','C','T','G','-']
@@ -132,8 +55,7 @@ for _b, _col in BASE_TO_COLUMN.items():
 
 
 def _metrics(y_true, pred):
-    """Byte-identical to training.multimodal._metrics, so the numbers land on
-    the same scale as every other cell in results/experiments."""
+    """training.multimodal._metrics on already-filtered labels."""
     m = {"n": int(len(y_true)), "n_R": int((y_true == 0).sum()),
          "n_S": int((y_true == 1).sum())}
     if m["n_R"] == 0 or m["n_S"] == 0:
@@ -167,7 +89,7 @@ def _code_matrix(seqs, length):
     return out
 
 
-def _locus_block(seq_dir, locus, seqs, encoding, min_count):
+def _locus_block(locus, seqs):
     """One locus -> (csr (N, k) of 0/1 indicators, column names).
 
     Column name is ``{locus}:{alignment_column}:{base}``, the alignment column
@@ -179,16 +101,6 @@ def _locus_block(seq_dir, locus, seqs, encoding, min_count):
     codes = _code_matrix(seqs, length)
     n = codes.shape[0]
 
-    ref = reference_row(seq_dir, locus) if encoding == "delta" else None
-    if encoding == "delta" and not ref:
-        print(f"  [build] {locus}: no H37Rv row — that locus stays plain "
-              f"one-hot", flush=True)
-    ref_codes = np.full(length, -1, dtype=np.int8)
-    if ref:
-        m = min(len(ref), length)
-        ref_codes[:m] = _BASE_LUT[np.frombuffer(ref[:m].encode("ascii", "replace"),
-                                                dtype=np.uint8)]
-
     # keep/drop decision, one pass over the 5 bases
     colmap = np.full((length, len(NT_CODES)), -1, dtype=np.int32)
     names, k = [], 0
@@ -196,12 +108,7 @@ def _locus_block(seq_dir, locus, seqs, encoding, min_count):
         cnt = (codes == c).sum(axis=0)
         # constant columns carry no signal: all-zero is empty, all-one is
         # collinear with the unpenalised intercept and its L1 optimum is 0.
-        keep = (cnt >= max(min_count, 1)) & (cnt < n)
-        if encoding == "delta":
-            # reference coding: drop the H37Rv base's indicator. Positions past
-            # the end of the reference keep every base, matching
-            # delta_one_hot_nt, which cannot compare there.
-            keep &= ~((ref_codes == c) & (ref_codes >= 0))
+        keep = (cnt >= 1) & (cnt < n)
         for j in np.nonzero(keep)[0]:
             colmap[j, c] = k
             names.append(f"{locus}:{int(j)}:{NT_CODES[c]}")
@@ -220,12 +127,12 @@ def _locus_block(seq_dir, locus, seqs, encoding, min_count):
     return X, names
 
 
-def build_design(genotype_dir, loci, isolates, seq_df, encoding, min_count):
+def build_design(loci, isolates, seq_df):
     """The whole-sequence design matrix: every locus's alignment, side by side."""
     blocks, names = [], []
     for locus in loci:
         seqs = seq_df[locus].fillna("").tolist()
-        Xb, nb = _locus_block(genotype_dir, locus, seqs, encoding, min_count)
+        Xb, nb = _locus_block(locus, seqs)
         print(f"  [build] {locus}: {Xb.shape[1]} columns, "
               f"{Xb.nnz / max(len(isolates), 1):.0f} nnz per isolate", flush=True)
         blocks.append(Xb)
@@ -234,12 +141,12 @@ def build_design(genotype_dir, loci, isolates, seq_df, encoding, min_count):
     return X, names
 
 
-def _fit(C, X_tr, y_tr, solver, max_iter):
+def _fit(C, X_tr, y_tr, max_iter):
     """P(y == 1), i.e. P(susceptible) -- the same quantity the networks' sigmoid
     outputs, so AUC and the threshold search agree in sign."""
     # l1_ratio=1.0 IS penalty="l1"; the keyword form is deprecated as of
     # sklearn 1.8 and removed in 1.10, and this env is on 1.9.
-    clf = LogisticRegression(solver=solver, l1_ratio=1.0, C=C,
+    clf = LogisticRegression(solver="liblinear", l1_ratio=1.0, C=C,
                              class_weight="balanced", max_iter=max_iter,
                              tol=1e-4)
     clf.fit(X_tr, y_tr)
@@ -249,9 +156,9 @@ def _fit(C, X_tr, y_tr, solver, max_iter):
 def run_drug(drug, args):
     t0 = time.time()
     genotype_dir = args.genotype_dir
-    loci = (args.loci if args.loci
-            else loci_on_disk(genotype_dir) if args.locus_set == "all"
-            else drug_loci(drug))
+    loci = (list(LOCI_19) if args.locus_set == "all"
+            else drug_loci(drug) if args.locus_set == "perdrug"
+            else drug_loci(drug, locus_set=args.locus_set))
 
     # isolate axis, derived exactly as datasets/loader.py derives it: the FASTA
     # records joined across loci, intersected with the phenotype index.
@@ -274,8 +181,7 @@ def run_drug(drug, args):
     isolates = [isolates[i] for i in keep]
     seq_df = seq_df.reindex(isolates)
 
-    X, names = build_design(genotype_dir, found, isolates, seq_df,
-                            args.encoding, args.min_count)
+    X, names = build_design(found, isolates, seq_df)
     del seq_df
     n = X.shape[0]
     print(f"[{drug}] {n} isolates, {X.shape[1]} columns, "
@@ -287,7 +193,7 @@ def run_drug(drug, args):
                                                random_state=42, stratify=y)
         skf = StratifiedKFold(n_splits=args.n_splits, shuffle=True, random_state=42)
         folds = list(skf.split(train_idx, y[train_idx]))
-    else:   # lineage-grouped split from scripts/build_lineage_splits.py
+    else:   # held-out-lineage split from splits/build_holdout_splits.py
         sp = (pd.read_csv(Path(args.split_dir) / f"{drug}.csv", dtype={"New_ID": str})
               .set_index("New_ID").loc[[str(i) for i in isolates]])
         test_idx = np.nonzero((sp.role == "test").values)[0]
@@ -304,7 +210,7 @@ def run_drug(drug, args):
         for tr, va in folds:
             i_tr, i_va = train_idx[tr], train_idx[va]
             tc = time.time()
-            clf = _fit(C, X[i_tr], y[i_tr], args.solver, args.max_iter)
+            clf = _fit(C, X[i_tr], y[i_tr], args.max_iter)
             pred = clf.predict_proba(X[i_va])[:, 1]
             m = _metrics(y[i_va], pred)
             fold_auc.append(m["auc"])
@@ -342,9 +248,9 @@ def run_drug(drug, args):
 
     return {
         "drug": drug, "arch": "lasso_wholeseq", "modalities": ["dna"],
-        "tag": f"dna-{args.encoding}-{args.locus_set}",
-        "encoding": args.encoding, "locus_set": args.locus_set,
-        "solver": args.solver, "min_count": args.min_count,
+        "tag": f"dna-onehot-{args.locus_set}",
+        "encoding": "onehot", "locus_set": args.locus_set,
+        "solver": "liblinear", "min_count": 1, "genotype_dir": str(genotype_dir),
         "genes": found, "n_valid": int(n),
         "n_resistant": int((y == 0).sum()), "n_susceptible": int((y == 1).sum()),
         "n_features": int(X.shape[1]),
@@ -393,18 +299,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--drugs", nargs="+", default=["all"])
-    ap.add_argument("--encoding", choices=("onehot", "delta"), default="onehot")
-    ap.add_argument("--locus-set", choices=("perdrug", "all"), default="perdrug")
-    ap.add_argument("--loci", nargs="+", default=None,
-                    help="explicit locus list, overriding --locus-set; the tag "
-                         "becomes the joined list so the cell is named by what "
-                         "it actually loaded")
-    ap.add_argument("--solver", choices=("liblinear", "saga"), default="liblinear")
+    ap.add_argument("--locus-set", choices=LOCUS_SET_CHOICES, default="perdrug")
     ap.add_argument("--max-iter", type=int, default=2000)
-    ap.add_argument("--min-count", type=int, default=1,
-                    help="drop indicator columns supported by fewer than this "
-                         "many isolates; 1 = keep every non-constant column, "
-                         "which is the honest whole-sequence input")
     ap.add_argument("--c-grid", type=float, nargs="+", default=list(C_GRID))
     ap.add_argument("--n-splits", type=int, default=5)
     ap.add_argument("--top-k", type=int, default=40)
@@ -421,20 +317,20 @@ def main():
     unknown = [d for d in drugs if d not in ALL_DRUGS]
     if unknown:
         ap.error(f"unknown drug(s) {unknown}; choose from {ALL_DRUGS} or 'all'")
-
-    if args.loci:
-        on_disk = set(loci_on_disk(args.genotype_dir))
-        absent = [g for g in args.loci if g not in on_disk]
-        if absent:
-            ap.error(f"locus/loci {absent} not in {args.genotype_dir}; "
-                     f"available: {sorted(on_disk)}")
-        # The tag carries the universe, exactly as `perdrug`/`all` do, so an
-        # ablation cell cannot be confused with a canned arm on disk.
-        args.locus_set = "+".join(sorted(args.loci))
+    if args.locus_set not in ("perdrug", "all"):
+        for drug in drugs:
+            absent = [g for g in drug_loci(drug, locus_set=args.locus_set)
+                      if not sorted(Path(args.genotype_dir).glob(f"{g}*.fasta"))]
+            if absent:
+                ap.error(f"{drug}/{args.locus_set}: no FASTA in {args.genotype_dir} "
+                         f"for {absent}")
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for drug in drugs:
+        if args.split_dir and not (Path(args.split_dir) / f"{drug}.csv").is_file():
+            print(f"[{drug}] skipped: no split file in {args.split_dir}", flush=True)
+            continue
         r = run_drug(drug, args)
         (out / f"{drug}__{r['tag']}.json").write_text(json.dumps(r, indent=2))
         print(f"[{drug}] CV {r['cv_auc_mean']:.4f} +/- {r['cv_auc_std']:.4f} "

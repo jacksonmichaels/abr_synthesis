@@ -1,18 +1,10 @@
 """
 Model persistence: weights + a config that fully rebuilds the model.
 
-Until this module existed nothing was ever checkpointed. ``EarlyStopper``
-snapshotted the best epoch into an in-memory dict, ``restore()`` loaded it back,
-and the process then exited — so every TEST metric in
-``results/experiments/full_run`` was produced by a model that no longer exists.
-240 SLURM jobs of compute left json, png and csv and nothing you could re-score,
-calibrate, inspect, or deploy.
-
 What gets written
 -----------------
-Weights go to ``bigtb_ref.MODEL_WEIGHTS_DIR`` (the lab's shared large-storage
-volume), NOT to ``results/`` — results/ is git-ignored workspace storage and a
-full grid of checkpoints is tens of GB::
+Weights go to ``paths.MODEL_WEIGHTS_DIR`` (or ``--weights-dir``), not to
+``results/`` — a full grid of checkpoints is tens of GB::
 
     {MODEL_WEIGHTS_DIR}/{run_name}/{stem}/
         config.json     schema v1 — everything needed to rebuild (below)
@@ -29,27 +21,20 @@ be walked between.
 ``config.json`` carries the four things a state_dict cannot:
 
 1. **model** — arch, per-block (name, modality, locus, channels, length), the
-   encoder assignment, the head shape (hidden / dropout / per_drug_hidden /
-   out_bias) and ``drug_names`` in label-column order, so ``logits[:, i]`` is
+   head shape and ``drug_names`` in label-column order, so ``logits[:, i]`` is
    attributable. A bare ``.pt`` is unusable without these: block ORDER alone
    decides what ``forward(xs)`` means.
-2. **data** — the directories, the resolved locus and regulatory-region lists in
-   load order, and the loader switches (per_modality_branch, all_regulatory,
-   extra_loci). This is what lets you rebuild the *inputs* the weights expect.
+2. **data** — the directories, locus set and the resolved locus list in load
+   order. This is what lets you rebuild the *inputs* the weights expect.
 3. **split** — the test isolate IDs verbatim, not just "seed 42", so a
    re-evaluation is immune to scikit-learn changing its shuffling.
 4. **env** — git commit, torch version, argv. What actually ran.
 
-Round-tripping is enforced by ``tests/test_checkpoint.py``: rebuild from config,
-load the weights, and assert the predictions match the original model bit for
-bit.
-
     from training.checkpoint import load_model
-    model, cfg = load_model("full_run_v2", "multidrug__dna+regulatory")
+    model, cfg = load_model("lineage_split/sd_dna__mdcnn", "ISONIAZID__dna")
     cfg["model"]["drug_names"]      # which column is which drug
 """
 import json
-import os
 import platform
 import socket
 import subprocess
@@ -58,21 +43,15 @@ from pathlib import Path
 
 import torch
 
-from bigtb_ref import MODEL_WEIGHTS_DIR
-from models import (EXPERIMENTAL_DEFAULTS, EXPERIMENTAL_MODELS,
-                    LOCUSFUSION_ARCHS, LOCUSFUSION_DEFAULTS, SETFUSION_DEFAULTS,
-                    CisFusionNet,
-                    LocusFusionNet, MDCNNNet, MultiDrugNet,
-                    MultiModalNet, SetFusionNet, make_experimental)
-from models.net import parse_block_key
+from models.stacked_cnn import MDCNNNet, parse_block_key
+from paths import MODEL_WEIGHTS_DIR
 
 SCHEMA_VERSION = 1
 SAVE_CHOICES = ("best", "all", "none")
 
 
 def weights_root(weights_dir=None):
-    return Path(weights_dir or os.environ.get("ABR_MODEL_WEIGHTS_DIR")
-                or MODEL_WEIGHTS_DIR)
+    return Path(weights_dir or MODEL_WEIGHTS_DIR)
 
 
 def run_weights_dir(run_name, stem, weights_dir=None):
@@ -122,110 +101,43 @@ def block_records(blocks):
     return out
 
 
-def model_config(*, arch, blocks, encoder_types, drug_names, out_bias, head,
-                 mdcnn_trunk_per_modality=False, branch_models=None,
-                 default_encoder="cnn", n_params=None, setfusion=None,
-                 transformer=None, locusfusion=None, experimental=None):
-    """The `model` section — sufficient on its own for build_model_from_config.
-
-    ``setfusion``, ``transformer`` and ``locusfusion`` record only the capacity
-    knobs that DIFFER from their defaults, so a config written before those knobs
-    existed (key absent) rebuilds to exactly the model it always did — which is
-    what keeps the full_run / full_run_v2 checkpoints loadable."""
+def model_config(*, blocks, encoder_types, drug_names, out_bias, head, n_params=None):
+    """The `model` section — sufficient on its own for build_model_from_config."""
     return {
-        "arch": arch,
-        "setfusion": dict(setfusion or {}),
-        "transformer": dict(transformer or {}),
-        "locusfusion": dict(locusfusion or {}),
-        "experimental": dict(experimental or {}),
+        "arch": "mdcnn",
         "drug_names": list(drug_names),          # logits[:, i] == drug_names[i]
         "n_drugs": len(drug_names),
         "branch_specs": [[int(c), int(l)] for c, l in (b.spec() for b in blocks)],
         "blocks": block_records(blocks),
         "encoder_types": list(encoder_types),
-        "branch_models": dict(branch_models or {}),
-        "default_encoder": default_encoder,
         "out_bias": out_bias,
         "hidden": head["hidden"],
         "dropout": head["dropout"],
         "per_drug_hidden": head["per_drug_hidden"],
-        "mdcnn_trunk_per_modality": bool(mdcnn_trunk_per_modality),
         "n_params": n_params,
     }
 
 
 def build_model_from_config(cfg):
-    """Rebuild an untrained model matching `cfg['model']` (or a bare model dict).
+    """Rebuild an untrained stacked CNN matching `cfg['model']` (or a bare model
+    dict). Mirrors the construction in training.multimodal / training.multidrug.
 
-    Mirrors the construction in training.multimodal._build_model /
-    training.multidrug.run_multidrug_cv. Keep the two in step: this is the
-    function that decides whether a saved checkpoint is loadable a year later."""
+    Configs written by the older multi-arch code load too, as long as they
+    describe the model this code builds."""
     m = cfg.get("model", cfg)
-    arch = m["arch"]
-    specs = [tuple(s) for s in m["branch_specs"]]
-    keys = [parse_block_key(b["name"]) for b in m["blocks"]]
-    modalities = [b["modality"] for b in m["blocks"]]
+    unsupported = {k: m.get(k) for k, ok in (
+        ("arch", m.get("arch") == "mdcnn"),
+        ("encoder_types", set(m.get("encoder_types") or ["cnn"]) == {"cnn"}),
+        ("out_bias", m.get("out_bias") is None),
+        ("dropout", not m.get("dropout")),
+        ("per_drug_hidden", not m.get("per_drug_hidden") or m.get("n_drugs", 1) < 2),
+        ("mdcnn_trunk_per_modality", not m.get("mdcnn_trunk_per_modality")),
+        ("transformer", not m.get("transformer"))) if not ok}
+    if unsupported:
+        raise ValueError(f"checkpoint config is not a model this code builds: {unsupported}")
     drugs = m["drug_names"]
-    joint = len(drugs) > 1
-    head = {"hidden": m["hidden"], "dropout": m["dropout"],
-            "per_drug_hidden": m["per_drug_hidden"]}
-    out_bias = m["out_bias"]
-
-    # .get, not [...]: configs written before these knobs existed carry no key
-    # and must still rebuild at the defaults.
-    transformer = m.get("transformer") or None
-    enc_kinds = sorted(set(m["encoder_types"]))
-
-    if arch == "mdcnn":
-        return MDCNNNet(specs, n_drugs=len(drugs),
-                        drug_names=drugs if joint else None, out_bias=out_bias,
-                        block_modalities=(modalities if m["mdcnn_trunk_per_modality"]
-                                          else None),
-                        encoder=(enc_kinds[0] if len(enc_kinds) == 1 else "cnn"),
-                        transformer=transformer, **head)
-    if arch == "setfusion":
-        # .get, not [...]: configs written before the capacity knobs existed have
-        # no 'setfusion' key at all and must still rebuild at the defaults
-        return SetFusionNet(keys, specs, n_drugs=len(drugs),
-                            drug_names=drugs if joint else None,
-                            out_bias=out_bias, hidden=m["hidden"],
-                            head_dropout=m["dropout"],
-                            per_drug_hidden=m["per_drug_hidden"],
-                            **{**SETFUSION_DEFAULTS, **(m.get("setfusion") or {})})
-    if arch in EXPERIMENTAL_MODELS:
-        return make_experimental(
-            arch, keys, specs, n_drugs=len(drugs),
-            drug_names=drugs if joint else None, out_bias=out_bias,
-            hidden=m["hidden"],
-            **{**EXPERIMENTAL_DEFAULTS, **(m.get("experimental") or {})})
-    if arch in LOCUSFUSION_ARCHS:
-        cls, defaults = LOCUSFUSION_ARCHS[arch]
-        extra = {}
-        if arch == "locusfusion_v2":
-            # its column -> genome -> codon maps are DATA, not capacity: they came
-            # off the blocks at load time (datasets.cds.block_frame) and
-            # block_records carried them here. A config written without them
-            # rebuilds a model that reads the wrong residue and double-counts the
-            # columns a record shares with its promoter, so they are passed
-            # explicitly rather than defaulted.
-            extra["block_frames"] = [dict(b.get("meta") or {}) for b in m["blocks"]]
-        return cls(keys, specs, n_drugs=len(drugs),
-                   drug_names=drugs if joint else None,
-                   out_bias=out_bias, hidden=m["hidden"],
-                   head_dropout=m["dropout"],
-                   per_drug_hidden=m["per_drug_hidden"],
-                   **extra, **{**defaults, **(m.get("locusfusion") or {})})
-    if arch == "cisfusion":
-        return CisFusionNet(keys, specs, n_drugs=len(drugs),
-                            drug_names=drugs if joint else None,
-                            out_bias=out_bias, branch_models=m["branch_models"],
-                            default_encoder=m["default_encoder"],
-                            transformer=transformer, **head)
-    if joint:
-        return MultiDrugNet(specs, drugs, m["encoder_types"], out_bias=out_bias,
-                            transformer=transformer, **head)
-    return MultiModalNet(specs, m["encoder_types"], n_drugs=1, out_bias=out_bias,
-                         transformer=transformer, **head)
+    return MDCNNNet([tuple(s) for s in m["branch_specs"]], n_drugs=len(drugs),
+                    drug_names=drugs if len(drugs) > 1 else None, hidden=m["hidden"])
 
 
 # ---------------------------------------------------------------------------

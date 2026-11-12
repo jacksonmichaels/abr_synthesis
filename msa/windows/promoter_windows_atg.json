@@ -1,0 +1,1369 @@
+{
+  "chrom": "NC_000962.3",
+  "pad": 30,
+  "windows": {
+    "fabG1": {
+      "gene": "fabG1",
+      "rv": "Rv1483",
+      "who_region_from": "inhA",
+      "start": 1673359,
+      "end": 1674231,
+      "sense": "pos",
+      "core_start": 1673389,
+      "core_end": 1674201,
+      "anchor": "start_codon",
+      "atg": 1674202,
+      "tss": 1673440,
+      "segments": [
+        [
+          1,
+          813
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 873
+    },
+    "inhA": {
+      "gene": "inhA",
+      "rv": "Rv1484",
+      "who_region_from": "inhA",
+      "start": 1673359,
+      "end": 1674231,
+      "sense": "pos",
+      "core_start": 1673389,
+      "core_end": 1674201,
+      "anchor": "start_codon",
+      "atg": 1674202,
+      "tss": 1673440,
+      "segments": [
+        [
+          1,
+          813
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 873
+    },
+    "katG": {
+      "gene": "katG",
+      "rv": "Rv1908c",
+      "who_region_from": "katG",
+      "start": 2156082,
+      "end": 2156673,
+      "sense": "neg",
+      "core_start": 2156112,
+      "core_end": 2156643,
+      "anchor": "start_codon",
+      "atg": 2156111,
+      "tss": 2156592,
+      "segments": [
+        [
+          1,
+          532
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 592
+    },
+    "ahpC": {
+      "gene": "ahpC",
+      "rv": "Rv2428",
+      "who_region_from": "ahpC",
+      "start": 2726070,
+      "end": 2726222,
+      "sense": "pos",
+      "core_start": 2726100,
+      "core_end": 2726192,
+      "anchor": "start_codon",
+      "atg": 2726193,
+      "tss": 2726151,
+      "segments": [
+        [
+          1,
+          93
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 153
+    },
+    "dnaA": {
+      "gene": "dnaA",
+      "rv": "Rv0001",
+      "who_region_from": "dnaA",
+      "start": 4411189,
+      "end": 4411532,
+      "sense": "pos",
+      "core_start": 4411219,
+      "core_end": 4411532,
+      "anchor": "start_codon",
+      "atg": 1,
+      "tss": 4411270,
+      "segments": [
+        [
+          1,
+          314
+        ]
+      ],
+      "pad": 30,
+      "clamped": true,
+      "length": 344
+    },
+    "Rv0010c": {
+      "gene": "Rv0010c",
+      "rv": "Rv0010c",
+      "who_region_from": "Rv0010c",
+      "start": 13529,
+      "end": 13744,
+      "sense": "neg",
+      "core_start": 13559,
+      "core_end": 13714,
+      "anchor": "start_codon",
+      "atg": 13558,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          156
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 216
+    },
+    "mshA": {
+      "gene": "mshA",
+      "rv": "Rv0486",
+      "who_region_from": "mshA",
+      "start": 574649,
+      "end": 575377,
+      "sense": "pos",
+      "core_start": 574679,
+      "core_end": 575347,
+      "anchor": "start_codon",
+      "atg": 575348,
+      "tss": 574730,
+      "segments": [
+        [
+          1,
+          669
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 729
+    },
+    "hadA": {
+      "gene": "hadA",
+      "rv": "Rv0635",
+      "who_region_from": "hadA",
+      "start": 731849,
+      "end": 731959,
+      "sense": "pos",
+      "core_start": 731879,
+      "core_end": 731929,
+      "anchor": "start_codon",
+      "atg": 731930,
+      "tss": 731930,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "Rv1129c": {
+      "gene": "Rv1129c",
+      "rv": "Rv1129c",
+      "who_region_from": "Rv1129c",
+      "start": 1254505,
+      "end": 1254615,
+      "sense": "neg",
+      "core_start": 1254535,
+      "core_end": 1254585,
+      "anchor": "start_codon",
+      "atg": 1254534,
+      "tss": 1254510,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "Rv1258c": {
+      "gene": "Rv1258c",
+      "rv": "Rv1258c",
+      "who_region_from": "Rv1258c",
+      "start": 1407311,
+      "end": 1407428,
+      "sense": "neg",
+      "core_start": 1407341,
+      "core_end": 1407398,
+      "anchor": "start_codon",
+      "atg": 1407340,
+      "tss": 1407347,
+      "segments": [
+        [
+          1,
+          58
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 118
+    },
+    "ndh": {
+      "gene": "ndh",
+      "rv": "Rv1854c",
+      "who_region_from": "ndh",
+      "start": 2103013,
+      "end": 2103168,
+      "sense": "neg",
+      "core_start": 2103043,
+      "core_end": 2103138,
+      "anchor": "start_codon",
+      "atg": 2103042,
+      "tss": 2103087,
+      "segments": [
+        [
+          1,
+          96
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 156
+    },
+    "Rv2752c": {
+      "gene": "Rv2752c",
+      "rv": "Rv2752c",
+      "who_region_from": "Rv2752c",
+      "start": 3066162,
+      "end": 3067205,
+      "sense": "neg",
+      "core_start": 3066192,
+      "core_end": 3067175,
+      "anchor": "start_codon",
+      "atg": 3066191,
+      "tss": 3067124,
+      "segments": [
+        [
+          1,
+          51
+        ],
+        [
+          934,
+          984
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 1044
+    },
+    "glpK": {
+      "gene": "glpK",
+      "rv": "Rv3696c",
+      "who_region_from": "glpK",
+      "start": 4139726,
+      "end": 4139837,
+      "sense": "neg",
+      "core_start": 4139756,
+      "core_end": 4139807,
+      "anchor": "start_codon",
+      "atg": 4139755,
+      "tss": 4139756,
+      "segments": [
+        [
+          1,
+          52
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 112
+    },
+    "rpoB": {
+      "gene": "rpoB",
+      "rv": "Rv0667",
+      "who_region_from": "rpoB",
+      "start": 759514,
+      "end": 759836,
+      "sense": "pos",
+      "core_start": 759544,
+      "core_end": 759806,
+      "anchor": "start_codon",
+      "atg": 759807,
+      "tss": 759595,
+      "segments": [
+        [
+          1,
+          263
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 323
+    },
+    "nusG": {
+      "gene": "nusG",
+      "rv": "Rv0639",
+      "who_region_from": "nusG",
+      "start": 734023,
+      "end": 734283,
+      "sense": "pos",
+      "core_start": 734053,
+      "core_end": 734253,
+      "anchor": "start_codon",
+      "atg": 734254,
+      "tss": 734104,
+      "segments": [
+        [
+          1,
+          201
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 261
+    },
+    "rpoC": {
+      "gene": "rpoC",
+      "rv": "Rv0668",
+      "who_region_from": "rpoC",
+      "start": 763295,
+      "end": 763399,
+      "sense": "pos",
+      "core_start": 763325,
+      "core_end": 763369,
+      "anchor": "start_codon",
+      "atg": 763370,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          45
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 105
+    },
+    "Rv2477c": {
+      "gene": "Rv2477c",
+      "rv": "Rv2477c",
+      "who_region_from": "Rv2477c",
+      "start": 2784013,
+      "end": 2784160,
+      "sense": "neg",
+      "core_start": 2784043,
+      "core_end": 2784130,
+      "anchor": "start_codon",
+      "atg": 2784042,
+      "tss": 2784079,
+      "segments": [
+        [
+          1,
+          88
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 148
+    },
+    "mtrB": {
+      "gene": "mtrB",
+      "rv": "Rv3245c",
+      "who_region_from": "mtrB",
+      "start": 3626584,
+      "end": 3626693,
+      "sense": "neg",
+      "core_start": 3626614,
+      "core_end": 3626663,
+      "anchor": "start_codon",
+      "atg": 3626613,
+      "tss": 3626821,
+      "segments": [
+        [
+          1,
+          50
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 110
+    },
+    "mtrA": {
+      "gene": "mtrA",
+      "rv": "Rv3246c",
+      "who_region_from": "mtrA",
+      "start": 3627320,
+      "end": 3627755,
+      "sense": "neg",
+      "core_start": 3627350,
+      "core_end": 3627725,
+      "anchor": "start_codon",
+      "atg": 3627349,
+      "tss": 3627674,
+      "segments": [
+        [
+          1,
+          376
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 436
+    },
+    "rpoA": {
+      "gene": "rpoA",
+      "rv": "Rv3457c",
+      "who_region_from": "rpoA",
+      "start": 3878478,
+      "end": 3879073,
+      "sense": "neg",
+      "core_start": 3878508,
+      "core_end": 3879043,
+      "anchor": "start_codon",
+      "atg": 3878507,
+      "tss": 3878992,
+      "segments": [
+        [
+          1,
+          536
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 596
+    },
+    "embC": {
+      "gene": "embC",
+      "rv": "Rv3793",
+      "who_region_from": "embC",
+      "start": 4237851,
+      "end": 4239892,
+      "sense": "pos",
+      "core_start": 4237881,
+      "core_end": 4239862,
+      "anchor": "start_codon",
+      "atg": 4239863,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          1982
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 2042
+    },
+    "embA": {
+      "gene": "embA",
+      "rv": "Rv3794",
+      "who_region_from": "embA",
+      "start": 4243117,
+      "end": 4243262,
+      "sense": "pos",
+      "core_start": 4243147,
+      "core_end": 4243232,
+      "anchor": "start_codon",
+      "atg": 4243233,
+      "tss": 4243233,
+      "segments": [
+        [
+          1,
+          86
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 146
+    },
+    "ubiA": {
+      "gene": "ubiA",
+      "rv": "Rv3806c",
+      "who_region_from": "ubiA",
+      "start": 4269804,
+      "end": 4269914,
+      "sense": "neg",
+      "core_start": 4269834,
+      "core_end": 4269884,
+      "anchor": "start_codon",
+      "atg": 4269833,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "embR": {
+      "gene": "embR",
+      "rv": "Rv1267c",
+      "who_region_from": "embR",
+      "start": 1417318,
+      "end": 1417480,
+      "sense": "neg",
+      "core_start": 1417348,
+      "core_end": 1417450,
+      "anchor": "start_codon",
+      "atg": 1417347,
+      "tss": 1417399,
+      "segments": [
+        [
+          1,
+          103
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 163
+    },
+    "aftB": {
+      "gene": "aftB",
+      "rv": "Rv3805c",
+      "who_region_from": "aftB",
+      "start": 4268807,
+      "end": 4268995,
+      "sense": "neg",
+      "core_start": 4268837,
+      "core_end": 4268965,
+      "anchor": "start_codon",
+      "atg": 4268836,
+      "tss": 4268914,
+      "segments": [
+        [
+          1,
+          129
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 189
+    },
+    "pncA": {
+      "gene": "pncA",
+      "rv": "Rv2043c",
+      "who_region_from": "pncA",
+      "start": 2289212,
+      "end": 2289322,
+      "sense": "neg",
+      "core_start": 2289242,
+      "core_end": 2289292,
+      "anchor": "start_codon",
+      "atg": 2289241,
+      "tss": 2289241,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "clpC1": {
+      "gene": "clpC1",
+      "rv": "Rv3596c",
+      "who_region_from": "clpC1",
+      "start": 4040675,
+      "end": 4040840,
+      "sense": "neg",
+      "core_start": 4040705,
+      "core_end": 4040810,
+      "anchor": "start_codon",
+      "atg": 4040704,
+      "tss": 4040759,
+      "segments": [
+        [
+          1,
+          106
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 166
+    },
+    "panD": {
+      "gene": "panD",
+      "rv": "Rv3601c",
+      "who_region_from": "panD",
+      "start": 4044252,
+      "end": 4046260,
+      "sense": "neg",
+      "core_start": 4044282,
+      "core_end": 4046230,
+      "anchor": "start_codon",
+      "atg": 4044281,
+      "tss": 4046179,
+      "segments": [
+        [
+          1,
+          51
+        ],
+        [
+          1838,
+          1949
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 2009
+    },
+    "rpsA": {
+      "gene": "rpsA",
+      "rv": "Rv1630",
+      "who_region_from": "rpsA",
+      "start": 1833412,
+      "end": 1833571,
+      "sense": "pos",
+      "core_start": 1833442,
+      "core_end": 1833541,
+      "anchor": "start_codon",
+      "atg": 1833542,
+      "tss": 1833493,
+      "segments": [
+        [
+          1,
+          100
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 160
+    },
+    "sigE": {
+      "gene": "sigE",
+      "rv": "Rv1221",
+      "who_region_from": "sigE",
+      "start": 1364332,
+      "end": 1364442,
+      "sense": "pos",
+      "core_start": 1364362,
+      "core_end": 1364412,
+      "anchor": "start_codon",
+      "atg": 1364413,
+      "tss": 1364413,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "PPE35": {
+      "gene": "PPE35",
+      "rv": "Rv1918c",
+      "who_region_from": "PPE35",
+      "start": 2170583,
+      "end": 2170764,
+      "sense": "neg",
+      "core_start": 2170613,
+      "core_end": 2170734,
+      "anchor": "start_codon",
+      "atg": 2170612,
+      "tss": 2170683,
+      "segments": [
+        [
+          1,
+          122
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 182
+    },
+    "Rv3236c": {
+      "gene": "Rv3236c",
+      "rv": "Rv3236c",
+      "who_region_from": "Rv3236c",
+      "start": 3613087,
+      "end": 3613684,
+      "sense": "neg",
+      "core_start": 3613117,
+      "core_end": 3613654,
+      "anchor": "start_codon",
+      "atg": 3613116,
+      "tss": 3613603,
+      "segments": [
+        [
+          1,
+          51
+        ],
+        [
+          488,
+          538
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 598
+    },
+    "rpsL": {
+      "gene": "rpsL",
+      "rv": "Rv0682",
+      "who_region_from": "rpsL",
+      "start": 781296,
+      "end": 781589,
+      "sense": "pos",
+      "core_start": 781326,
+      "core_end": 781559,
+      "anchor": "start_codon",
+      "atg": 781560,
+      "tss": 781377,
+      "segments": [
+        [
+          1,
+          234
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 294
+    },
+    "rrs": {
+      "gene": "rrs",
+      "rv": "MTB000019",
+      "who_region_from": "rrs",
+      "start": 1471665,
+      "end": 1471875,
+      "sense": "pos",
+      "core_start": 1471695,
+      "core_end": 1471845,
+      "anchor": "start_codon",
+      "atg": 1471846,
+      "tss": 1471746,
+      "segments": [
+        [
+          1,
+          151
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 211
+    },
+    "whiB7": {
+      "gene": "whiB7",
+      "rv": "Rv3197A",
+      "who_region_from": "whiB7",
+      "start": 3568650,
+      "end": 3569113,
+      "sense": "neg",
+      "core_start": 3568680,
+      "core_end": 3569083,
+      "anchor": "start_codon",
+      "atg": 3568679,
+      "tss": 3569032,
+      "segments": [
+        [
+          1,
+          404
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 464
+    },
+    "gid": {
+      "gene": "gid",
+      "rv": "Rv3919c",
+      "who_region_from": "gid",
+      "start": 4408173,
+      "end": 4408311,
+      "sense": "neg",
+      "core_start": 4408203,
+      "core_end": 4408281,
+      "anchor": "start_codon",
+      "atg": 4408202,
+      "tss": 4408230,
+      "segments": [
+        [
+          1,
+          79
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 139
+    },
+    "bacA": {
+      "gene": "bacA",
+      "rv": "Rv1819c",
+      "who_region_from": "bacA",
+      "start": 2064699,
+      "end": 2064839,
+      "sense": "neg",
+      "core_start": 2064729,
+      "core_end": 2064809,
+      "anchor": "start_codon",
+      "atg": 2064728,
+      "tss": 2064758,
+      "segments": [
+        [
+          1,
+          81
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 141
+    },
+    "eis": {
+      "gene": "eis",
+      "rv": "Rv2416c",
+      "who_region_from": "eis",
+      "start": 2715303,
+      "end": 2715446,
+      "sense": "neg",
+      "core_start": 2715333,
+      "core_end": 2715416,
+      "anchor": "start_codon",
+      "atg": 2715332,
+      "tss": 2715365,
+      "segments": [
+        [
+          1,
+          84
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 144
+    },
+    "ccsA": {
+      "gene": "ccsA",
+      "rv": "Rv0529",
+      "who_region_from": "ccsA",
+      "start": 619670,
+      "end": 619920,
+      "sense": "pos",
+      "core_start": 619700,
+      "core_end": 619890,
+      "anchor": "start_codon",
+      "atg": 619891,
+      "tss": 619751,
+      "segments": [
+        [
+          1,
+          191
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 251
+    },
+    "whiB6": {
+      "gene": "whiB6",
+      "rv": "Rv3862c",
+      "who_region_from": "whiB6",
+      "start": 4338492,
+      "end": 4338677,
+      "sense": "neg",
+      "core_start": 4338522,
+      "core_end": 4338647,
+      "anchor": "start_codon",
+      "atg": 4338521,
+      "tss": 4338596,
+      "segments": [
+        [
+          1,
+          126
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 186
+    },
+    "tlyA": {
+      "gene": "tlyA",
+      "rv": "Rv1694",
+      "who_region_from": "tlyA",
+      "start": 1917674,
+      "end": 1917969,
+      "sense": "pos",
+      "core_start": 1917704,
+      "core_end": 1917939,
+      "anchor": "start_codon",
+      "atg": 1917940,
+      "tss": 1917755,
+      "segments": [
+        [
+          1,
+          51
+        ],
+        [
+          185,
+          236
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 296
+    },
+    "rrl": {
+      "gene": "rrl",
+      "rv": "MTB000020",
+      "who_region_from": "rrl",
+      "start": 1473577,
+      "end": 1473687,
+      "sense": "pos",
+      "core_start": 1473607,
+      "core_end": 1473657,
+      "anchor": "start_codon",
+      "atg": 1473658,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "Rv2680": {
+      "gene": "Rv2680",
+      "rv": "Rv2680",
+      "who_region_from": "Rv2680",
+      "start": 2995922,
+      "end": 2996134,
+      "sense": "pos",
+      "core_start": 2995952,
+      "core_end": 2996104,
+      "anchor": "start_codon",
+      "atg": 2996105,
+      "tss": 2996003,
+      "segments": [
+        [
+          1,
+          153
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 213
+    },
+    "Rv2681": {
+      "gene": "Rv2681",
+      "rv": "Rv2681",
+      "who_region_from": "Rv2681",
+      "start": 2996707,
+      "end": 2996768,
+      "sense": "pos",
+      "core_start": 2996737,
+      "core_end": 2996738,
+      "anchor": "start_codon",
+      "atg": 2996739,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          2
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 62
+    },
+    "gyrB": {
+      "gene": "gyrB",
+      "rv": "Rv0005",
+      "who_region_from": "gyrB",
+      "start": 5102,
+      "end": 5269,
+      "sense": "pos",
+      "core_start": 5132,
+      "core_end": 5239,
+      "anchor": "start_codon",
+      "atg": 5240,
+      "tss": 5183,
+      "segments": [
+        [
+          1,
+          108
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 168
+    },
+    "gyrA": {
+      "gene": "gyrA",
+      "rv": "Rv0006",
+      "who_region_from": "gyrA",
+      "start": 7237,
+      "end": 7331,
+      "sense": "pos",
+      "core_start": 7267,
+      "core_end": 7301,
+      "anchor": "start_codon",
+      "atg": 7302,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          35
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 95
+    },
+    "ethA": {
+      "gene": "ethA",
+      "rv": "Rv3854c",
+      "who_region_from": "ethA",
+      "start": 4327444,
+      "end": 4327554,
+      "sense": "neg",
+      "core_start": 4327474,
+      "core_end": 4327524,
+      "anchor": "start_codon",
+      "atg": 4327473,
+      "tss": 4327473,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "Rv0565c": {
+      "gene": "Rv0565c",
+      "rv": "Rv0565c",
+      "who_region_from": "Rv0565c",
+      "start": 657441,
+      "end": 657578,
+      "sense": "neg",
+      "core_start": 657471,
+      "core_end": 657548,
+      "anchor": "start_codon",
+      "atg": 657470,
+      "tss": 657497,
+      "segments": [
+        [
+          1,
+          78
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 138
+    },
+    "Rv3083": {
+      "gene": "Rv3083",
+      "rv": "Rv3083",
+      "who_region_from": "Rv3083",
+      "start": 3448423,
+      "end": 3448533,
+      "sense": "pos",
+      "core_start": 3448453,
+      "core_end": 3448503,
+      "anchor": "start_codon",
+      "atg": 3448504,
+      "tss": 3448504,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "ethR": {
+      "gene": "ethR",
+      "rv": "Rv3855",
+      "who_region_from": "ethR",
+      "start": 4327493,
+      "end": 4327578,
+      "sense": "pos",
+      "core_start": 4327523,
+      "core_end": 4327548,
+      "anchor": "start_codon",
+      "atg": 4327549,
+      "tss": 4327505,
+      "segments": [
+        [
+          1,
+          26
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 86
+    },
+    "mmpS5": {
+      "gene": "mmpS5",
+      "rv": "Rv0677c",
+      "who_region_from": "mmpS5",
+      "start": 778876,
+      "end": 779020,
+      "sense": "neg",
+      "core_start": 778906,
+      "core_end": 778990,
+      "anchor": "start_codon",
+      "atg": 778905,
+      "tss": 778965,
+      "segments": [
+        [
+          1,
+          85
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 145
+    },
+    "atpE": {
+      "gene": "atpE",
+      "rv": "Rv1305",
+      "who_region_from": "atpE",
+      "start": 1460964,
+      "end": 1461074,
+      "sense": "pos",
+      "core_start": 1460994,
+      "core_end": 1461044,
+      "anchor": "start_codon",
+      "atg": 1461045,
+      "tss": 1461045,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "pepQ": {
+      "gene": "pepQ",
+      "rv": "Rv2535c",
+      "who_region_from": "pepQ",
+      "start": 2860389,
+      "end": 2860499,
+      "sense": "neg",
+      "core_start": 2860419,
+      "core_end": 2860469,
+      "anchor": "start_codon",
+      "atg": 2860418,
+      "tss": 2860418,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "Rv1979c": {
+      "gene": "Rv1979c",
+      "rv": "Rv1979c",
+      "who_region_from": "Rv1979c",
+      "start": 2223135,
+      "end": 2223664,
+      "sense": "neg",
+      "core_start": 2223165,
+      "core_end": 2223634,
+      "anchor": "start_codon",
+      "atg": 2223164,
+      "tss": 2223583,
+      "segments": [
+        [
+          1,
+          470
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 530
+    },
+    "rplC": {
+      "gene": "rplC",
+      "rv": "Rv0701",
+      "who_region_from": "rplC",
+      "start": 800276,
+      "end": 800838,
+      "sense": "pos",
+      "core_start": 800306,
+      "core_end": 800808,
+      "anchor": "start_codon",
+      "atg": 800809,
+      "tss": 800357,
+      "segments": [
+        [
+          1,
+          51
+        ],
+        [
+          323,
+          503
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 563
+    },
+    "tsnR": {
+      "gene": "tsnR",
+      "rv": "Rv1644",
+      "who_region_from": "tsnR",
+      "start": 1853525,
+      "end": 1853635,
+      "sense": "pos",
+      "core_start": 1853555,
+      "core_end": 1853605,
+      "anchor": "start_codon",
+      "atg": 1853606,
+      "tss": null,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "fgd1": {
+      "gene": "fgd1",
+      "rv": "Rv0407",
+      "who_region_from": "fgd1",
+      "start": 490702,
+      "end": 490812,
+      "sense": "pos",
+      "core_start": 490732,
+      "core_end": 490782,
+      "anchor": "start_codon",
+      "atg": 490783,
+      "tss": 490783,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "fbiC": {
+      "gene": "fbiC",
+      "rv": "Rv1173",
+      "who_region_from": "fbiC",
+      "start": 1302774,
+      "end": 1302960,
+      "sense": "pos",
+      "core_start": 1302804,
+      "core_end": 1302930,
+      "anchor": "start_codon",
+      "atg": 1302931,
+      "tss": 1302855,
+      "segments": [
+        [
+          1,
+          127
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 187
+    },
+    "Rv2983": {
+      "gene": "Rv2983",
+      "rv": "Rv2983",
+      "who_region_from": "Rv2983",
+      "start": 3339037,
+      "end": 3339147,
+      "sense": "pos",
+      "core_start": 3339067,
+      "core_end": 3339117,
+      "anchor": "start_codon",
+      "atg": 3339118,
+      "tss": 3339118,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    },
+    "fbiA": {
+      "gene": "fbiA",
+      "rv": "Rv3261",
+      "who_region_from": "fbiA",
+      "start": 3640375,
+      "end": 3640572,
+      "sense": "pos",
+      "core_start": 3640405,
+      "core_end": 3640542,
+      "anchor": "start_codon",
+      "atg": 3640543,
+      "tss": 3640456,
+      "segments": [
+        [
+          1,
+          138
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 198
+    },
+    "ddn": {
+      "gene": "ddn",
+      "rv": "Rv3547",
+      "who_region_from": "ddn",
+      "start": 3986763,
+      "end": 3986873,
+      "sense": "pos",
+      "core_start": 3986793,
+      "core_end": 3986843,
+      "anchor": "start_codon",
+      "atg": 3986844,
+      "tss": 3986844,
+      "segments": [
+        [
+          1,
+          51
+        ]
+      ],
+      "pad": 30,
+      "clamped": false,
+      "length": 111
+    }
+  },
+  "skipped": []
+}

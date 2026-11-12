@@ -1,23 +1,8 @@
 """
-LocusFusion -- the canonical model file. Edit the network here.
-
-This is LocusFusion v5_fixed, the 19-locus model GenomeFusion is compared
-against (lineage-split CV AUC 0.9147). Training imports it through
-locusfusion_v4/model.py, so a change here is what the next run trains.
-
-    train:     python -m locusfusion_v4.train --drugs PYRAZINAMIDE ...
-    sweep:     python -m locusfusion_v4.sbatch --arms v5_fixed --dry-run
-    tests:     python -m locusfusion_v4.tests.test_model
-
-v5_fixed is this network with two TOKEN choices, both made in
-locusfusion_v4/train.py + tokenizer.py, not here:
-    --keep-residue      keep the residue one-hot -> c_base = C_BASE_RES
-    --drop-synonymous   synonymous changes produce no token
-and two input fixes (--genotype-dir curated_fix/aligned19, --regulatory-dir
-regulatory_msa/aligned_atg). The token channel layout is locusfusion_v4/layout.py.
-
-The network is v3's (models/locusfusion_v2.py, `LocusFusionV2Net`) with the
-tokenizer taken out -- tokens arrive ready-made from tokenizer.TokenSet:
+LocusFusion: the variant-token transformer of the 19-locus v5_fixed runs
+(lineage-split CV AUC 0.9147, the model GenomeFusion is compared against).
+Tokens arrive ready-made from locusfusion/tokenizer.py (TokenSet); the channel
+layout is locusfusion/layout.py.
 
     per locus L:
         token = tok_proj(base channels | site proximity per drug)
@@ -41,15 +26,17 @@ reads -1 on every proximity channel.
 Checkpoints store {"config": model.config, "state_dict": ...}; renaming or
 adding a parameter here means old weights no longer load strictly.
 """
+import math
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.locusfusion_v2 import LOCUS_ENCODERS, SUMMARY_NORMS, _sinusoid
-from models.net import KeyedTokenNorm
+from locusfusion.layout import C_BASE, DIST_LENGTH, DIST_MISSING, SLOTS
 
-from locusfusion_v4.layout import C_BASE, DIST_LENGTH, DIST_MISSING, SLOTS
+LOCUS_ENCODERS = ("shared", "adapter", "per_locus")
+SUMMARY_NORMS = ("none", "keyed")
 
 LF_DEFAULTS = {
     "d_model": 128, "nhead": 4, "dropout": 0.1,
@@ -58,6 +45,67 @@ LF_DEFAULTS = {
     "pos_dims": 32, "locus_encoder": "adapter", "summary_norm": "keyed",
     "hidden": 256,
 }
+
+
+def _sinusoid(coord, dims, min_wavelength=1 / 3, max_wavelength=4096.0):
+    """(..., ) coordinate in CODONS -> (..., dims) sinusoidal encoding.
+
+    The band is set to the data, not to the transformer default. Coordinates run
+    to ~1,355 codons for the longest locus and the finest step that means
+    anything is 1/3 of a codon (a DNA column inside its codon), so the band spans
+    exactly that.
+    """
+    half = dims // 2
+    i = torch.arange(half, device=coord.device, dtype=coord.dtype)
+    ratio = math.log(max_wavelength / min_wavelength)
+    wavelengths = min_wavelength * torch.exp(ratio * i / max(half - 1, 1))
+    ang = coord.unsqueeze(-1) * (2 * math.pi / wavelengths)
+    return torch.cat([ang.sin(), ang.cos()], dim=-1)
+
+
+class KeyedTokenNorm(nn.Module):
+    """Standardise each locus summary across the BATCH, with statistics kept per
+    locus (the key).
+
+    A locus summary is mostly a constant that only says which locus it is; the
+    part that varies with the genotype is a tiny fraction of its norm, so the
+    fusion transformer and the drug queries would see almost the same vector for
+    every isolate. Subtracting the per-key mean deletes that constant and
+    dividing by the per-key standard deviation puts the genotype signal at unit
+    scale. The affine term is per key as well, so a locus can learn its own
+    scale back.
+    """
+
+    def __init__(self, n_keys, d_model, eps=1e-5, momentum=0.1, affine=True):
+        super().__init__()
+        self.eps, self.momentum, self.affine = eps, momentum, affine
+        self.register_buffer("running_mean", torch.zeros(n_keys, d_model))
+        self.register_buffer("running_var", torch.ones(n_keys, d_model))
+        if affine:
+            self.weight = nn.Parameter(torch.ones(n_keys, d_model))
+            self.bias = nn.Parameter(torch.zeros(n_keys, d_model))
+
+    def forward(self, tokens, key_ids):
+        """tokens: (B, n_blocks, d) — key_ids: (n_blocks,) long, one per block."""
+        out = []
+        for i, k in enumerate(key_ids.tolist()):
+            x = tokens[:, i]                                    # (B, d)
+            if self.training and x.shape[0] > 1:
+                mean = x.mean(0)
+                var = x.var(0, unbiased=False)
+                with torch.no_grad():
+                    self.running_mean[k].mul_(1 - self.momentum).add_(
+                        self.momentum * mean.detach())
+                    self.running_var[k].mul_(1 - self.momentum).add_(
+                        self.momentum * var.detach())
+            else:
+                # eval, or a batch of 1 where a batch variance is undefined
+                mean, var = self.running_mean[k], self.running_var[k]
+            xn = (x - mean) / torch.sqrt(var + self.eps)
+            if self.affine:
+                xn = xn * self.weight[k] + self.bias[k]
+            out.append(xn)
+        return torch.stack(out, dim=1)
 
 
 def proximity_table(dist_drugs, loci, distances, length=DIST_LENGTH):
@@ -97,7 +145,7 @@ class LocusFusionNet(nn.Module):
         self.register_buffer("prox", prox)
         self.register_buffer("kept", torch.as_tensor(np.asarray(kept, np.float32)).clamp_min(1))
         self.max_variants, self.pos_dims = int(max_variants), int(pos_dims)
-        self.c_base = int(c_base)              # C_BASE, or C_BASE_RES with --keep-residue
+        self.c_base = int(c_base)
         self.c_tok = self.c_base + n_dist
         self.config = dict(loci=self.loci, drugs=self.drugs, dist_drugs=self.dist_drugs,
                            max_variants=self.max_variants, c_base=self.c_base,
@@ -196,8 +244,3 @@ class LocusFusionNet(nn.Module):
         pooled, attn = self.pool_attn(q, fused, fused, need_weights=return_attn)
         logits = self.fc_out(F.relu(self.fc1(self.norm(pooled)))).squeeze(-1)   # (B, n_drugs)
         return (logits, attn) if return_attn else logits
-
-
-# names used by locusfusion_v4/ and earlier scripts
-LocusFusionV4Net = LocusFusionNet
-V4_DEFAULTS = LF_DEFAULTS

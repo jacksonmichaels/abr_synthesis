@@ -1,68 +1,52 @@
 """
-Aligned FASTAs -> v4 tokens, once, offline.
+Aligned FASTAs -> LocusFusion tokens, once, offline.
 
-v3 rebuilt its tokens inside the model from (N, C, L) one-hot blocks on every
-batch. v4 builds them once from the aligned sequence strings and caches them:
-for 17,942 isolates x 19 loci x 16 slots the whole token set is ~0.5 GB, where
-v3's 19-locus all-modality blocks needed a 128 GB job. Everything the model and
-the augmentation need is in the cache (TokenSet), so training never touches a
-FASTA.
+The tokens are built once from the aligned sequence strings and cached: for
+17,942 isolates x 19 loci x 16 slots the whole token set is ~1 GB. Everything
+the model needs is in the cache (TokenSet), so training never touches a FASTA.
 
-Same tokenizer as v3 where v3 and v4 share a channel, by construction rather
-than by re-implementation: the column geometry (genome placement, start-codon
-origin, codon and phase per column, the promoter/record de-duplication) is
-v3's own `LocusFusionV2Net._frame_maps`, and the base / residue / property
-values follow v3's rules exactly (tests/test_parity.py checks them against v3's
-`_locus_tokens` on real isolates):
+The column geometry (genome placement, start-codon origin, codon and phase per
+column, the promoter/record de-duplication) is `_frame_maps` below, and the
+base / residue / property values follow these rules:
 
   * a token is a column whose base differs from H37Rv's (upper-cased), within
     the isolate's own sequence; an uncalled base (anything outside A C T G -)
     gets the N channel;
+  * synonymous changes produce no token at all (dropped before the cap);
   * per locus the columns run [promoter window | gene record], 5' -> 3', and the
-    first `max_variants` occupied ones are kept; [NULL] reports the true count;
+    first `MAX_VARIANTS` occupied ones are kept; [NULL] reports the true count;
   * the residue a coding token reads is the isolate's codon on the H37Rv codon
     grid (datasets.biochem.translate_reference_frame): '-' if a base of it is
     deleted, 'X' if unreadable, '*' for STOP; bio = its three properties (0 for
-    '-', 'X', '*'), d_bio = bio minus H37Rv's residue's.
+    '-', 'X', '*'), d_bio = bio minus H37Rv's residue's; `residue` = its one-hot.
 
-New in v4: `consequence` (synonymous / missense / nonsense / other, see
-layout.py) and `site_pos`, the token's index into the binding-site distance
-tables (a residue index on protein loci, a nucleotide offset on rrs / rrl, -1
-elsewhere). `codon` is stored per token too, which the augmentation uses to
-leave already-varied codons alone.
-
-Synonymous candidates (for augment.py) are built here as well, from the same
-geometry: every single-base change that keeps H37Rv's residue, at a codon that
-is neither the start codon nor the stop, at a base no OTHER locus also carries
-(neighbouring loci share record and promoter sequence -- a base there can be
-regulatory for the other gene; fabG1 L203L is exactly that), minus the
-explicit exclusions in augment_exclusions.json.
+`consequence` (synonymous / missense / nonsense / other, see layout.py) and
+`site_pos`, the token's index into the binding-site distance tables (a residue
+index on protein loci, a nucleotide offset on rrs / rrl, -1 elsewhere), are
+stored per token as well.
 """
 import hashlib
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from bigtb_ref import tb
+import bigtb as tb
 from datasets import cds
 from datasets.biochem import AA_PROPERTY, CODON_TABLE
+from datasets.loader import LOCI_19 as _LOCI_19
 from datasets.regulatory import DRUG_TO_REGULATORY
 from datasets.sequences import BASE_TO_COLUMN, load_phenotype, load_sequence_df, reference_row
-from models.locusfusion_v2 import LocusFusionV2Net
 
-from .layout import (C_BASE, MISSENSE, NONSENSE, OTHER, RESIDUE_SLOT, SLOTS, SYN,
-                     c_base as _c_base)
-
-HERE = Path(__file__).resolve().parent
+from .layout import C_BASE, MISSENSE, NONSENSE, OTHER, SLOTS, SYN
 
 # the 19 curated loci (MD-CNN's set; the paper's "19 loci"), in loader order
-LOCI_19 = ["eis", "embA", "embB", "embC", "ethA", "ethR", "fabG1", "gid", "gyrA", "gyrB",
-           "inhA", "katG", "pncA", "rpoB", "rpoC", "rpsL", "rrl", "rrs", "tlyA"]
+LOCI_19 = list(_LOCI_19)
 ALL_DRUGS = list(tb.DRUG_TO_LOCI)        # label-column order of the multi-drug loader
+MAX_VARIANTS = 16                        # token slots per locus
 
 # residue alphabet of the cache: 20 residues, STOP, deleted codon, unreadable
 RESIDUES = "ACDEFGHIKLMNPQRSTVWY*-X"
@@ -88,8 +72,7 @@ _CODON_RES = np.array([RESIDUES.index(CODON_TABLE[a + b + c])
 
 def regulatory_for(drugs, loci):
     """Promoter windows a run loads: the drugs' WHO regions that are also loaded
-    loci -- load_dataset's default for one drug, load_multidrug_dataset's for
-    several (union, in first-seen order)."""
+    loci (union, in first-seen order)."""
     out = []
     for d in drugs:
         for r in DRUG_TO_REGULATORY.get(d.upper(), []):
@@ -172,22 +155,126 @@ def _translate(up, lens, rows, cols3):
     return np.where((d == -1).any(1), R_GAP, out)
 
 
-def _genome_positions(frame, length):
-    """Genome position of each column of a block (-1 for a reference gap), or None."""
-    if frame.get("genome_start") is None:
-        return None
-    is_base = np.ones(length, np.int64)
-    gaps = np.asarray(frame.get("ref_gap_cols", ()), np.int64)
-    if gaps.size:
-        is_base[gaps[gaps < length]] = 0
-    n = np.concatenate([[0], np.cumsum(is_base)])[:length]
-    pos = frame["genome_start"] + n if frame["strand"] == "+" else frame["genome_end"] - 1 - n
-    return np.where(is_base > 0, pos, -1)
+def _frame_maps(p):
+    """(coord, codon, phase, keep, note) over one locus's merged column axis.
+
+    Every column is placed by its GENOME position. A block's reference row
+    degaps to an exact genome substring (``datasets.cds.block_frame``), so
+    column -> count of reference bases -> genome position is exact, and the
+    gene record and its promoter window land on one axis measured from the
+    start codon rather than assumed to abut it. Three things follow:
+
+    * a promoter variant sits at its true distance — inhA's window is 732 bp
+      upstream of the inhA CDS, being the fabG1 promoter, not adjacent to it;
+    * a column the record already covers is dropped from the promoter block
+      (``keep``), so the 30-130 bp the two share on 10 of 16 loci produce one
+      token, not two. That includes the 30 bp of CDS most WHO windows reach
+      into: the record covers them, so the record's token carries their base
+      and residue, and the kept promoter columns are all upstream of it;
+    * the kept axis is monotonic in coordinate, 5' -> 3'.
+
+    Codon and phase count reference bases from the start codon, which is the
+    index `datasets/protein.py` translates on. Without a genome span the
+    fallback is v1's convention: the promoter counts backwards from the end
+    of its own window and nothing is deduplicated.
+    """
+    total, reg_len = p["total"], p["reg_len"]
+    coord = np.zeros(total, dtype=np.float32)
+    codon = np.full(total, -1, dtype=np.int64)
+    phase = np.full(total, -1, dtype=np.int64)
+    keep = np.ones(total, dtype=bool)
+    note = {"genome_anchored": False, "cds_start": None, "has_cds": None,
+            "n_codons": None, "duplicate_columns": 0, "promoter_offset": None}
+
+    def bases_before(b):
+        """(n, is_base): reference bases strictly before each column."""
+        L = b["length"]
+        is_base = np.ones(L, dtype=np.int64)
+        gaps = np.asarray(b["frame"].get("ref_gap_cols", ()), dtype=np.int64)
+        if gaps.size:
+            is_base[gaps[gaps < L]] = 0
+        return np.concatenate([[0], np.cumsum(is_base)])[:L], is_base
+
+    def positions(b):
+        """(genome position per column, is_base), or (None, is_base)."""
+        n, is_base = bases_before(b)
+        f = b["frame"]
+        if f.get("genome_start") is None:
+            return None, is_base
+        return (f["genome_start"] + n if f["strand"] == "+"
+                else f["genome_end"] - 1 - n), is_base
+
+    rec = next((b for b in p["nt"] if b["modality"] == "dna"), None)
+    prom = next((b for b in p["nt"] if b["modality"] == "regulatory"), None)
+
+    # --- the origin: the start codon of this locus's coding record -------
+    rec_pos = rec_is_base = None
+    cds_len = 0
+    if rec is not None:
+        rec_pos, rec_is_base = positions(rec)
+        n, _ = bases_before(rec)
+        f = rec["frame"]
+        start = int(f.get("cds_start", 0))
+        end = int(f.get("cds_end", rec["length"]))
+        # an rRNA gene (rrs, rrl) has a start -- the origin -- but no reading
+        # frame: its tokens carry a base and a position and nothing else,
+        # whatever the protein block's whole-record fallback translated.
+        # Frames written without the key predate it and were all coding.
+        has_cds = bool(f.get("has_cds", True))
+        n_full = np.concatenate([n, [n[-1] + rec_is_base[-1]]])  # bases before col, 0..L
+        cds_len = int(n_full[min(end, rec["length"])] - n_full[min(start, rec["length"])]) \
+            if has_cds else 0
+        note["cds_start"] = start
+        note["has_cds"] = has_cds
+        # reference codons in the translated window, the terminal stop
+        # included — the width of a reference-frame protein block
+        n_win = int(n_full[min(end, rec["length"])] - n_full[min(start, rec["length"])])
+        note["n_codons"] = n_win // 3
+        rel = n - n[min(start, rec["length"] - 1)]          # bases from the start codon
+        lo, L = rec["offset"], rec["length"]
+        coord[lo:lo + L] = rel / 3.0
+        inside = ((np.arange(L) >= start) & (np.arange(L) < end) & (rec_is_base > 0)
+                  & has_cds)
+        codon[lo:lo + L] = np.where(inside, rel // 3, -1)
+        phase[lo:lo + L] = np.where(inside, rel % 3, -1)
+        if rec_pos is not None:
+            note["genome_anchored"] = True
+            g0 = rec_pos[min(start, L - 1)]
+            strand = rec["frame"]["strand"]
+
+    # --- the promoter, placed against that origin ------------------------
+    if prom is not None:
+        lo, L = prom["offset"], prom["length"]
+        prom_pos, prom_is_base = positions(prom)
+        anchored = (rec_pos is not None and prom_pos is not None
+                    and prom["frame"]["strand"] == rec["frame"]["strand"])
+        if anchored:
+            off = (prom_pos - g0) if strand == "+" else (g0 - prom_pos)
+            coord[lo:lo + L] = off / 3.0
+            # the WHO window's 3' flank reaches into the CDS on most loci;
+            # those columns are coding and are read as such
+            inside = (off >= 0) & (off < cds_len) & (prom_is_base > 0)
+            codon[lo:lo + L] = np.where(inside, off // 3, -1)
+            phase[lo:lo + L] = np.where(inside, off % 3, -1)
+            # one base, one token: drop what the record already covers. Gap
+            # columns go too -- a gap sits at the position of the base after
+            # it, so one inside the shared span is the record's to report,
+            # and keeping it would put a promoter token inside the record's
+            # stretch of the axis.
+            f = rec["frame"]
+            dup = (prom_pos >= f["genome_start"]) & (prom_pos < f["genome_end"])
+            keep[lo:lo + L] = ~dup
+            note["duplicate_columns"] = int(dup.sum())
+            note["promoter_offset"] = float(off[0] / 3.0)
+        else:
+            note["genome_anchored"] = False
+            coord[lo:lo + L] = (np.arange(L, dtype=np.float32) - L) / 3.0
+    return coord, codon, phase, keep, note
 
 
 @dataclass
 class LocusGeometry:
-    """Everything fixed per locus, cut from v3's frame maps."""
+    """Everything fixed per locus, cut from the frame maps."""
     name: str
     kind: str                    # 'protein' | 'rrna' | 'noncoding'
     reg_len: int
@@ -202,9 +289,6 @@ class LocusGeometry:
     window: tuple                # record columns of the CDS / rRNA gene, [start, end)
     window_bases: int
     note: dict
-    genome_pos: np.ndarray = None                # (dna_len,) record column -> genome, -1 gap
-    ref_codons: list = field(default_factory=list)
-    covered: set = field(default_factory=set)   # genome positions this locus carries
 
 
 def locus_geometry(locus, dna_len, ref, genotype_dir, reg_len=0, regulatory_dir=None):
@@ -215,7 +299,7 @@ def locus_geometry(locus, dna_len, ref, genotype_dir, reg_len=0, regulatory_dir=
                    "frame": cds.block_frame(regulatory_dir, locus, reg_len)})
     nt.append({"modality": "dna", "length": dna_len, "offset": reg_len, "frame": fr_dna})
     p = {"locus": locus, "nt": nt, "total": reg_len + dna_len, "reg_len": reg_len}
-    coord, codon, phase, keep, note = LocusFusionV2Net._frame_maps(p)
+    coord, codon, phase, keep, note = _frame_maps(p)
     start, end = int(fr_dna.get("cds_start", 0)), int(fr_dna.get("cds_end", dna_len))
     has_cds = bool(fr_dna.get("has_cds", True)) and "cds_start" in fr_dna
     base_cols = [c for c in range(start, min(end, len(ref))) if ref[c] != "-"]
@@ -229,28 +313,18 @@ def locus_geometry(locus, dna_len, ref, genotype_dir, reg_len=0, regulatory_dir=
     else:
         codon_cols, ref_res = np.zeros((0, 3), np.int64), np.zeros(0, np.int64)
         kind = "rrna" if "cds_start" in fr_dna else "noncoding"
-    covered = set()
-    for b in nt:
-        pos = _genome_positions(b["frame"], b["length"])
-        if pos is not None:
-            k = keep[b["offset"]:b["offset"] + b["length"]]
-            covered |= set(pos[(pos >= 0) & k].tolist())
     return LocusGeometry(name=locus, kind=kind, reg_len=reg_len, total=reg_len + dna_len,
                          kept=int(keep.sum()), coord=coord, codon=codon, phase=phase,
                          keep=keep, codon_cols=codon_cols, ref_res=ref_res,
-                         window=(start, end), window_bases=len(base_cols), note=note,
-                         genome_pos=_genome_positions(fr_dna, dna_len),
-                         ref_codons=["".join(ref[c] for c in cc) for cc in codon_cols],
-                         covered=covered)
+                         window=(start, end), window_bases=len(base_cols), note=note)
 
 
 @dataclass
 class TokenSet:
-    """The cached tokens of one locus set over every phenotyped isolate."""
+    """The cached tokens of the 19 loci over every phenotyped isolate."""
     feat: np.ndarray             # (N, L, V, C_BASE) float32
     coord: np.ndarray            # (N, L, V) float32, codons from the start codon
     valid: np.ndarray            # (N, L, V) bool
-    codon: np.ndarray            # (N, L, V) int16, -1 off a reference codon
     site_pos: np.ndarray         # (N, L, V) int16, index into the distance tables
     n_occ: np.ndarray            # (N, L) int32, changed columns before the cap
     kept: np.ndarray             # (L,) int32, columns per locus (the [NULL] fraction's denominator)
@@ -260,10 +334,9 @@ class TokenSet:
     loci: list
     locus_kind: list
     regulatory: list
-    cand: dict                   # synonymous candidates (augment.py)
     config: dict
 
-    ARRAYS = ("feat", "coord", "valid", "codon", "site_pos", "n_occ", "kept", "Y")
+    ARRAYS = ("feat", "coord", "valid", "site_pos", "n_occ", "kept", "Y")
 
     @property
     def n(self):
@@ -274,7 +347,6 @@ class TokenSet:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.stem}.{os.getpid()}.tmp.npz")   # concurrent builders
         np.savez(tmp, **{k: getattr(self, k) for k in self.ARRAYS},
-                 **{f"cand_{k}": v for k, v in self.cand.items()},
                  meta=np.array(json.dumps({
                      "isolate_ids": self.isolate_ids, "drugs": self.drugs, "loci": self.loci,
                      "locus_kind": self.locus_kind, "regulatory": self.regulatory,
@@ -285,77 +357,18 @@ class TokenSet:
     def load(cls, path):
         z = np.load(path, allow_pickle=False)
         meta = json.loads(str(z["meta"]))
-        cand = {k[5:]: z[k] for k in z.files if k.startswith("cand_")}
-        return cls(**{k: z[k] for k in cls.ARRAYS}, cand=cand,
+        return cls(**{k: z[k] for k in cls.ARRAYS},
                    isolate_ids=meta["isolate_ids"], drugs=meta["drugs"], loci=meta["loci"],
                    locus_kind=meta["locus_kind"], regulatory=meta["regulatory"],
                    config=meta["config"])
 
 
-def _exclusions(path=HERE / "augment_exclusions.json"):
-    rows = json.loads(Path(path).read_text())["exclude"]
-    return {(r["locus"], int(r["codon"]) - 1) for r in rows}
-
-
-def synonymous_candidates(geoms, exclude, keep_residue=False):
-    """Every allowed single-base synonymous substitution, as ready-made tokens."""
-    out = {k: [] for k in ("locus", "codon", "phase", "col", "base", "coord", "site_pos")}
-    for li, g in enumerate(geoms):
-        if g.kind != "protein":
-            continue
-        others = set().union(*(h.covered for h in geoms if h is not g))
-        n_cod = len(g.codon_cols)
-        for k in range(1, n_cod - 1):               # not the start codon, not the stop
-            if (g.name, k) in exclude or g.ref_res[k] >= R_STOP:
-                continue
-            for ph in range(3):
-                col = int(g.codon_cols[k, ph])
-                if g.genome_pos is not None and g.genome_pos[col] in others:
-                    continue
-                for b in "ACGT":
-                    cod = list(g.ref_codons[k])
-                    if cod[ph] == b:
-                        continue
-                    cod[ph] = b
-                    if RESIDUES.index(CODON_TABLE["".join(cod)]) != g.ref_res[k]:
-                        continue
-                    out["locus"].append(li)
-                    out["codon"].append(k)
-                    out["phase"].append(ph)
-                    out["col"].append(col)
-                    out["base"].append(BASE_TO_COLUMN[b])
-                    out["coord"].append(float(g.coord[g.reg_len + col]))
-                    out["site_pos"].append(k)
-    M = len(out["locus"])
-    feat = np.zeros((M, _c_base(keep_residue)), np.float32)
-    if M:
-        res = np.array([geoms[l].ref_res[k] for l, k in zip(out["locus"], out["codon"])])
-        feat[np.arange(M), SLOTS["dna"][0] + np.array(out["base"])] = 1.0
-        feat[:, SLOTS["bio"][0]:SLOTS["bio"][1]] = PROPS[res]      # d_bio stays 0
-        feat[:, SLOTS["consequence"][0] + SYN] = 1.0
-        feat[np.arange(M), SLOTS["phase"][0] + np.array(out["phase"])] = 1.0
-        if keep_residue:                       # synonymous: H37Rv's own residue
-            feat[np.arange(M), RESIDUE_SLOT[0] + res] = 1.0
-    return {"locus": np.array(out["locus"], np.int16), "codon": np.array(out["codon"], np.int16),
-            "col": np.array(out["col"], np.int32), "coord": np.array(out["coord"], np.float32),
-            "site_pos": np.array(out["site_pos"], np.int16), "feat": feat}
-
-
-def build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, loci=LOCI_19,
-                 regulatory=None, max_variants=16, drop_synonymous=False,
-                 keep_residue=False, verbose=True):
-    """Tokenize every phenotyped isolate over `loci` (+ promoter windows).
-
-    regulatory : promoter windows to load (each keyed to the locus of the same
-                 name); default regulatory_for(drugs, loci).
-    drop_synonymous : leave synonymous changes out entirely, before the cap --
-                 the exact-invariance arm.
-    keep_residue : also carry v3's 23-channel residue one-hot (layout.RESIDUE_SLOT),
-                 so the token is v3's plus consequence and distance.
-    """
+def build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, regulatory, verbose=True):
+    """Tokenize every phenotyped isolate over LOCI_19 (+ the `regulatory` promoter
+    windows, each keyed to the locus of the same name)."""
     t0 = time.time()
+    loci = LOCI_19
     drugs = [d.upper() for d in drugs]
-    regulatory = list(regulatory) if regulatory is not None else regulatory_for(drugs, loci)
     gene_seqs, found = load_sequence_df(genotype_dir, loci)
     missing = [l for l in loci if l not in found]
     if missing:
@@ -369,13 +382,12 @@ def build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, loci=LOCI_1
     if reg_df is not None:
         reg_df = reg_df.reindex(isolates).fillna("")
     _, Y = tb.rs_encoding_to_numeric(phen.loc[isolates], drugs)
-    N, L, V = len(isolates), len(loci), int(max_variants)
+    N, L, V = len(isolates), len(loci), MAX_VARIANTS
 
-    width = _c_base(keep_residue)
+    width = C_BASE
     feat = np.zeros((N, L, V, width), np.float32)
     coord = np.zeros((N, L, V), np.float32)
     valid = np.zeros((N, L, V), bool)
-    codon_t = np.full((N, L, V), -1, np.int16)
     site_t = np.full((N, L, V), -1, np.int16)
     n_occ = np.zeros((N, L), np.int32)
     kept = np.zeros(L, np.int32)
@@ -428,10 +440,10 @@ def build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, loci=LOCI_1
             c[(a == R_STOP) & (r != R_STOP)] = NONSENSE
             c[(a == R_GAP) | (a == R_UNK) | ((r == R_STOP) & (a != R_STOP))] = OTHER
             cons[on_codon] = c
-        if drop_synonymous:
-            k = cons != SYN
-            rows, cols, in_rec, rc, base, cod, ph, on_codon, alt, refr, cons = (
-                x[k] for x in (rows, cols, in_rec, rc, base, cod, ph, on_codon, alt, refr, cons))
+        # synonymous changes are not tokens
+        k = cons != SYN
+        rows, cols, in_rec, rc, base, cod, ph, on_codon, alt, refr, cons = (
+            x[k] for x in (rows, cols, in_rec, rc, base, cod, ph, on_codon, alt, refr, cons))
         n_occ[:, li] = np.bincount(rows, minlength=N)
         start = np.searchsorted(rows, np.arange(N))
         rank = np.arange(len(rows)) - start[rows]
@@ -451,8 +463,7 @@ def build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, loci=LOCI_1
         f[np.nonzero(hc)[0], SLOTS["consequence"][0] + cons[hc]] = 1.0
         coding = cod >= 0
         f[np.nonzero(coding)[0], SLOTS["phase"][0] + ph[coding]] = 1.0
-        if keep_residue:       # v3's protein slot: the residue the codon now reads
-            f[np.nonzero(on_codon)[0], RESIDUE_SLOT[0] + alt[on_codon]] = 1.0
+        f[np.nonzero(on_codon)[0], SLOTS["residue"][0] + alt[on_codon]] = 1.0
 
         # where the token sits in the distance tables
         rel = np.rint(g.coord[cols] * 3).astype(np.int64)
@@ -467,54 +478,52 @@ def build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, loci=LOCI_1
         feat[rows, li, slot] = f
         coord[rows, li, slot] = g.coord[cols]
         valid[rows, li, slot] = True
-        codon_t[rows, li, slot] = np.where(on_codon, cod, -1)
         site_t[rows, li, slot] = sp
         if verbose:
             print(f"  [tokens] {locus:6s} {g.kind:8s} cols={g.total:5d} kept={g.kept:5d} "
                   f"reg={R:4d} tokens={int(sel.sum()):7d} over-cap isolates="
                   f"{int((n_occ[:, li] > V).sum())}", flush=True)
 
-    cand = synonymous_candidates(geoms, _exclusions(), keep_residue)
+    # drop_synonymous / keep_residue are always on; they stay in the config so it
+    # (and the result JSON's "tokens") reads as it always has
     config = {"loci": list(loci), "regulatory": [r for r in regulatory if r in reg_found],
-              "drugs": drugs, "max_variants": V, "drop_synonymous": bool(drop_synonymous),
-              "keep_residue": bool(keep_residue), "token_channels": int(width),
+              "drugs": drugs, "max_variants": V, "drop_synonymous": True,
+              "keep_residue": True, "token_channels": int(width),
               "genotype_dir": str(genotype_dir), "regulatory_dir": str(regulatory_dir),
               "phenotype_csv": str(phenotype_csv), "n_isolates": N,
-              "n_synonymous_candidates": int(len(cand["locus"])),
               "frames": {g.name: g.note for g in geoms},
               "built": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": round(time.time() - t0, 1)}
     if verbose:
-        print(f"  [tokens] {N} isolates x {L} loci, {len(cand['locus'])} synonymous "
-              f"candidates, {config['seconds']} s", flush=True)
-    return TokenSet(feat=feat, coord=coord, valid=valid, codon=codon_t, site_pos=site_t,
+        print(f"  [tokens] {N} isolates x {L} loci, {config['seconds']} s", flush=True)
+    return TokenSet(feat=feat, coord=coord, valid=valid, site_pos=site_t,
                     n_occ=n_occ, kept=kept, Y=Y.astype(np.float32), isolate_ids=isolates,
                     drugs=drugs, loci=list(loci), locus_kind=[g.kind for g in geoms],
-                    regulatory=config["regulatory"], cand=cand, config=config)
+                    regulatory=config["regulatory"], config=config)
 
 
 def cache_key(**cfg):
     return hashlib.sha1(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:10]
 
 
-def load_or_build(cache_dir, drugs, genotype_dir, phenotype_csv, regulatory_dir,
-                  loci=LOCI_19, regulatory=None, max_variants=16, drop_synonymous=False,
-                  keep_residue=False):
-    """The cached TokenSet for this configuration, building it on first use."""
+def load_or_build(cache_dir, drugs, genotype_dir, phenotype_csv, regulatory_dir):
+    """The cached TokenSet for these drugs and inputs, building it on first use.
+
+    The key and file name are computed exactly as when synonymous dropping, the
+    residue one-hot and the 16-slot cap were options, so caches built then are
+    found and reused. The key hashes the path STRINGS, so the same directory
+    reached by another path gets its own cache."""
     drugs = [d.upper() for d in drugs]
-    regulatory = list(regulatory) if regulatory is not None else regulatory_for(drugs, loci)
-    key = cache_key(drugs=drugs, loci=list(loci), regulatory=regulatory, V=int(max_variants),
-                    drop=bool(drop_synonymous), res=bool(keep_residue),
+    regulatory = regulatory_for(drugs, LOCI_19)
+    key = cache_key(drugs=drugs, loci=list(LOCI_19), regulatory=regulatory, V=MAX_VARIANTS,
+                    drop=True, res=True,
                     geno=str(genotype_dir), reg=str(regulatory_dir),
                     pheno=str(phenotype_csv), version=1)
     tag = drugs[0] if len(drugs) == 1 else f"multidrug{len(drugs)}"
-    path = (Path(cache_dir) / f"tokens_{tag}{'_nosyn' if drop_synonymous else ''}"
-            f"{'_res' if keep_residue else ''}_{key}.npz")
+    path = Path(cache_dir) / f"tokens_{tag}_nosyn_res_{key}.npz"
     if path.exists():
         print(f"[tokens] cache {path}", flush=True)
         return TokenSet.load(path)
     print(f"[tokens] building {path}", flush=True)
-    ts = build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, loci=loci,
-                      regulatory=regulatory, max_variants=max_variants,
-                      drop_synonymous=drop_synonymous, keep_residue=keep_residue)
+    ts = build_tokens(drugs, genotype_dir, phenotype_csv, regulatory_dir, regulatory)
     ts.save(path)
     return ts

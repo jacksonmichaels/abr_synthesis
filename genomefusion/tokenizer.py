@@ -6,17 +6,17 @@ carries as many tokens as the isolate has changes in it, and loci the isolate
 does not change produce nothing at all.
 
     from genomefusion.tokenizer import tokenize_isolate
-    tok = tokenize_isolate(vcf_path, partition, ref)
+    tok = tokenize_isolate(vcf_path, partition, np.frombuffer(ref, np.uint8))
 
 The VCFs are Pilon 1.24 output, normalised with `bcftools norm` and filtered
 with `bcftools view --types snps,indels,mnps,other`, so they hold variant sites
 only: **a position with no record is reference OR not covered**, and the two
-cannot be told apart from these files (see docs/genomefusion/). The QC below
-(`allele_category`) is the same rule as the project's MSA extractor
-(abr_workspace/regulatory_msa/make_aligned_msa.py), so a variant this module
-calls alt / ref / missing is the one v3's tokens would have carried.
+cannot be told apart from these files. The QC below (`allele_category`) is the
+same rule as the project's MSA extractor (msa/make_aligned_msa.py),
+so a variant this module calls alt / ref / missing is the one LocusFusion's
+tokens would have carried. Synonymous changes are dropped.
 
-Residues are read on the H37Rv codon grid, exactly as v3/v4/v5: codon k is the
+Residues are read on the H37Rv codon grid, as in LocusFusion: codon k is the
 isolate's bases at reference codon k's three genome positions, so an indel never
 turns the rest of a protein into false substitutions. What the grid cannot show
 -- that the frame shifted, and how much protein is lost -- is carried by the
@@ -164,11 +164,8 @@ def _translate(codon_bytes):
     return CODON_TABLE.get(codon_bytes.decode(), "X")
 
 
-def tokenize_isolate(vcf_path, partition, ref, locus_filter=None, drop_synonymous=True,
-                     ref_arr=None, codon_cache=None):
-    """One isolate's tokens. `locus_filter` is a set of locus indices to keep."""
-    if ref_arr is None:
-        ref_arr = np.frombuffer(ref, np.uint8)
+def tokenize_isolate(vcf_path, partition, ref_arr, codon_cache=None):
+    """One isolate's tokens. `ref_arr` is the H37Rv sequence as uint8."""
     records = read_vcf(vcf_path)
     locus_of, codon_of, phase_of = partition.locus_of, partition.codon_of, partition.phase_of
 
@@ -212,16 +209,13 @@ def tokenize_isolate(vcf_path, partition, ref, locus_filter=None, drop_synonymou
                             "phase", "span", "region", "up_plus", "up_minus", "truncation",
                             "flags", "codon")}
     per_locus = {}
-    n_masked = n_unplaced = 0
+    n_masked = 0
     codon_cache = {} if codon_cache is None else codon_cache
 
     for pos0, kind, span, imprecise in events:
         li = int(locus_of[pos0]) if 0 <= pos0 < len(locus_of) else -1
         if li < 0:
             n_masked += 1
-            continue
-        if locus_filter is not None and li not in locus_filter:
-            n_unplaced += 1
             continue
         L = partition.loci[li]
         region = {"cds": 0, "rna": 1, "intergenic": 2}[L.kind]
@@ -278,7 +272,7 @@ def tokenize_isolate(vcf_path, partition, ref, locus_filter=None, drop_synonymou
             else:
                 cons, res, ref_res = UNREADABLE, R_UNK, R_UNK
 
-        if drop_synonymous and cons == SYN:
+        if cons == SYN:
             continue
 
         ch = subs.get(pos0)
@@ -362,5 +356,5 @@ def tokenize_isolate(vcf_path, partition, ref, locus_filter=None, drop_synonymou
         sum_span=np.asarray(sum_span, np.int32), sum_frame=np.asarray(sum_frame, np.int32),
         sum_oof=np.asarray(sum_oof, np.float32),
         stats={"n_records": len(records), "n_events": len(events),
-               "n_masked": n_masked, "n_outside_filter": n_unplaced,
+               "n_masked": n_masked,
                "n_tokens": len(cols["locus"]), "n_active_loci": len(sum_locus)})

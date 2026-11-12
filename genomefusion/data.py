@@ -10,18 +10,8 @@ channels is 3 GB while the codes are ~90 MB.
 the device, so building a batch is a gather and a scatter, with no Python loop
 over tokens. At ~14M tokens that matrix is about 1.6 GB in fp16.
 
-A batch pads only to its own maximum, never to the 6,776 loci or to a fixed
-token count:
-
-    feat      (B, Lmax, Tmax, C)   token channels
-    valid     (B, Lmax, Tmax)      real token
-    lvalid    (B, Lmax)            real slot; slot 0 is the learned reference token
-    locus_id  (B, Lmax)            compact locus id, -1 in the reference slot
-    coord     (B, Lmax, Tmax)      position within the locus, for the sinusoid
-    site_pos  (B, Lmax, Tmax)      index into the per-drug distance table, -1 none
-    stats     (B, Lmax, 4)         the [NULL] token's per-locus numbers
-
-A length-grouped sampler keeps the padding small: isolates are shuffled inside
+A batch is packed (see `BatchBuilder.build`), never padded to the 6,776 loci or
+to a fixed token count. A length-grouped sampler keeps the padding small: isolates are shuffled inside
 buckets of similar active-locus count, so one isolate with 1,500 active loci
 does not pad a whole batch of isolates with 300.
 """
@@ -31,7 +21,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from genomefusion.layout import (C_BASE, N_NULL_STATS, SLOTS, UPSTREAM_LENGTH, UPSTREAM_MISSING,
+from genomefusion.layout import (C_BASE, SLOTS, UPSTREAM_LENGTH, UPSTREAM_MISSING,
                                  residue_property_table)
 
 TOKEN_FIELDS = ("locus", "pos", "base", "residue", "ref_residue", "consequence", "phase",
@@ -67,27 +57,21 @@ def _run_index(keys):
 
 
 class BatchBuilder:
-    """Expands the store once, then builds padded batches by gather/scatter."""
+    """Expands the store once, then builds packed batches by gather/scatter."""
 
-    def __init__(self, store, partition, loci=None, population=False, device="cpu",
-                 site_index=None, max_tokens_per_locus=None):
-        self.store, self.partition, self.device = store, partition, device
-        self.population = bool(population)
-        self.c_tok = C_BASE + (2 if population else 0)
+    def __init__(self, store, partition, loci, device="cpu"):
+        self.store, self.device = store, device
+        self.c_tok = C_BASE
 
         # per-locus lookups, so nothing below loops in Python over 15.8M tokens
         self.locus_start = np.asarray([L.start for L in partition.loci], np.int64)
         self.locus_len = np.maximum(
             np.asarray([L.end - L.start for L in partition.loci], np.float32), 1.0)
         keep = np.zeros(len(partition.loci), bool)
-        keep[np.asarray(list(loci), np.int64) if loci is not None
-             else np.arange(len(partition.loci))] = True
-        self.keep = keep
-        self.kept_loci = np.flatnonzero(keep)
+        keep[np.asarray(list(loci), np.int64)] = True
+        kept_loci = np.flatnonzero(keep)
         remap = np.full(len(partition.loci), -1, np.int32)
-        remap[self.kept_loci] = np.arange(len(self.kept_loci), dtype=np.int32)
-        self.remap = remap
-        self.n_loci = len(self.kept_loci)
+        remap[kept_loci] = np.arange(len(kept_loci), dtype=np.int32)
 
         T = store.tok
         tok_keep = keep[T["locus"]]
@@ -104,32 +88,20 @@ class BatchBuilder:
         self.sum_off = np.concatenate([[0], np.cumsum(np.bincount(ski, minlength=n_iso))])
         self.n_active = np.diff(self.sum_off)
 
-        # --- each token's slot: which active locus, and which token inside it --
+        # --- each token's slot: which of its isolate's active loci it is in ----
         sl = store.sum_locus[self.sum_rows]
         tl = T["locus"][self.tok_rows]
         # the summary lists each isolate's active loci in ascending locus order,
         # and the tokens are sorted the same way, so a token's locus slot is the
         # run index of its locus within the isolate
         lslot = _run_index_of_locus(tl, tki)
-        within = _run_index(tl + (tki.astype(np.int64) << 32))
-        if max_tokens_per_locus:
-            k = within < max_tokens_per_locus
-            self.tok_rows, tl, tki, lslot, within = (x[k] for x in
-                                                     (self.tok_rows, tl, tki, lslot, within))
-            self.tok_off = np.concatenate([[0], np.cumsum(np.bincount(tki, minlength=n_iso))])
         self.tok_lslot = lslot
-        self.tok_within = within
-        self.tok_iso = tki
-        self.sum_iso = ski
-        self._check(sl, ski, tl, tki, lslot)
+        self._check(sl, tl, tki, lslot)
 
         # --- the expanded feature matrix, built once --------------------------
-        feat, coord, site = self._expand(self.tok_rows, site_index)
+        feat, coord = self._expand(self.tok_rows)
         self.feat = torch.as_tensor(feat, device=device)
         self.coord = torch.as_tensor(coord, device=device)
-        self.site = torch.as_tensor(site, device=device)
-        self.t_lslot = torch.as_tensor(lslot, device=device)
-        self.t_within = torch.as_tensor(within, device=device)
 
         # --- the [NULL] stats, per active locus -------------------------------
         lens = self.locus_len[sl]
@@ -140,7 +112,7 @@ class BatchBuilder:
         self.sum_stats = torch.as_tensor(st, device=device)
         self.sum_lid = torch.as_tensor(remap[sl].astype(np.int64), device=device)
 
-    def _check(self, sl, ski, tl, tki, lslot):
+    def _check(self, sl, tl, tki, lslot):
         """A token's locus slot must point at the same locus the summary lists."""
         if not len(tl):
             return
@@ -152,7 +124,7 @@ class BatchBuilder:
                 f"token/summary mismatch at {bad}: token locus {tl[bad]} but summary slot "
                 f"{lslot[bad]} of isolate {tki[bad]} is {want[bad]}")
 
-    def _expand(self, rows, site_index):
+    def _expand(self, rows):
         T = self.store.tok
         n, C = len(rows), self.c_tok
         feat = np.zeros((n, C), np.float16)
@@ -192,12 +164,7 @@ class BatchBuilder:
         for j in range(3):
             feat[:, a + j] = (fl >> j) & 1
         coord = (T["pos"][rows] - self.locus_start[T["locus"][rows]]).astype(np.float32)
-        site = (site_index[T["pos"][rows]].astype(np.int64) if site_index is not None
-                else np.full(n, -1, np.int64))
-        return feat, coord, site
-
-    def partition_idx(self, rows):
-        return self.store.tok["locus"][rows]
+        return feat, coord
 
     def build(self, rows):
         """rows: store row indices -> a PACKED batch.
@@ -249,14 +216,13 @@ class BatchBuilder:
             "B": B, "Lmax": Lmax, "P": P,
             "tok_feat": self.feat[t_gi],
             "tok_coord": self.coord[t_gi],
-            "tok_site": self.site[t_gi],
             "tok_pair": t(tok_pair),
             "pair_bi": t(pair_bi),
             "pair_slot": t(pair_slot),
             "pair_lid": self.sum_lid[t_sgi],
             "pair_stats": self.sum_stats[t_sgi],
-            # counted from the tokens actually in this batch, so a per-locus cap
-            # or a locus filter cannot leave it stale
+            # counted from the tokens actually in this batch, so the locus
+            # filter cannot leave it stale
             "pair_n": t(np.bincount(tok_pair, minlength=P) if P else np.zeros(0)),
         }
 

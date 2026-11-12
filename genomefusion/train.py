@@ -1,52 +1,50 @@
 """
 Train and evaluate GenomeFusion: one drug, on a lineage split.
 
-    cd biophysical-fusion
-    python -m genomefusion.train --drugs PYRAZINAMIDE --locus-set genome \
-        --split-dir results/experiments/lineage_split/splits \
-        --out results/experiments/genomefusion/genome
+    python -m genomefusion.train --drugs PYRAZINAMIDE --locus-set 19r --max-hours 20 \
+        --out results/genomefusion/gf19r
 
-Run it through sbatch (genomefusion/sbatch.py), never in an interactive session.
+Run it in a SLURM job (1 GPU), never on a login node. Defaults read the
+partition cache, token store, lineage splits and weights dir from paths.py.
 
-Protocol = the lineage-split LocusFusion v3/v5 cells, unchanged, so a CV macro
-AUC here is paired with those over the same 55 folds: the split file's TEST rows
-are held out, its folds 0-4 are the CV folds (fold 4 = Beijing); alpha class
-weights fit on the training rows; Adam at exp(-9); early stopping on validation
-AUC with best-weight restore; TEST = the best CV fold's model scored once.
+Protocol = LocusFusion's, so on the same split files the folds pair: the split
+file's TEST rows (the held-out lineage) are held out, its folds 0-4 are the CV
+folds (splits/build_holdout_splits.py); alpha class weights fit on the
+training rows; Adam at exp(-9); early stopping on validation AUC with best-weight
+restore; TEST = the best CV fold's model scored once.
+
+Arms (one job per drug; `--out results/genomefusion/<arm>`, which also names the
+weights subdirectory). --max-hours stops 4 h short of a 24 h / 48 h SLURM limit:
+    canary        --drugs PYRAZINAMIDE --locus-set genome --folds 0 --locus-budget 16384
+    gf19p         --locus-set 19p      --max-hours 20
+    gf19r         --locus-set 19r      --max-hours 20
+    gf19r_nofeat  --locus-set 19r      --max-hours 20 --no-regulated-features
+    gf_who_t12r   --locus-set who_t12r --max-hours 20
+    gf_lab64r     --locus-set lab64r   --max-hours 20
+    gf_minus19p   --locus-set minus19p --max-hours 44
+    size6776      --locus-set size:6776 --ladder-seed 0 --max-hours 44   (whole genome)
 
 Locus sets (`--locus-set`):
     genome    every locus the partition keeps (6,776)
-    19        the LocusFusion v3/v5 loci (19 gene loci, NO promoters)
+    19        the 19 LocusFusion gene loci, NO promoters
     19r       the 19 plus every locus carrying a WHO Table-22 regulatory region
               for one of them. Defined by the catalogue, not by a distance:
               WHO extents run 2-1,982 bp, so no fixed flank can express them.
-    size:N    a locus set of N loci: 19r plus a seeded random draw from the
-              rest. NESTED -- the draw order is fixed by --ladder-seed, so
-              size:64 is a subset of size:128 is a subset of ... is a subset of
-              the genome. That makes the size ladder monotone in information,
-              so a drop along it is the cost of carrying more loci rather than
-              a change of content.
-    19p       the 19 plus the intergenic loci covering their 100 bp 5' flank.
-              SUPERSEDED by 19r: the 100 bp was chosen to match v3's padded
-              FASTAs, and because loci are atomic it only ever selected whole
-              intergenic loci anyway (rpoB's is 497 bp). Kept to reproduce the
-              H1 runs.
-    who_t12, lab64
-              the same gene lists LocusFusion's locus_sets sweep used. Gene loci
-              only, so no promoter bases, like `19`.
-    who_t12r, lab64r
-              those genes plus every locus carrying a WHO Table-22 region for
-              them. These are the arms to compare to LocusFusion at those sets.
+    19p       the 19 plus the intergenic loci covering their 100 bp 5' flank
+              (the flank LocusFusion's FASTAs carry). Loci are atomic, so this
+              only ever selects whole intergenic loci (rpoB's is 497 bp).
     minus19p  the complement of `19p`.
-    minus19   the complement of `19` alone, so it KEEPS all 16 of the 19 genes'
-              promoter loci including the fabG1-inhA c-15t. Kept only to
-              reproduce older runs; prefer `minus19p`.
+    who_t12r, lab64r
+              the gene lists LocusFusion's locus_sets sweep used
+              (datasets.loader.drug_loci) plus every locus carrying a WHO
+              Table-22 region for those genes.
+    size:N    19r plus a seeded random draw from the rest, N loci in all.
+              Nested across N for one --ladder-seed; size:6776 is the genome.
 """
 import argparse
 import hashlib
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -54,28 +52,22 @@ import numpy as np
 import pandas as pd
 import torch
 
-PROJECT = Path(__file__).resolve().parents[1]
-if str(PROJECT) not in sys.path:
-    sys.path.insert(0, str(PROJECT))
+from paths import GF_TOKENS, GF_WEIGHTS_DIR, REAL_PHENOTYPE_CSV, SPLIT_DIR
+from training.core import EarlyStopper, masked_weighted_bce
+from training.multidrug import _alpha_matrix
+from training.multimodal import LR, _metrics, build_optimizer
 
-from bigtb_ref import REAL_PHENOTYPE_CSV  # noqa: E402
-from training.core import EarlyStopper, masked_weighted_bce  # noqa: E402
-from training.multidrug import _alpha_matrix  # noqa: E402
-from training.multimodal import LR, _metrics, build_optimizer  # noqa: E402
-
-from genomefusion.data import (BatchBuilder, Labels, TokenStore, budget_batches,  # noqa: E402
+from genomefusion.data import (BatchBuilder, Labels, TokenStore, budget_batches,
                                length_grouped_batches, split_rows)
-from genomefusion.layout import c_base, channel_names  # noqa: E402
-from genomefusion.model import GF_DEFAULTS, GenomeFusionNet  # noqa: E402
-from genomefusion.partition import CACHE, WORKSPACE, load_or_build  # noqa: E402
+from genomefusion.layout import channel_names
+from genomefusion.partition import CACHE, PROMOTER_FLANK, load_or_build
+from models.genomefusion import GF_DEFAULTS, GenomeFusionNet
 
-ALL_DRUGS = ["AMIKACIN", "CAPREOMYCIN", "ETHAMBUTOL", "ETHIONAMIDE", "ISONIAZID", "KANAMYCIN",
-             "LEVOFLOXACIN", "MOXIFLOXACIN", "PYRAZINAMIDE", "RIFAMPICIN", "STREPTOMYCIN"]
 #: gene lists shared with LocusFusion (datasets.loader.drug_loci), so GenomeFusion
-#: and the locus_sets baselines start from the same genes. The `r` variant adds
-#: the loci carrying those genes' WHO Table-22 regions, as `19r` does for the 19.
-NAMED_SETS = {"who_t12": "who_t12", "who_t12r": "who_t12", "lab64": "lab64", "lab64r": "lab64"}
-LOCUS_SETS = ("genome", "19", "19r", "19p", "minus19p", "minus19", *NAMED_SETS)
+#: and the locus_sets baselines start from the same genes, plus the loci carrying
+#: those genes' WHO Table-22 regions, as `19r` does for the 19.
+NAMED_SETS = {"who_t12r": "who_t12", "lab64r": "lab64"}
+LOCUS_SETS = ("genome", "19", "19r", "19p", "minus19p", *NAMED_SETS)
 
 
 def _is_size(which):
@@ -86,8 +78,9 @@ def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--drugs", nargs="+", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--split-dir", required=True)
+    ap.add_argument("--out", required=True, help="results dir, results/genomefusion/<arm>")
+    ap.add_argument("--split-dir", default=SPLIT_DIR,
+                    help="lineage splits, one {DRUG}.csv each")
     ap.add_argument("--locus-set", default="genome",
                     help="one of " + ", ".join(LOCUS_SETS) + ", or size:N for a ladder rung")
     ap.add_argument("--ladder-seed", type=int, default=0,
@@ -97,18 +90,11 @@ def parse_args(argv=None):
                     help="drop the regulated-locus half of the locus feature vector, i.e. a "
                          "locus no longer knows WHAT it regulates. The control for the "
                          "known-relationship change.")
-    ap.add_argument("--tokens", default=str(WORKSPACE / "genomefusion_tokens" / "tokens.npz"))
+    ap.add_argument("--tokens", default=str(GF_TOKENS / "tokens.npz"))
     ap.add_argument("--partition-cache", default=str(CACHE))
-    ap.add_argument("--weights-dir", default=None)
+    ap.add_argument("--weights-dir", default=str(GF_WEIGHTS_DIR),
+                    help="best.pt goes to <weights-dir>/<basename of --out>/<drug>/")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--population", action="store_true",
-                    help="the homoplasy / lineage-marker channels; needs a phylogeny, which we "
-                         "do not have yet, so this currently refuses rather than training on "
-                         "two columns of zeros")
-    ap.add_argument("--max-tokens-per-locus", type=int, default=None)
-    ap.add_argument("--promoter-flank", type=int, default=100,
-                    help="for --locus-set 19p: how many bp 5' of each gene to pull in as "
-                         "intergenic loci. 100 matches the flank v3's per-gene FASTAs carry.")
     # protocol
     ap.add_argument("--epochs", type=int, default=300)
     ap.add_argument("--patience", type=int, default=30)
@@ -141,13 +127,9 @@ def parse_args(argv=None):
                 raise ValueError
         except ValueError:
             ap.error(f"size:N needs a positive integer N, got {args.locus_set!r}")
-    args.drugs = ALL_DRUGS if [d.lower() for d in args.drugs] == ["all"] else \
-        [d.upper() for d in args.drugs]
+    args.drugs = [d.upper() for d in args.drugs]
     if len(args.drugs) > 1:
-        ap.error("multi-drug is not wired up yet; pass one drug")
-    if args.population:
-        ap.error("--population needs the homoplasy channel, which needs a phylogeny of the "
-                 "cohort; it is not built. Rerun without it.")
+        ap.error("single-drug only; pass one drug")
     return args
 
 
@@ -164,14 +146,10 @@ def base_19r(partition):
 
 
 def named_subset(partition, which, drug):
-    """A NAMED_SETS locus set for one drug: `who_t12` is per-drug, `lab64` is not.
-
-    Like `19`, the plain sets are gene loci only, so they LACK the promoter bases
-    that LocusFusion's flanked FASTAs carry. Compare the `r` variants to it, and
-    do not read a plain-set shortfall as a model result.
+    """A NAMED_SETS locus set for one drug: `who_t12r` is per-drug, `lab64r` is not.
 
     A gene inside the RLC/PE-PPE mask has no locus and is reported, not fatal, but
-    its regulatory region is still added to the `r` variant if it is unmasked.
+    its regulatory region is still added if it is unmasked.
     """
     if not drug:
         raise ValueError(f"--locus-set {which} needs a drug")
@@ -187,9 +165,8 @@ def named_subset(partition, which, drug):
     if missing:
         print(f"[gf] {which}/{drug}: no locus for {missing} (masked or unannotated)", flush=True)
     keep = {by_name[g] for g in names if g in by_name}
-    if which.endswith("r"):
-        keep |= {i for i, L in enumerate(partition.loci)
-                 if L.is_regulatory and set(L.regulates) & set(names)}
+    keep |= {i for i, L in enumerate(partition.loci)
+             if L.is_regulatory and set(L.regulates) & set(names)}
     return np.asarray(sorted(keep), np.int64)
 
 
@@ -208,7 +185,7 @@ def size_subset(partition, n, seed=0):
     return np.sort(np.concatenate([base, order[:n - len(base)]]))
 
 
-def locus_subset(partition, which, promoter_flank=100, ladder_seed=0, drug=None):
+def locus_subset(partition, which, ladder_seed=0, drug=None):
     is19 = np.asarray([L.is_19 for L in partition.loci])
     if which in NAMED_SETS:
         return named_subset(partition, which, drug)
@@ -221,15 +198,13 @@ def locus_subset(partition, which, promoter_flank=100, ladder_seed=0, drug=None)
     if _is_size(which):
         return size_subset(partition, int(which.split(":", 1)[1]), ladder_seed)
     if which == "19p":
-        prom = np.asarray(partition.promoter_loci(promoter_flank), np.int64)
+        prom = np.asarray(partition.promoter_loci(), np.int64)
         return np.union1d(np.flatnonzero(is19), prom)
-    if which == "minus19p":
-        # the complement of 19p: drop the 19 AND the promoter loci that carry
-        # their regulatory variants, so what is left is genuinely elsewhere
-        keep = ~is19
-        keep[np.asarray(partition.promoter_loci(promoter_flank), np.int64)] = False
-        return np.flatnonzero(keep)
-    return np.flatnonzero(~is19)
+    # minus19p, the complement of 19p: drop the 19 AND the promoter loci that
+    # carry their regulatory variants, so what is left is genuinely elsewhere
+    keep = ~is19
+    keep[np.asarray(partition.promoter_loci(), np.int64)] = False
+    return np.flatnonzero(keep)
 
 
 def predict(model, bb, rows, bs, n_drugs, locus_budget=None):
@@ -246,7 +221,7 @@ def predict(model, bb, rows, bs, n_drugs, locus_budget=None):
 
 
 def per_drug(Y, logits, drugs):
-    """{drug: v3's metric dict}, macro AUC. Predictions are P(susceptible), as v3's."""
+    """{drug: LocusFusion's metric dict}, macro AUC. Predictions are P(susceptible), as there."""
     P = 1.0 / (1.0 + np.exp(-logits))
     per = {d: _metrics(Y[:, j], P[:, j]) for j, d in enumerate(drugs)}
     aucs = [m["auc"] for m in per.values() if m["auc"] == m["auc"]]
@@ -306,10 +281,8 @@ def main(argv=None):
     store = TokenStore(args.tokens)
     print(f"[gf] store {len(store):,} isolates, {store.stats['tokens_total']:,} tokens, "
           f"mean {store.stats['tokens_mean']:.0f}/isolate", flush=True)
-    loci = locus_subset(partition, args.locus_set, args.promoter_flank, args.ladder_seed,
-                        drug=tag)
-    bb = BatchBuilder(store, partition, loci=loci, population=args.population,
-                      device=args.device, max_tokens_per_locus=args.max_tokens_per_locus)
+    loci = locus_subset(partition, args.locus_set, args.ladder_seed, drug=tag)
+    bb = BatchBuilder(store, partition, loci=loci, device=args.device)
     print(f"[gf] {len(loci):,} loci in this set; mean {bb.n_active.mean():.0f} active per "
           f"isolate (max {bb.n_active.max():,}); {bb.feat.shape[0]:,} tokens kept", flush=True)
 
@@ -399,12 +372,12 @@ def main(argv=None):
         "n_feat": int(feats.shape[1]), "regulated_features": not args.no_regulated_features,
         "n_regulated_edges": n_edge,
         "n_regulatory_loci": int(sum(partition.loci[int(i)].is_regulatory for i in loci)),
-        "promoter_flank": args.promoter_flank if args.locus_set == "19p" else None,
+        "promoter_flank": PROMOTER_FLANK if args.locus_set == "19p" else None,
         "promoter_loci": ([int(x) for x in loci
                            if partition.loci[int(x)].kind == "intergenic"]
                           if args.locus_set == "19p" else None),
         "n_params": n_params, "n_isolates": len(store),
-        "token_width": int(bb.c_tok), "channels": channel_names((), args.population),
+        "token_width": int(bb.c_tok), "channels": channel_names(),
         "active_loci_mean": float(bb.n_active.mean()), "active_loci_max": int(bb.n_active.max()),
         "tokens": store.stats, "partition": partition.meta,
         "capacity": capacity,

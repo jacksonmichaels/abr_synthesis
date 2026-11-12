@@ -49,15 +49,3 @@ def codon_positions(locus, partition):
     out = np.full((n, 3), -1, np.int64)
     out[cod[own], ph[own]] = pos[own]
     return out
-
-
-def reference_codons(locus, partition, ref):
-    """The locus's reference codons as an (n_codons, 3) uint8 array, translated."""
-    cp = codon_positions(locus, partition)
-    arr = np.frombuffer(ref, np.uint8)
-    out = np.full(cp.shape, ord("-"), np.uint8)
-    ok = cp >= 0
-    out[ok] = arr[cp[ok]]
-    if locus.strand < 0:
-        out = np.frombuffer(out.tobytes().translate(COMPLEMENT), np.uint8).reshape(out.shape)
-    return cp, out

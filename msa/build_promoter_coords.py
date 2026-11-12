@@ -47,11 +47,11 @@ import os
 
 from Bio import SeqIO
 
-# import the project's catalogue tables (run with the repo on PYTHONPATH)
 import sys
-sys.path.insert(0, "/home/jacksonmicha_umass_edu/abr_workspace/biophysical-fusion")
-from datasets import who_catalogue as who
-from datasets.regulatory import DRUG_NAME_TO_WHO
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from datasets import who_catalogue as who  # noqa: E402
+from datasets.regulatory import DRUG_NAME_TO_WHO  # noqa: E402
+from paths import GENBANK  # noqa: E402
 
 PAD = 30
 
@@ -64,9 +64,7 @@ PROMOTER_ALIASES = {"fabG1": "inhA"}
 # loci curated 2026-10-15 (atpE, ddn, rplC, ...) have a regulatory region.
 # Appended after the project drugs, so every earlier window is unchanged.
 EXTRA_WHO_DRUGS = ("BDQ", "LZD", "CFZ", "DLM")
-GENBANK = ("/project/pi_annagreen_umass_edu/saishradha/project_data_curation/"
-           "make_msa/genbank_reference_data/genome.gbff")   # READ-ONLY
-OUT = os.path.join(os.path.dirname(__file__), "promoter_windows_atg.json")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "windows", "promoter_windows_atg.json")
 
 
 def genbank_gene_coords(path):

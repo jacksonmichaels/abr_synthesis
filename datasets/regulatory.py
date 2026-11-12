@@ -4,15 +4,12 @@ accessory loci that drive resistance beyond the primary coding target. One block
 per region.
 
 Per-drug regions come from the **WHO 2023 catalogue** (`who_catalogue.py`,
-Tables 21 & 22). The default set for a drug is its WHO Table-21 candidate genes
-that also have a **Table-22 promoter entry** — i.e. every candidate for which
-WHO delimits an upstream/promoter region. Genes with no Table-22 region are not
-regulatory (WHO specifies no upstream window for them).
+Tables 21 & 22). The set for a drug is its WHO Table-21 candidate genes; the
+loaders keep the ones that are also loaded as coding loci and have a FASTA.
 
 Each region's `{region}.fasta` is the per-isolate MSA of the **Table-22 promoter
 window** (the upstream coordinates + 30 bp flank), extracted separately from the
-BIG-TB VCFs into a dedicated dir (``bigtb_ref.REAL_REGULATORY_DIR``, built by
-``regulatory_msa/{build_promoter_coords,submit_promoter_msa}.py``). So a region
+BIG-TB VCFs into a dedicated dir (``paths.REAL_REGULATORY_DIR``). So a region
 named e.g. ``embA`` here is the *embA promoter* (the embC–embA intergenic
 window), NOT the embA CDS — it is disjoint from the coding sequence the DNA /
 protein branches already model, keeping the modalities' information separate.
@@ -25,8 +22,7 @@ from typing import List
 from . import cds
 from . import who_catalogue as who
 from .base import FeatureBlock, LoadContext, Modality
-from .sequences import (NT_CHANNELS, NT_CHANNELS_WITH_UNKNOWN, delta_one_hot_nt, load_sequence_df,
-                        one_hot_nt, reference_row, stack_padded)
+from .sequences import NT_CHANNELS, load_sequence_df, one_hot_nt, stack_padded
 
 # project drug name (DRUG_TO_LOCI keys) -> WHO Table 21 abbreviation.
 # Both fluoroquinolones map to WHO's combined 'FQ' row.
@@ -59,17 +55,9 @@ def _regulatory_default(drug):
     """Every WHO Table-21 candidate gene for the drug. Includes primary-gene
     promoters (e.g. katG/inhA for INH): the promoter window is upstream and
     disjoint from the CDS, so it is still information separate from the
-    DNA/protein branches. Availability on disk is filtered later, at load time.
-
-    Table 22 supplies a region's upstream COORDINATES (see _region_note), not
-    its membership — requiring an entry here used to silently drop tier-1 genes
-    our Table-22 transcription lacks, notably fabG1 (Rv1483), whose promoter
-    carries the dominant non-katG INH/ETO mechanism, and furA. Today that
-    exclusion is masked by a second gap: neither gene has a promoter FASTA in
-    REAL_REGULATORY_DIR, so both are skipped at load either way and this
-    function's output is unchanged on the current data. It matters the moment
-    one is curated — with the old filter, a freshly built fabG1 window would
-    STILL have been ignored."""
+    DNA/protein branches. Table 22 supplies a region's upstream coordinates
+    (see _region_note), not its membership. Availability on disk is filtered
+    at load time."""
     abbrev = DRUG_NAME_TO_WHO.get(drug.upper())
     if abbrev is None or abbrev not in who.TABLE_21:
         return []
@@ -77,8 +65,7 @@ def _regulatory_default(drug):
     return _drop_alias_duplicates(list(dict.fromkeys(genes)))
 
 
-# drug -> default regulatory regions (WHO-derived). Override per call via
-# load_dataset(..., regulatory_loci=[...]).
+# drug -> regulatory regions (WHO-derived)
 DRUG_TO_REGULATORY = {d: _regulatory_default(d) for d in DRUG_NAME_TO_WHO}
 
 
@@ -97,11 +84,6 @@ class RegulatoryModality(Modality):
     name = "regulatory"
     uses_genes = False
 
-    # see datasets/sequences.py — zero the columns matching H37Rv. Promoter
-    # windows are the most redundant blocks in the set (regulatory:gyrA takes
-    # 8 distinct forms across 2,868 isolates), so this is where it bites hardest.
-    delta = False
-
     def build(self, ctx: LoadContext) -> List[FeatureBlock]:
         regions = ctx.regulatory_loci
         if not regions:
@@ -112,24 +94,14 @@ class RegulatoryModality(Modality):
         df = df.reindex(ctx.isolates).fillna("")
         blocks = []
         for region in found:
-            ref = reference_row(ctx.regulatory_dir, region) if self.delta else None
-            if self.delta and not ref:
-                print(f"  [load] delta encoding: no H37Rv row for regulatory "
-                      f"{region} — stays plain one-hot")
-            unk = self.unknown_symbols
-            mats = [(delta_one_hot_nt(df.at[iso, region], ref, with_unknown=unk) if self.delta
-                     else one_hot_nt(df.at[iso, region], with_unknown=unk)).T
-                    for iso in ctx.isolates]
-            array = stack_padded(mats)
+            array = stack_padded([one_hot_nt(df.at[iso, region]).T for iso in ctx.isolates])
             blocks.append(FeatureBlock(
                 name=f"regulatory:{region}",
                 modality=self.name,
                 array=array,
-                channel_names=list(NT_CHANNELS_WITH_UNKNOWN if unk else NT_CHANNELS),
-                note=_region_note(region) + (" [delta vs H37Rv]" if self.delta else ""),
-                # where this window sits in the genome, so a variant-token model
-                # can place it against the gene record instead of assuming it
-                # abuts the start codon -- it does not (see cds.block_frame).
+                channel_names=list(NT_CHANNELS),
+                note=_region_note(region),
+                # where this window sits in the genome (see cds.block_frame)
                 meta=cds.block_frame(ctx.regulatory_dir, region, array.shape[2]),
             ))
         return blocks

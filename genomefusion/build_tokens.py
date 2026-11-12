@@ -1,32 +1,36 @@
 """
 Build the GenomeFusion token store from the BIG-TB VCFs, as a SLURM array.
 
-    # one shard (array task)
-    python -m genomefusion.build_tokens --shard 0 --n-shards 16 --out <dir>
-    # merge the shards into one store
-    python -m genomefusion.build_tokens --merge --out <dir>
+    # one array task per shard (cpu partition, 1 core, 8 GB, ~2 h each)
+    python -m genomefusion.build_tokens --shard $SLURM_ARRAY_TASK_ID --n-shards 16
+    # then, after every shard finished, merge them into tokens.npz
+    python -m genomefusion.build_tokens --merge --n-shards 16
 
 Each task tokenizes its slice of the cohort and writes `shard_<i>.npz`: every
 isolate's tokens concatenated, plus the offsets that cut them back apart. The
 merge step concatenates the shards in cohort order into `tokens.npz`.
 
-The VCFs are read straight from the read-only pi_annagreen tree -- copying
-35,884 files off that spinning disk costs far more than reading them once.
-Nothing is written anywhere but `--out`.
+The VCFs are read straight from the read-only pi_annagreen tree (paths.GF_VCF_DIR)
+-- copying 35,884 files off that spinning disk costs far more than reading them
+once. That mount is flaky, so check it is there (`ls`) before starting a task.
+Nothing is written anywhere but `--out` and the partition cache (cohort.json,
+reference.npy, partition.npz when absent).
 """
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from genomefusion.partition import CACHE, WORKSPACE, load_or_build
+from paths import GF_TOKENS, GF_VCF_DIR, REAL_PHENOTYPE_CSV
+from genomefusion.partition import CACHE, load_or_build
 from genomefusion.reference import load_reference
 from genomefusion.tokenizer import tokenize_isolate
 
-VCF_DIR = Path("/project/pi_annagreen_umass_edu/anna/BIG-TB_v2/isolates/BIG-TB_download_2025_07_01")
+VCF_DIR = GF_VCF_DIR
 VCF_SUFFIX = "_variants.vcf.bgz"
 
 TOKEN_FIELDS = ("locus", "pos", "base", "residue", "ref_residue", "consequence", "phase",
@@ -34,7 +38,7 @@ TOKEN_FIELDS = ("locus", "pos", "base", "residue", "ref_residue", "consequence",
 SUMMARY_FIELDS = ("sum_locus", "sum_n", "sum_span", "sum_frame", "sum_oof")
 
 
-def phenotype_ids(pheno_csv=None, cache=CACHE):
+def phenotype_ids(cache=CACHE):
     """The cohort: isolates with a phenotype row and a VCF, in sorted order.
 
     The VCF side comes from ONE directory listing, not a stat per isolate:
@@ -44,9 +48,8 @@ def phenotype_ids(pheno_csv=None, cache=CACHE):
     path = Path(cache) / "cohort.json"
     if path.exists():
         return json.loads(path.read_text())
-    from bigtb_ref import REAL_PHENOTYPE_CSV
-    df = pd.read_csv(pheno_csv or REAL_PHENOTYPE_CSV, dtype={"New_ID": str}, low_memory=False)
-    have = {e.name[:-len(VCF_SUFFIX)] for e in __import__("os").scandir(VCF_DIR)
+    df = pd.read_csv(REAL_PHENOTYPE_CSV, dtype={"New_ID": str}, low_memory=False)
+    have = {e.name[:-len(VCF_SUFFIX)] for e in os.scandir(VCF_DIR)
             if e.name.endswith(VCF_SUFFIX)}
     ids = sorted(set(df["New_ID"].dropna()) & have)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,7 +57,7 @@ def phenotype_ids(pheno_csv=None, cache=CACHE):
     return ids
 
 
-def build_shard(ids, partition, ref, out_path, drop_synonymous=True, log_every=200):
+def build_shard(ids, partition, ref, out_path, log_every=200):
     ref_arr = np.frombuffer(ref, np.uint8)
     cache = {}
     cols = {k: [] for k in TOKEN_FIELDS}
@@ -62,8 +65,7 @@ def build_shard(ids, partition, ref, out_path, drop_synonymous=True, log_every=2
     n_tok, n_sum, stats = [], [], []
     t0 = time.time()
     for i, sid in enumerate(ids):
-        tk = tokenize_isolate(VCF_DIR / f"{sid}{VCF_SUFFIX}", partition, ref,
-                              drop_synonymous=drop_synonymous, ref_arr=ref_arr,
+        tk = tokenize_isolate(Path(VCF_DIR) / f"{sid}{VCF_SUFFIX}", partition, ref_arr,
                               codon_cache=cache)
         for k in TOKEN_FIELDS:
             cols[k].append(getattr(tk, k))
@@ -124,12 +126,10 @@ def merge(out_dir, n_shards):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=str(WORKSPACE / "genomefusion_tokens"))
+    ap.add_argument("--out", default=str(GF_TOKENS))
     ap.add_argument("--shard", type=int, default=None)
     ap.add_argument("--n-shards", type=int, default=16)
     ap.add_argument("--merge", action="store_true")
-    ap.add_argument("--limit", type=int, default=None, help="first N isolates (a smoke test)")
-    ap.add_argument("--keep-synonymous", action="store_true")
     ap.add_argument("--partition-cache", default=str(CACHE))
     args = ap.parse_args(argv)
     out = Path(args.out)
@@ -141,15 +141,13 @@ def main(argv=None):
 
     partition = load_or_build(args.partition_cache)
     ref = load_reference(args.partition_cache)
-    ids = phenotype_ids()
-    if args.limit:
-        ids = ids[:args.limit]
+    ids = phenotype_ids(args.partition_cache)
     print(f"[build] cohort {len(ids):,} isolates with a phenotype row and a VCF", flush=True)
     sl = ids if args.shard is None else ids[args.shard::args.n_shards]
     name = "shard_all.npz" if args.shard is None else f"shard_{args.shard}.npz"
     print(f"[build] shard {args.shard}/{args.n_shards}: {len(sl)} isolates -> {out / name}",
           flush=True)
-    build_shard(sl, partition, ref, out / name, drop_synonymous=not args.keep_synonymous)
+    build_shard(sl, partition, ref, out / name)
 
 
 if __name__ == "__main__":

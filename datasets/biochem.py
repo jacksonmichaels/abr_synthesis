@@ -19,14 +19,11 @@ from Bio.Seq import Seq
 
 AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
 AA_TO_INDEX = {a: i for i, a in enumerate(AMINO_ACIDS)}
-# The 20 residues plus STOP, for the reference-frame translation below: there a
-# stop codon is a residue like any other (a nonsense mutation at codon k), not
-# the end of the protein, so it needs a channel of its own.
+# The 20 residues plus STOP, the residue order models.locusfusion_v2 uses.
 STOP = "*"
 RESIDUES_WITH_STOP = AMINO_ACIDS + STOP
-RESIDUE_WITH_STOP_TO_INDEX = {a: i for i, a in enumerate(RESIDUES_WITH_STOP)}
 
-# --- RDKit-derived amino-acid properties (paste into datasets/biochem.py) ---
+# --- RDKit-derived amino-acid properties ---
 
 _MW = {
     "A": 71.079, "C": 103.146, "D": 115.088, "E": 129.115, "F": 147.177,
@@ -71,21 +68,12 @@ N_PROPERTIES = len(PROPERTY_NAMES)
 
 # Standard genetic code (NCBI translation table 1), sourced from Biopython
 # rather than hand-typed: forward_table maps each sense codon -> single-letter
-# AA, and the three stop codons are added as '*'. Same DNA-codon -> AA mapping
-# as before, now from a validated reference.
+# AA, and the three stop codons are added as '*'.
 _STANDARD_CODE = CodonTable.unambiguous_dna_by_id[1]
 CODON_TABLE = {
     **_STANDARD_CODE.forward_table,
     **{codon: "*" for codon in _STANDARD_CODE.stop_codons},
 }
-
-
-def translate_codon(codon: str) -> str:
-    """Single-letter AA, or '-' for a gap/incomplete/stop/ambiguous codon."""
-    codon = codon.upper()
-    if len(codon) != 3 or "-" in codon:
-        return "-"
-    return CODON_TABLE.get(codon, "-")
 
 
 def translate_seq(aligned_nt_seq: str) -> str:
@@ -110,46 +98,6 @@ def translate_seq(aligned_nt_seq: str) -> str:
     return str(Seq(whole_codons).translate(to_stop=True))
 
 
-def translate_reference_frame(aligned_nt_seq: str, ref_row: str, window=None) -> str:
-    """
-    Nucleotide (gapped, aligned) -> one residue per REFERENCE codon.
-
-    ``translate_seq`` degaps first, so its residue k is the isolate's own k-th
-    codon: an indel upstream slides every residue after it off the reference
-    numbering, and a frameshift turns the rest of the protein into hundreds of
-    "substitutions" at positions whose bases never changed. This reads the
-    isolate on the H37Rv codon grid instead — codon k is the isolate's bases at
-    the three alignment columns holding reference codon k's bases — so residue k
-    means the same codon in every isolate, and a residue can only differ from the
-    reference where one of its own three columns did.
-
-    Symbols: one of the 20 residues; ``'*'`` for a stop codon (a nonsense
-    mutation is a residue here, not the end of the protein); ``'-'`` for a codon
-    that lost a base to a deletion (the deletion itself is a DNA gap, carried by
-    the nucleotide block); ``'X'`` for an ambiguous codon. Bases the isolate
-    carries at columns where the REFERENCE has a gap — insertions — are not part
-    of any reference codon and are skipped; the nucleotide block carries them.
-
-    ``window`` is ``(start_col, end_col)`` in alignment columns, the CDS as
-    ``datasets.cds.cds_columns`` returns it; None reads the whole record, which
-    is what the rRNA loci (no CDS) fall back to. The terminal stop codon of the
-    reference is included, so a stop-loss is visible too.
-    """
-    ref_row = ref_row.upper()
-    start, end = window if window is not None else (0, len(ref_row))
-    end = min(end, len(ref_row))
-    cols = [c for c in range(start, end) if ref_row[c] != "-"]
-    seq = aligned_nt_seq.upper()
-    out = []
-    for k in range(len(cols) // 3):
-        codon = "".join(seq[c] if c < len(seq) else "-" for c in cols[3 * k:3 * k + 3])
-        if "-" in codon:
-            out.append("-")
-        else:
-            out.append(CODON_TABLE.get(codon, "X"))
-    return "".join(out)
-
-
 def biophysical_matrix(protein_seq: str, pad_to: int = None) -> np.ndarray:
     """
     (3, K) property matrix for one protein sequence, K = pad_to (if given) else
@@ -164,45 +112,16 @@ def biophysical_matrix(protein_seq: str, pad_to: int = None) -> np.ndarray:
     return out
 
 
-# Opt-in residue channels for locusfusion_v2 --lf-unknown-symbols: a deleted codon
-# ('-') and an unreadable one (anything else outside the alphabet, e.g. a codon
-# with an N) each get a channel instead of the all-zero column.
-RESIDUE_GAP, RESIDUE_OTHER = "-", "X"
-EXTRA_RESIDUE_CHANNELS = (RESIDUE_GAP, RESIDUE_OTHER)
-
-
-def one_hot_aa(protein_seq: str, pad_to: int = None,
-               with_stop: bool = False, with_unknown: bool = False) -> np.ndarray:
+def one_hot_aa(protein_seq: str, pad_to: int = None) -> np.ndarray:
     """
     (20, K) one-hot amino-acid matrix, K = pad_to (if given) else
     len(protein_seq). Unknown residues / padding are the all-zero column (same
     convention the DNA one-hot uses for unknown bases).
-
-    ``with_stop=True`` adds a 21st channel for ``'*'`` (``RESIDUES_WITH_STOP``
-    order), for residue strings from ``translate_reference_frame``. The default
-    is byte-identical to what every existing run was trained on.
     """
     k = pad_to if pad_to is not None else len(protein_seq)
-    alphabet = RESIDUE_WITH_STOP_TO_INDEX if with_stop else AA_TO_INDEX
-    n = len(alphabet)
-    out = np.zeros((n + (len(EXTRA_RESIDUE_CHANNELS) if with_unknown else 0), k),
-                   dtype=np.float32)
+    out = np.zeros((len(AA_TO_INDEX), k), dtype=np.float32)
     for i, aa in enumerate(protein_seq[:k]):
-        j = alphabet.get(aa)
+        j = AA_TO_INDEX.get(aa)
         if j is not None:
             out[j, i] = 1.0
-        elif with_unknown:
-            out[n if aa == RESIDUE_GAP else n + 1, i] = 1.0
     return out
-
-
-def residue_channels(with_stop: bool = False, with_unknown: bool = False):
-    """The channel names `one_hot_aa` emits, in order."""
-    names = list(RESIDUES_WITH_STOP if with_stop else AMINO_ACIDS)
-    return names + list(EXTRA_RESIDUE_CHANNELS) if with_unknown else names
-
-
-def upsample_to_nt(bio: np.ndarray) -> np.ndarray:
-    """Repeat each AA-position column 3x (AA resolution -> ~nucleotide
-    resolution). Used only by EarlyFusionCNN's channel-stack ablation."""
-    return np.repeat(bio, 3, axis=-1)

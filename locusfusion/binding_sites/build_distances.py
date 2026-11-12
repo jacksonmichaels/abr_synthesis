@@ -1,7 +1,7 @@
 """
 Per-drug distance from every H37Rv position to that drug's binding site.
 
-    python -m locusfusion_v4.binding_sites.build_distances      # from biophysical-fusion/
+    python -m locusfusion.binding_sites.build_distances      # from the repo root
 
 Writes, next to this file:
   distances.npz   one float32 array per (drug, locus), key "DRUG|locus", in A.
@@ -11,7 +11,7 @@ Writes, next to this file:
   distances.json  what each array is the distance TO, from which structure, and
                   its indexing -- the provenance table for the README.
 
-Two sources (the recipe of notebooks/locusfusion_v4/binding_site_distance.ipynb §2 and §7):
+Two sources:
   * protein sites (sites.json "protein_sites"): closest heavy-atom distance from
     each residue to any site residue, on the AlphaFold model of the H37Rv
     protein (structures/alphafold/{locus}.npz). 0 A for a site residue itself.
@@ -24,17 +24,17 @@ Every residue named in sites.json is asserted against the AlphaFold sequence.
 Light: reads ~30 MB of structure files, runs in seconds on a login node.
 """
 import json
-import os
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 
+import paths
+
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[2]                   # biophysical-fusion/.. = the workspace
-ALPHAFOLD = REPO / "structures" / "alphafold"
-RIBOSOME = REPO / "structures" / "ribosome" / "raw"
-GENBANK = os.environ.get("ABR_GENBANK") or str(REPO / "data_snapshot" / "genbank" / "genome.gbff")
+ALPHAFOLD = Path(paths.REAL_STRUCTURE_DIR)
+RIBOSOME = paths.ROOT / "structures" / "ribosome" / "raw"
+GENBANK = paths.GENBANK
 
 
 def _alphafold(locus):

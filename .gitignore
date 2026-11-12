@@ -1,123 +1,32 @@
-# What belongs in this repository: the code that runs an experiment, the tests
-# that pin its behaviour, and the per-run write-ups under
-# biophysical-fusion/results/ that record what each run found. Nothing else.
-#
-# Everything a run *produces* — result JSON, summary/fold CSVs, figures, .npz
-# arrays, saved models, executed notebooks, raw job logs — stays on the
-# filesystem. The output trees below each carry their own .gitignore, written as
-# an ALLOWLIST (`*` then targeted `!` lines) so a new output format cannot leak
-# in by default:
-#
-#   biophysical-fusion/results/     per-run README.md, submit.sh, run scripts
-#   biophysical-fusion/slurm_logs/  nothing — raw job output only
-#   mdcnn_eval/                     the MD-CNN reproduction's code and params
-#   h1_repro/                       the leak-reproduction scripts
-#   regulatory_msa/                 the promoter-MSA generators
-#
-# The one class of generated text that IS tracked: results/**/*.md. A run's
-# write-up is what preserves it. results/experiments/alllocus_run/ — 221 jobs,
-# ~350 GPU-hours — was deleted with no copy anywhere, and only its README
-# survives it.
+# Code and small, hand-made or public inputs only. Data, caches, weights,
+# results and logs live in the workspace (linked in, see README.md).
 
-# --- editor / interpreter noise ---------------------------------------------
-.claude*
-*__pycache__/
+__pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+.claude*
 
-# --- another project's repository -------------------------------------------
-# The upstream benchmark, cloned here and only ever read (single point of
-# contact: biophysical-fusion/bigtb_ref.py). It has its own remote, and 129 MB
-# of WHO catalogues and GenBank references do not belong on ours. It was
-# committed as a gitlink with no .gitmodules, so a clone got an empty directory
-# regardless.
-Big-TB-benchmark/
-
-# --- third-party reference material -----------------------------------------
-# Published papers, advisor slides, meeting notes: 15 MB of other people's PDFs,
-# not ours to redistribute.
-reference_docs/
-
-# --- prose ------------------------------------------------------------------
-# One README describes the project. Run write-ups are re-included by
-# biophysical-fusion/results/.gitignore; everything else — TODOs, cleanup
-# reports, paper drafts — is working text that does not need a remote.
-*.md
-!/README.md
-*.tex
-
-# --- machine-readable output -------------------------------------------------
-# Result payloads, job manifests, metrics dumps. Every .json in this tree is
-# written by a script, never by hand.
-*.json
-
-# --- arrays, caches, saved models -------------------------------------------
-*.npz
-*.npy
-*.h5
-*.hdf5
-*.keras
-*.ckpt
-*.pb
-*.pkl
-*.pickle
-*.joblib
-
-# --- executed notebooks ------------------------------------------------------
-# Every notebook is rendered by its scripts/build_<name>.py and carries its
-# outputs inline (results.ipynb alone is 2.1 MB). The builder is the source.
-*.ipynb
-
-# --- rasters of tracked vectors ---------------------------------------------
-# biophysical-fusion/diagrams/ keeps the .svg; the .png beside it is a render.
-*.png
-
-# AlphaFold C-alpha coordinates for the `structure` modality (small, public
-# CC-BY 4.0 data): tracked so a fresh clone runs. raw/ PDBs are a re-fetchable cache.
-!/structures/alphafold/*.npz
-!/structures/alphafold/manifest.json
-# LocusFusion v4: its README, the binding-site definitions and the distance table
-# built from them (small), and the augmentation exclusion list -- inputs, not output
-!/biophysical-fusion/locusfusion_v4/README.md
-!/biophysical-fusion/locusfusion_v4/augment_exclusions.json
-!/biophysical-fusion/locusfusion_v4/binding_sites/sites.json
-!/biophysical-fusion/locusfusion_v4/binding_sites/distances.npz
-!/biophysical-fusion/locusfusion_v4/binding_sites/distances.json
-/structures/alphafold/raw/
-# gene_msa window definitions (config, not data); aligned/ and slurm_logs/ stay out
-!/gene_msa/gene_windows.json
-/gene_msa/aligned/
-/gene_msa/slurm_logs/
-/gene_msa/who_t12_genotypes/
-
-# --- workspace data, weights and frozen code snapshots ----------------------
-# Inputs and outputs that live on /scratch only: model weights, token caches,
-# genotype snapshots, the repaired MSAs, and the frozen code copies that sweep
-# jobs run from (each holds its own BASE_COMMIT + working_tree.patch).
-/model_weights_*/
-/token_cache_*/
-/data_snapshot/
-/v3_snapshot/
-/v3md_snapshot/
-/v4_snapshot/
-/lineage_snapshot/
+# --- data, linked or built in the workspace ---------------------------------
+/data_snapshot
 /curated_fix/
-/gene_msa/aligned_fixed/
+/regulatory_msa/
+/gene_msa/
+/locus_sets/
+/genomefusion_cache*/
+/genomefusion_tokens/
+/token_cache_v4/
+/structures/alphafold/raw/
 /structures/ribosome/
-*.pdf
+/Big-TB-benchmark
 
-# GenomeFusion: derived caches and large re-downloadable inputs
-genomefusion_cache/
-genomefusion_tokens/
-gf_snapshot/
-model_weights_gf/
-genomefusion_refs/essentiality/dejesus_supp/
-genomefusion_refs/essentiality/supp.zip
-genomefusion_refs/mycobrowser/releases.html
-genomefusion_refs/mycobrowser/H37Rv_r2.txt
+# --- outputs -------------------------------------------------------------------
+/results/
+/model_weights_*/
+/logs/
+slurm-*.out
 
-# --- kept on disk, not in the repo (experiment records, paper/figure/analysis work) ---
-/archive/
-/biophysical-fusion/results/
-/biophysical-fusion/diagrams/
-/biophysical-fusion/notebooks/
+# --- large reference downloads (genomefusion_refs/fetch_refs.sh re-fetches) ---
+/genomefusion_refs/essentiality/dejesus_supp/
+/genomefusion_refs/essentiality/supp.zip
+/genomefusion_refs/mycobrowser/releases.html
+/genomefusion_refs/mycobrowser/H37Rv_r2.txt

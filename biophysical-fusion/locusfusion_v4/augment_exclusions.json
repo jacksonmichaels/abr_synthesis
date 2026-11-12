@@ -1,7 +1,0 @@
-{
-  "_about": "Codons (1-based, H37Rv numbering) where the synonymous augmentation never inserts a change, because a synonymous change there is known to act. On top of the automatic rule in tokenizer.synonymous_candidates (no base that another loaded locus also carries). Add a row per WHO-graded synonymous variant if the catalogue gains one in these loci.",
-  "exclude": [
-    {"locus": "fabG1", "codon": 203, "variant": "fabG1 c.609G>A (p.Leu203Leu)",
-     "why": "creates an alternative inhA promoter; WHO 2023 catalogue, associated with resistance to INH and ETO"}
-  ]
-}

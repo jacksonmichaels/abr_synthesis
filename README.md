@@ -13,6 +13,10 @@ genotype. It holds the code for a full training and evaluation run of four model
 All four read the same split files and report the same metrics: CV AUC over 5
 folds, and a TEST AUC from the best CV fold's model.
 
+`AGENTS.md` lists the protocol facts and known gotchas (label encoding, which
+locus sets work with Sai's data, run-to-run nondeterminism). Read it before
+changing a runner.
+
 ## Data
 
 Sai's curation folder is the source of record. `paths.py` points at it by
@@ -50,6 +54,10 @@ ln -s $SRC/genomefusion_cache_v3 $SRC/genomefusion_tokens .
 conda env create -f environment.yml          # abr_env
 ```
 
+`results/` is not tracked, so a new clone has no splits yet. Build them with
+`splits/build_holdout_splits.py` (below). It reads the lineage CSV from
+`/project`, so it needs a node where that mount is available.
+
 ## Splits
 
 The splits follow Sai's leave-one-major-lineage-out design. For held-out lineage
@@ -57,7 +65,8 @@ L (1–4):
 
 - **test:** isolates whose lineage is exactly L
 - **train:** every other isolate with a lineage call
-- **excluded:** isolates with no lineage call (one isolate)
+- **excluded:** isolates with an R/S call but no entry in her lineage table
+  (3,911 of 21,346 for INH; 4,229 in `MULTIDRUG.csv`)
 
 A (drug, L) cell exists only when train and test each have at least 50 R and 50 S.
 Lineages 2 and 4 qualify for 10 drugs; lineages 1 and 3 qualify only for EMB,
@@ -125,6 +134,9 @@ Notes:
 | path | what |
 |---|---|
 | `paths.py` | every data location |
+| `job.sbatch` | SLURM wrapper: account, `abr_env`, logs to `logs/` |
+| `environment.yml` | the `abr_env` conda env |
+| `AGENTS.md` | protocol facts and gotchas |
 | `bigtb.py` | the BIG-TB helpers we reuse (alpha weights, threshold, one-hot, DRUG_TO_LOCI), copied verbatim |
 | `datasets/` | modality loaders (dna, protein, biophysical, regulatory), locus sets |
 | `training/` | CV protocol, early stopping, metrics, checkpoints |
